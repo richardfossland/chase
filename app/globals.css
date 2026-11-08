@@ -1,0 +1,53 @@
+@import "tailwindcss";
+
+/* Chase — design foundation.
+   Sunday Suite brand (gold #EBB84B · ink · paper; Hanken Grotesk) tuned for an
+   outdoor running game: a dark OLED-friendly ground (battery), loud role colours
+   that read in a 1-second glance in daylight, and big touch targets.
+   Role colours are semantic and must not be reused decoratively:
+     hunter = coral/red, prey = blue, warn = amber, danger = red, ok = green. */
+
+@theme {
+  --color-gold: #ebb84b;
+  --color-gold-light: #f2d58a;
+  --color-gold-deep: #d4a23a;
+
+  --color-ink: #0e1117;
+  --color-ink-2: #161a22;
+  --color-ink-3: #1f2430;
+  --color-line: rgb(255 255 255 / 0.1);
+
+  --color-txt: #f3efe6;
+  --color-txt-dim: #a3a9b6;
+
+  --color-hunter: #ff5a4e;
+  --color-prey: #3d9bff;
+  --color-ok: #4fd18b;
+  --color-warn: #ffb020;
+  --color-danger: #ff3b30;
+
+  --font-sans: var(--font-body), "Hanken Grotesk", -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  min-height: 100dvh;
+  background: var(--color-ink);
+  color: var(--color-txt);
+  font-family: var(--font-sans);
+  overflow-x: clip;
+}
+
+/* MapLibre attribution must stay legible on the dark ground. */
+.maplibregl-ctrl-attrib {
+  font-size: 11px;
+}

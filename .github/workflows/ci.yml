@@ -1,0 +1,40 @@
+# CI — every push/PR runs the same gates as local development.
+# Mirrored to Forgejo on the NAS (Forgejo Actions reads .github/workflows when
+# no .forgejo/workflows exists).
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+
+  build:
+    # The OpenNext/Cloudflare build catches bundling/runtime breaks that `check`
+    # does not. Builds the Worker; does not deploy (no Cloudflare auth here).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run cf:build
+
+  db:
+    # Migrations (applied twice for idempotency) + SQL assertions on real PostGIS.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: ./scripts/test-db.sh

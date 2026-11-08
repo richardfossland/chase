@@ -1,0 +1,44 @@
+{
+  "name": "chase",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "postinstall": "node scripts/copy-maplibre-worker.mjs",
+    "dev": "next dev",
+    "build": "next build",
+    "cf:build": "opennextjs-cloudflare build",
+    "cf:deploy": "opennextjs-cloudflare deploy",
+    "start": "next start",
+    "lint": "eslint",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check": "tsc --noEmit && eslint && vitest run",
+    "test:db": "./scripts/test-db.sh"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.108.1",
+    "maplibre-gl": "^6.17.0",
+    "next": "16.4.5",
+    "qrcode": "^1.5.4",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@opennextjs/cloudflare": "^1.20.4",
+    "@tailwindcss/postcss": "^4.1.0",
+    "@types/node": "^26",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@typescript/native": "npm:typescript@~7.0.2",
+    "@vitejs/plugin-react": "^6.1.1",
+    "esbuild": "^0.28.2",
+    "eslint": "^10.10.0",
+    "eslint-config-next": "16.4.5",
+    "tailwindcss": "^4.1.0",
+    "typescript": "npm:@typescript/typescript6@6.0.2",
+    "vitest": "^4.1.11",
+    "wrangler": "^4.0.0"
+  }
+}

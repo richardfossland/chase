@@ -1,0 +1,18 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "chase",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2025-05-05",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "routes": [{ "pattern": "chase.sundaysuite.app", "custom_domain": true }],
+  "observability": {
+    "enabled": true
+  }
+  // Runtime env (NEXT_PUBLIC_* are build-time inlined):
+  //   SUPABASE_SERVICE_ROLE_KEY is a runtime Worker secret:
+  //     npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+}
