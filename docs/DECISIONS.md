@@ -31,3 +31,9 @@ ellers ville blitt filtrert i Supabase (testmiljøets superbruker ville skjult f
 ## ADR-007 — PostGIS-testbilde under emulering på Apple Silicon (2026-11-08)
 `postgis/postgis` har kun amd64. `scripts/test-db.sh` kjører det med `--platform linux/amd64` på arm64.
 CI (Ubuntu) kjører det nativt.
+
+## ADR-008 — Server-env bakes inn ved OpenNext-bygg (2026-11-08)
+OpenNext tar med `.env.local` i Worker-bundelen ved `cf:build`, så `SUPABASE_SERVICE_ROLE_KEY` når
+serveren selv uten `wrangler secret put`. Verifisert at nøkkelen **ikke** finnes i `.open-next/assets`
+(det nettleseren laster). En Worker-secret med samme navn overstyrer verdien hvis den settes.
+Bygg og deploy derfor bare fra en maskin med korrekt `.env.local`, aldri fra CI uten secrets.

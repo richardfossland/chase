@@ -23,7 +23,7 @@ SUPABASE_ACCESS_TOKEN=sbp_… node scripts/provision-shared.mjs   # migrasjoner 
 ```bash
 npm run cf:build
 npm run cf:deploy                                   # → chase.sundaysuite.app
-npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY   # første gang
+npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY   # valgfritt — se ADR-008
 ```
 
 `NEXT_PUBLIC_*` bakes inn ved bygg — bygg med `.env.local` på plass.
