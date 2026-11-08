@@ -180,5 +180,13 @@ Migrasjoner og tester kjøres som `postgres` (ikke superbruker), slik som i Supa
   inngang laget en ny alarm (over 50 rader og en summer for hver). `_raise_alarm` **gjenåpner** nå den forrige alarmen
   av samme type når den er løst, men ikke kvittert, og varsler ikke på nytt. Først etter at læreren har kvittert, gir en ny
   inngang en ny alarm og et nytt varsel. Dette er dekket av en SQL-test.
+- **Fase 1 «Ferdig når», målt 2026-11-08 på lokal Supabase (Mac, Postgres 17 og PostGIS 3.3.7):**
+  `node scripts/sim.mjs --create --bots 60 --minutes 20 --seed 42 --rpc --assert` gikk i 1202 s.
+  Det ga 35 928 ticks uten feil. **Tick-tiden var p50 7 ms, p95 11 ms og p99 13 ms (maks 57 ms)** målt rundtur mot PostgREST, som er en øvre grense for tiden i databasen.
+  Alle alarmtypene nådde læreren innen **1,0 s** (krav: 5 s): SOS 0,9 s, forbudt sone 0,0 s, utenfor 0,0 s og signaltap 1,0 s.
+  Lærerens snapshot viste alle 60 botene med posisjon. Gjennom Next dev (uten `--rpc`) var p95 17–19 ms.
+  Produksjonsprosjektet og Workers kan gi andre tall, så målingen bør gjentas der før utetesten.
+- **Konsekvens av «mulig inne» (ADR-013) som simulatoren viste:** Elever som passerer innenfor `min(acc, 15 m)` av
+  en forbudt sone, utløser alarm, også om de egentlig er utenfor. Det er bevisst, men det må vurderes etter utetesten.
 - Utsatt: CI-røyktest mot lokal Supabase (krever `supabase start` i Actions), seedede scenarioer med fangst (fase 3)
   og Playwright e2e (§ 11.5).
