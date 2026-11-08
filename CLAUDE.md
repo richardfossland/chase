@@ -33,5 +33,9 @@ Bygg i faserekkefølge og respekter «Ferdig når». Beslutninger logges i docs/
 8. Migrasjoner nummereres `NNNN_beskrivelse.sql` og redigeres aldri etter at de er deployet.
 9. Test på ekte iPhone. iOS har ikke vibrasjon, og GPS stopper når skjermen låses.
 
+## Gjenbruk
+Før du skriver infrastruktur, sjekk `../sundayturnering` og `../sundaysjakk`, de mest modne søsterappene.
+Kopier det som passer, med testene, og noter det i DECISIONS (se ADR-011).
+
 ## Git
 GitHub er eneste remote, med CI i GitHub Actions (check, build, DB-tester) og oppetidssjekk (`uptime.yml`). Ingen NAS eller Forgejo. Commit-meldinger: Conventional Commits (`feat:`, `fix:`, `chore(deps):`), korte.

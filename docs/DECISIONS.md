@@ -47,3 +47,17 @@ Vurder å pinne `CHASE_TEST_IMAGE` til samme Postgres-/PostGIS-versjon som prosj
 Som Sjakk og Turnering: GitHub er eneste remote, CI kjører i GitHub Actions (check, build, DB-tester),
 og `uptime.yml` sjekker produksjon hvert tiende minutt og åpner en issue ved brudd (kopiert fra Turnering).
 Erstatter speilingen til Forgejo i PLAN § 13.
+
+## ADR-011 — Gjenbruk fra Turnering og Sjakk (2026-11-08)
+Infrastruktur som er utprøvd i produksjon, kopieres i stedet for å skrives på nytt (med testene):
+- Fra **Turnering:** `lib/server/http.ts` (rate limiter med øvre grense, nødvendig på Workers),
+  `lib/server/defer.ts` (broadcast etter respons), `lib/client/channelRegistry.ts` og `useChannel.ts`
+  (delte, selvreparerende Realtime-kanaler), `refetch.ts` (koalescerende refetch med jitter),
+  `useTabHidden.ts`, `sound.ts`, `QRCode.tsx`, `app/api/[...missing]` (JSON-404) og `scripts/probe.mjs`.
+- Fra **Sjakk:** `lib/codes.ts` (PIN og gjenopptakskoder uten tvetydige tegn), `lib/server/broadcast.ts`
+  (REST-broadcast med timeout), `useCountdown.ts`, `ConfirmDialog.tsx`, `FullscreenToggle.tsx`, feilsidene
+  og `cleanup`-mønsteret med pg_cron (0004).
+
+Forskjell: Sjakk og Turnering lagrer verter og spillerkoder i klartekst. Chase hasher dem (CLAUDE.md regel 7).
+Neste kandidater for gjenbruk i fase 1: `smoke*.mjs` (Sjakk), `identity.ts`, `api.ts`/`ApiError` og
+`useTournament`-mønsteret (poll + Realtime-hint).

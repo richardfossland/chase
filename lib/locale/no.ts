@@ -15,6 +15,18 @@ export const no = {
       { title: "Trygt og glemsomt", body: "Geofence, nødknapp, og posisjoner slettes når økta er ferdig." },
     ],
   },
+  common: {
+    confirm: "Ja",
+    cancel: "Avbryt",
+    home: "Til forsiden",
+    retry: "Prøv igjen",
+    errorTitle: "Noe gikk galt",
+    errorBody: "Prøv på nytt. Spillet lever på serveren, så du mister ikke plassen din.",
+    notFoundTitle: "Fant ikke siden",
+    notFoundBody: "Lenken kan være gammel, eller økta er avsluttet og slettet.",
+    fullscreen: "Fullskjerm",
+    exitFullscreen: "Avslutt fullskjerm",
+  },
   map: {
     title: "Kartprøve",
     hint: "Trykk på posisjonsknappen for å finne deg selv. Sirkelen viser et spillområde på 150 m rundt deg.",
