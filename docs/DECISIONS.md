@@ -37,3 +37,8 @@ OpenNext tar med `.env.local` i Worker-bundelen ved `cf:build`, så `SUPABASE_SE
 serveren selv uten `wrangler secret put`. Verifisert at nøkkelen **ikke** finnes i `.open-next/assets`
 (det nettleseren laster). En Worker-secret med samme navn overstyrer verdien hvis den settes.
 Bygg og deploy derfor bare fra en maskin med korrekt `.env.local`, aldri fra CI uten secrets.
+
+## ADR-009 — PostGIS-versjon i produksjon er 3.3.7 (2026-11-08)
+Det delte Supabase-prosjektet kjører PostGIS 3.3.7, mens testbildet bruker 3.5. Bruk bare funksjoner som
+finnes i 3.3 (ST_DWithin, ST_Covers, ST_Distance, ST_Buffer, ST_Intersection på geography er trygge).
+Vurder å pinne `CHASE_TEST_IMAGE` til samme Postgres-/PostGIS-versjon som prosjektet i fase 1.
