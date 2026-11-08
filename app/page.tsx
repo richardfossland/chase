@@ -33,10 +33,16 @@ export default function Home() {
 
       <div className="mt-10 flex flex-wrap items-center gap-4">
         <Link
-          href="/kart"
+          href="/ny"
           className="rounded-xl bg-gold px-6 py-3 text-lg font-extrabold text-ink transition hover:bg-gold-light active:scale-[0.98]"
         >
-          {no.landing.tryMap}
+          {no.landing.startSession}
+        </Link>
+        <Link
+          href="/j"
+          className="rounded-xl border border-line px-6 py-3 text-lg font-extrabold text-txt transition hover:bg-ink-3 active:scale-[0.98]"
+        >
+          {no.landing.join}
         </Link>
         <p className="text-sm text-txt-dim">{no.landing.phaseNote}</p>
       </div>

@@ -1,0 +1,59 @@
+import type { GeoJSONSource, Map as MlMap } from "maplibre-gl";
+
+import type { SessionGeo } from "@/lib/client/api";
+
+// Shared session layers (area, forbidden zones, assembly point) for the player
+// view and the teacher panel.
+
+const EMPTY = { type: "FeatureCollection" as const, features: [] };
+
+export function addSessionLayers(m: MlMap, geo: SessionGeo) {
+  m.addSource("area", { type: "geojson", data: { type: "Feature", properties: {}, geometry: geo.boundary } });
+  m.addLayer({ id: "area-fill", type: "fill", source: "area", paint: { "fill-color": "#ebb84b", "fill-opacity": 0.08 } });
+  m.addLayer({ id: "area-line", type: "line", source: "area", paint: { "line-color": "#ebb84b", "line-width": 3 } });
+  m.addSource("forbidden", {
+    type: "geojson",
+    data: geo.forbidden ? { type: "Feature", properties: {}, geometry: geo.forbidden } : EMPTY,
+  });
+  m.addLayer({ id: "forbidden-fill", type: "fill", source: "forbidden", paint: { "fill-color": "#ff3b30", "fill-opacity": 0.35 } });
+  m.addLayer({ id: "forbidden-line", type: "line", source: "forbidden", paint: { "line-color": "#ff3b30", "line-width": 2 } });
+  m.addSource("assembly", {
+    type: "geojson",
+    data: { type: "Feature", properties: {}, geometry: { type: "Point", coordinates: [geo.assembly.lng, geo.assembly.lat] } },
+  });
+  m.addLayer({
+    id: "assembly",
+    type: "circle",
+    source: "assembly",
+    paint: { "circle-radius": 9, "circle-color": "#4fd18b", "circle-stroke-color": "#ffffff", "circle-stroke-width": 3 },
+  });
+}
+
+/** A single "me" dot with an accuracy halo. */
+export function addMeLayer(m: MlMap) {
+  m.addSource("me", { type: "geojson", data: EMPTY });
+  m.addLayer({
+    id: "me-dot",
+    type: "circle",
+    source: "me",
+    paint: { "circle-radius": 8, "circle-color": "#3d9bff", "circle-stroke-color": "#ffffff", "circle-stroke-width": 3 },
+  });
+}
+
+export function setMe(m: MlMap, lng: number, lat: number) {
+  m.getSource<GeoJSONSource>("me")?.setData({
+    type: "Feature",
+    properties: {},
+    geometry: { type: "Point", coordinates: [lng, lat] },
+  });
+}
+
+export function boundsOf(geo: SessionGeo): [[number, number], [number, number]] {
+  const ring = geo.boundary.coordinates[0];
+  const lngs = ring.map((p) => p[0]);
+  const lats = ring.map((p) => p[1]);
+  return [
+    [Math.min(...lngs), Math.min(...lats)],
+    [Math.max(...lngs), Math.max(...lats)],
+  ];
+}
