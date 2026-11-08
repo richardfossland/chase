@@ -95,3 +95,25 @@ Migrasjoner og tester kjøres som `postgres` (ikke superbruker), slik som i Supa
   `p_force` («Avslutt likevel»). En økt som avsluttes fra lobbyen, trenger ikke opprop.
 - Spillere som er fjernet, kan ikke bli med igjen fra samme `device_id` eller med gjenopptakskoden.
 - Ytelse i testbildet: `tick()` tar 0,29 ms og `host_snapshot` 4 ms med 60 spillere og en forbudt sone.
+
+## ADR-015 — API-lag, lokal utvikling og veiviser i fase 1 (2026-11-08)
+- **Lokal utvikling bruker lokal Supabase**, besluttet av Richard. Kommandoen er `supabase start` med `supabase/config.toml`
+  (prosjekt `chase` på portene 553xx, slik at den kan kjøre samtidig med Sjakks stack), og migrasjonene legges inn automatisk.
+  `.env.development.local` peker dev-serveren dit, og fila brukes aldri av `cf:build`. Testdata og sim-boter havner
+  derfor aldri i det delte produksjonsprosjektet. Etter endringer i migrasjonene kjøres `supabase db reset`.
+- **Alle API-kall med token er POST**, også `snapshot`, som PLAN § 9.2 beskrev som GET. Da havner token og posisjoner
+  aldri i URL-er eller tilgangslogger.
+- `tick`, `raise_sos` og `player_bootstrap` tar inn `p_session` fra ruten og avviser feil økt **før noe skrives**.
+  En gyldig elevtoken kan dermed ikke flytte posisjoner eller sende hint til en annen økt.
+- RPC-feil oversettes til HTTP-status i `lib/server/rpc.ts`, og ruter logger aldri forespørselskropper.
+  SOS-kall har ingen rate limit, og hintet om SOS sendes før svaret (det utsettes ikke).
+- Realtime-topics (`chase:{økt}:all|host|p:{spiller}`) er foreløpig offentlige broadcast-kanaler. Payloadene er derfor
+  bare hint (hendelsestype) og inneholder aldri navn, posisjoner eller tokens. Autorisasjon av kanalene etter
+  SundayQuiz-mønsteret (PLAN § 9.2) legges inn når meldingene trenger innhold.
+- **Veiviseren** (`/ny`) har eget tegneverktøy, besluttet av Richard. Man trykker for å sette hjørner, hjørnene er
+  dragbare MapLibre-markører, og det finnes angre-, nullstill- og ferdig-knapper. Kryssende kanter sperres på klienten
+  (`ringSelfIntersects`), og serveren sjekker med ST_IsValid.
+  Samlingspunktet foreslås minst 30 m fra forbudte soner og kan ikke legges inne i en.
+  Sjekklisten må være krysset av før økta kan lages. Fase 1 har bare én runde med fri løping, og læreren velger varigheten.
+- Lærernøkkelen (16 tegn uten tvetydige tegn, ca. 79 bit) lages i nettleseren, vises én gang i introduksjonen
+  og sendes bare som SHA-256-hash.

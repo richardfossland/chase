@@ -15,6 +15,7 @@ Bygg i faserekkefølge og respekter «Ferdig når». Beslutninger logges i docs/
 ## Gate
 - `npm run check` (tsc + eslint + vitest) må være grønn før commit.
 - DB-endringer: `./scripts/test-db.sh` (Docker med det pinnede Supabase-bildet: PostGIS 3.3.7 og pg_cron, ADR-012).
+- Lokal utvikling: `supabase start` (porter 553xx) og `.env.development.local` (ADR-015). Etter migrasjonsendringer kjøres `supabase db reset`.
 - Simulator: `/dev/sim` og `scripts/sim.mjs`. Bruk den før du sier at en spillendring virker.
 
 ## Regler

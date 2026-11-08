@@ -261,6 +261,12 @@ begin
   perform chase.tick(x.player_id, x.tok, 59.91045, 10.7509, 5, null, '2026-11-08 10:00:02+00');
   assert chase.tick(x.player_id, x.tok, 59.91045, 10.7509, 5, null, '2026-11-08 10:00:01+00') ->> 'error' = 'stale', 'stale tick';
   assert chase.tick(x.player_id, pg_temp.h('evil'), 59.91045, 10.7509, 5) ->> 'error' = 'auth', 'tick auth';
+  -- A valid token sent to another session's route: rejected before any write.
+  assert chase.tick(x.player_id, x.tok, 59.9090, 10.7509, 5, null, null, gen_random_uuid()) ->> 'error' = 'not_found', 'tick session mismatch';
+  assert (select geofence_state from chase.player_live where player_id = x.player_id) = 0, 'mismatch wrote nothing';
+  assert chase.raise_sos(x.player_id, x.tok, null, null, gen_random_uuid()) ->> 'error' = 'not_found', 'sos session mismatch';
+  assert chase.player_bootstrap(x.player_id, x.tok, gen_random_uuid()) ->> 'error' = 'not_found', 'bootstrap session mismatch';
+  assert (chase.tick(x.player_id, x.tok, 59.91045, 10.7509, 5, null, null, x.session_id) ->> 'ok')::boolean, 'matching session ok';
   raise notice '0002 distance/active: ok';
 end $$;
 
@@ -473,9 +479,9 @@ begin
     'chase.create_session(text,text,jsonb,jsonb,jsonb,jsonb,jsonb,text,boolean)',
     'chase.join_session(text,text,text,text,text)',
     'chase.resume_player(text,text,text)',
-    'chase.player_bootstrap(uuid,text)',
-    'chase.tick(uuid,text,double precision,double precision,real,real,timestamptz)',
-    'chase.raise_sos(uuid,text,double precision,double precision)',
+    'chase.player_bootstrap(uuid,text,uuid)',
+    'chase.tick(uuid,text,double precision,double precision,real,real,timestamptz,uuid)',
+    'chase.raise_sos(uuid,text,double precision,double precision,uuid)',
     'chase.ack_alarm(uuid,uuid,text)',
     'chase.host_action(uuid,text,text,jsonb)',
     'chase.host_snapshot(uuid,text,boolean)',

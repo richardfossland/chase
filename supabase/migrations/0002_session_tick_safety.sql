@@ -384,7 +384,7 @@ $$;
 
 -- Static info for the player client (map geometry, teacher's phone for the
 -- "Ring lærer" button). Never other players' data.
-create or replace function chase.player_bootstrap(p_player uuid, p_token_hash text)
+create or replace function chase.player_bootstrap(p_player uuid, p_token_hash text, p_session uuid default null)
 returns jsonb
 language plpgsql
 stable
@@ -398,6 +398,9 @@ begin
   select * into v_p from chase.players where id = p_player and token_hash = p_token_hash;
   if v_p.id is null or v_p.status <> 'active' then
     return jsonb_build_object('ok', false, 'error', 'auth');
+  end if;
+  if p_session is not null and v_p.session_id <> p_session then
+    return jsonb_build_object('ok', false, 'error', 'not_found');
   end if;
   select * into v_s from chase.sessions where id = v_p.session_id;
   return jsonb_build_object('ok', true, 'session_id', v_s.id, 'player_id', v_p.id,
@@ -415,7 +418,8 @@ create or replace function chase.tick(
   p_lng        double precision,
   p_acc        real,
   p_speed      real default null,
-  p_client_ts  timestamptz default null)
+  p_client_ts  timestamptz default null,
+  p_session    uuid default null)   -- the route's session; mismatch = not_found, before any write
 returns jsonb
 language plpgsql
 security definer
@@ -457,6 +461,9 @@ begin
   select * into v_p from chase.players where id = p_player and token_hash = p_token_hash for update;
   if v_p.id is null then
     return jsonb_build_object('ok', false, 'error', 'auth');
+  end if;
+  if p_session is not null and v_p.session_id <> p_session then
+    return jsonb_build_object('ok', false, 'error', 'not_found');
   end if;
   if v_p.status <> 'active' then
     return jsonb_build_object('ok', false, 'error', v_p.status);   -- 'kicked' | 'left'
@@ -598,6 +605,7 @@ begin
   return jsonb_build_object(
     'ok', true,
     'server_now', v_now,
+    'session_id', v_s.id,
     'status', v_s.status,
     'round_idx', v_s.round_idx,
     'round_started_at', v_s.round_started_at,
@@ -621,7 +629,8 @@ create or replace function chase.raise_sos(
   p_player     uuid,
   p_token_hash text,
   p_lat        double precision default null,
-  p_lng        double precision default null)
+  p_lng        double precision default null,
+  p_session    uuid default null)
 returns jsonb
 language plpgsql
 security definer
@@ -636,6 +645,9 @@ begin
   select * into v_p from chase.players where id = p_player and token_hash = p_token_hash;
   if v_p.id is null or v_p.status <> 'active' then
     return jsonb_build_object('ok', false, 'error', 'auth');
+  end if;
+  if p_session is not null and v_p.session_id <> p_session then
+    return jsonb_build_object('ok', false, 'error', 'not_found');
   end if;
   if (select status from chase.sessions where id = v_p.session_id) = 'ended' then
     return jsonb_build_object('ok', false, 'error', 'ended');

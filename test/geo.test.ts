@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   bearing,
+  closeRing,
+  ringSelfIntersects,
   circleRing,
   distanceToRingEdge,
   haversine,
@@ -74,5 +76,17 @@ describe("bearing", () => {
   it("points north and east", () => {
     expect(bearing(ORIGIN, [ORIGIN[0], ORIGIN[1] + dLat])).toBeCloseTo(0, 3);
     expect(bearing(ORIGIN, [ORIGIN[0] + dLng, ORIGIN[1]])).toBeCloseTo(90, 1);
+  });
+});
+
+describe("ring helpers for the drawing tool", () => {
+  const sq: [number, number][] = [[10.75, 59.91], [10.7518, 59.91], [10.7518, 59.9109], [10.75, 59.9109]];
+  it("closeRing repeats the first point once", () => {
+    expect(closeRing(sq)).toHaveLength(5);
+    expect(closeRing(closeRing(sq))).toHaveLength(5);
+  });
+  it("detects a bow-tie", () => {
+    expect(ringSelfIntersects(sq)).toBe(false);
+    expect(ringSelfIntersects([sq[0], sq[2], sq[1], sq[3]])).toBe(true);
   });
 });

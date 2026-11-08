@@ -136,3 +136,31 @@ export function bearing(from: LngLat, to: LngLat): number {
   const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
   return (toDeg(Math.atan2(y, x)) + 360) % 360;
 }
+
+/** Close an open ring (first point repeated at the end), as GeoJSON requires. */
+export function closeRing(ring: Ring): LngLat[] {
+  const r = openRing(ring);
+  return r.length ? [...r, r[0]] : [];
+}
+
+function segmentsCross(a: [number, number], b: [number, number], c: [number, number], d: [number, number]): boolean {
+  const o = (p: [number, number], q: [number, number], r: [number, number]) =>
+    Math.sign((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]));
+  return o(a, b, c) * o(a, b, d) < 0 && o(c, d, a) * o(c, d, b) < 0;
+}
+
+/** True when two non-adjacent edges of the ring cross (PostGIS would reject it as invalid). */
+export function ringSelfIntersects(ring: Ring): boolean {
+  const r = openRing(ring);
+  const n = r.length;
+  if (n < 4) return false;
+  const proj = makeProjection(ringCenter(r));
+  const xy = r.map((p) => proj.toXY(p));
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      if (j === i + 1 || (i === 0 && j === n - 1)) continue; // adjacent edges share a vertex
+      if (segmentsCross(xy[i], xy[(i + 1) % n], xy[j], xy[(j + 1) % n])) return true;
+    }
+  }
+  return false;
+}
