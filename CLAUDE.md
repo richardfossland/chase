@@ -34,4 +34,4 @@ Bygg i faserekkefølge og respekter «Ferdig når». Beslutninger logges i docs/
 9. Test på ekte iPhone. iOS har ikke vibrasjon, og GPS stopper når skjermen låses.
 
 ## Git
-GitHub er origin. CI (check + DB-tester) speiles til Forgejo på NAS-en. Commit-meldinger: Conventional Commits (`feat:`, `fix:`, `chore(deps):`), korte.
+GitHub er eneste remote, med CI i GitHub Actions (check, build, DB-tester) og oppetidssjekk (`uptime.yml`). Ingen NAS eller Forgejo. Commit-meldinger: Conventional Commits (`feat:`, `fix:`, `chore(deps):`), korte.

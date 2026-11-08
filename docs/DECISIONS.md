@@ -42,3 +42,8 @@ Bygg og deploy derfor bare fra en maskin med korrekt `.env.local`, aldri fra CI 
 Det delte Supabase-prosjektet kjører PostGIS 3.3.7, mens testbildet bruker 3.5. Bruk bare funksjoner som
 finnes i 3.3 (ST_DWithin, ST_Covers, ST_Distance, ST_Buffer, ST_Intersection på geography er trygge).
 Vurder å pinne `CHASE_TEST_IMAGE` til samme Postgres-/PostGIS-versjon som prosjektet i fase 1.
+
+## ADR-010 — Bare GitHub, ingen NAS/Forgejo (2026-11-08)
+Som Sjakk og Turnering: GitHub er eneste remote, CI kjører i GitHub Actions (check, build, DB-tester),
+og `uptime.yml` sjekker produksjon hvert tiende minutt og åpner en issue ved brudd (kopiert fra Turnering).
+Erstatter speilingen til Forgejo i PLAN § 13.

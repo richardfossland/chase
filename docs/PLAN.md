@@ -514,7 +514,7 @@ Fase 1–3 gir **spillbar MVP for kroppsøvingstimen**. Hver fase avsluttes med 
 
 ### Fase 0 – Grunnmur (1–2 dager)
 
-- Repo `chase` på GitHub, speilet til Forgejo på NAS-en. CI-workflow (check + DB-tester) kjører i GitHub Actions; det må verifiseres at Forgejo Actions på NAS kjører samme workflow.
+- Repo `chase` på GitHub (eneste remote, som Sjakk og Turnering). CI i GitHub Actions: check, build og DB-tester.
 - Next 16 + OpenNext/Cloudflare, Tailwind v4, Sunday-tokens, `lib/locale/no.ts`.
 - `chase`-skjema og PostGIS i det delte Supabase-prosjektet. `scripts/test-db.sh` (Docker-Postgres med PostGIS).
 - MapLibre-kart med Kartverket-fliser. Avklar vilkår for satellittleverandør.

@@ -1,0 +1,76 @@
+# Synthetic uptime probe (T1). Runs from a GitHub Actions runner — an
+# external vantage point, not a Cloudflare Worker — so it also catches
+# edge-level failures a Worker cron would be blind to.
+#
+# NOTE: GitHub automatically disables a scheduled workflow after 60 days
+# with no repository activity (commits, PRs, etc.). If chase.sundaysuite.app
+# goes quiet on GitHub Actions, check Actions → this workflow → re-enable,
+# not just Cloudflare.
+
+name: uptime
+
+on:
+  schedule:
+    # Offset minutes (not */10): off-the-hour minutes dodge the top-of-hour
+    # scheduling congestion GitHub Actions cron sees.
+    - cron: "7,17,27,37,47,57 * * * *"
+  workflow_dispatch:
+
+concurrency: uptime
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Ensure uptime label exists
+        run: gh label create uptime --color B60205 --description "Synthetic uptime probe failures" --force
+
+      - name: Run uptime probe
+        id: probe
+        run: |
+          set +e
+          node scripts/probe.mjs | tee probe-summary.md
+          exit_code=${PIPESTATUS[0]}
+          set -e
+          exit "$exit_code"
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: probe-json
+          path: probe.json
+          retention-days: 7
+
+      - name: File or update failing-probe issue
+        if: failure()
+        run: |
+          body="$(cat probe-summary.md)"
+          existing="$(gh issue list --label uptime --state open --json number --jq '.[0].number // empty')"
+          if [ -z "$existing" ]; then
+            gh issue create --title "Uptime: probe failing" --label uptime --body "$body"
+          else
+            gh issue comment "$existing" --body "$body"
+          fi
+
+      - name: Close recovered issue
+        if: success()
+        run: |
+          existing="$(gh issue list --label uptime --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "Recovered — latest probe run is green."
+            gh issue close "$existing"
+          fi

@@ -1,0 +1,18 @@
+{
+  "targets": [
+    {
+      "name": "chase",
+      "base": "https://chase.sundaysuite.app",
+      "samples": 8,
+      "timeoutMs": 8000,
+      "maxFailRate": 0.1,
+      "p95Ms": 2500,
+      "paths": [
+        { "path": "/", "method": "GET", "expect": [200] },
+        { "path": "/", "method": "HEAD", "expect": [200] },
+        { "path": "/kart", "method": "GET", "expect": [200] },
+        { "path": "/api/health", "method": "GET", "expect": [200], "note": "Inkluderer DB-sjekk (chase.health())" }
+      ]
+    }
+  ]
+}

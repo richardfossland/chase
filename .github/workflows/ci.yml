@@ -1,6 +1,4 @@
 # CI — every push/PR runs the same gates as local development.
-# Mirrored to Forgejo on the NAS (Forgejo Actions reads .github/workflows when
-# no .forgejo/workflows exists).
 name: ci
 on:
   push:
