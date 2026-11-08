@@ -51,3 +51,12 @@ body {
 .maplibregl-ctrl-attrib {
   font-size: 11px;
 }
+
+/* Teacher map: pulsing dot for pupils in danger (SOS, forbidden, far outside). */
+@keyframes chase-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(255 59 48 / 0.85); }
+  50% { box-shadow: 0 0 0 12px rgb(255 59 48 / 0); }
+}
+.animate-ping-slow {
+  animation: chase-pulse 1.2s ease-in-out infinite;
+}

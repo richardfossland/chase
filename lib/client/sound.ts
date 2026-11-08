@@ -79,3 +79,16 @@ export function playFanfare(): void {
   tone(1047, 0.58, 0.7, "triangle", 0.22);
   tone(1568, 0.62, 0.7, "triangle", 0.14);
 }
+
+/** SOS siren for the teacher (repeated by the caller until acked). */
+export function playSiren(): void {
+  for (let i = 0; i < 4; i++) {
+    tone(880, i * 0.5, 0.25, "square", 0.25);
+    tone(660, i * 0.5 + 0.25, 0.25, "square", 0.25);
+  }
+}
+
+/** True once the browser lets us make sound (after a user gesture). */
+export function audioReady(): boolean {
+  return getCtx()?.state === "running";
+}

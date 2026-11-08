@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 
-import HostLobby from "./HostLobby";
+import HostPanel from "./HostPanel";
 
 export const metadata: Metadata = { title: "Lærer — Chase" };
 
 export default async function HostPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  return <HostLobby sessionId={id} />;
+  return <HostPanel sessionId={id} />;
 }
