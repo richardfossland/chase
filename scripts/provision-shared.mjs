@@ -19,6 +19,13 @@ if (!TOKEN) {
   console.error("Set SUPABASE_ACCESS_TOKEN (sbp_…).");
   process.exit(1);
 }
+if (!/^sbp_[A-Za-z0-9_]{20,}$/.test(TOKEN)) {
+  console.error(
+    "SUPABASE_ACCESS_TOKEN ser ikke ut som et ekte token (forventet sbp_ + lang kode).\n" +
+      "Erstatt plassholderen «sbp_…» med tokenet fra https://supabase.com/dashboard/account/tokens",
+  );
+  process.exit(1);
+}
 const H = { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" };
 
 async function api(path, init) {
