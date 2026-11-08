@@ -192,6 +192,22 @@ begin
   assert not (t -> 'safety' ->> 'forbidden')::boolean, 'margin capped at 15 m';
   assert (select resolved_at from chase.alarms where player_id = x.player_id and kind = 'forbidden') is not null, 'resolved when out';
 
+  -- Flapping at the edge before the teacher acks: one alarm, reopened, no new alert.
+  t := chase.tick(x.player_id, x.tok, 59.91059, 10.7511, 5);            -- back in
+  assert not (t ->> 'alert_host')::boolean, 'reopen does not re-alert';
+  t := chase.tick(x.player_id, x.tok, 59.91045, 10.7505, 5);            -- out
+  t := chase.tick(x.player_id, x.tok, 59.91059, 10.7511, 5);            -- in again
+  assert (select count(*) from chase.alarms where player_id = x.player_id and kind = 'forbidden') = 1, 'flapping keeps one alarm';
+  assert (select resolved_at from chase.alarms where player_id = x.player_id and kind = 'forbidden') is null, 'reopened';
+  -- Once acked, a new entry is a new alarm and alerts again.
+  update chase.alarms set acked_at = now() where player_id = x.player_id and kind = 'forbidden';
+  perform chase.tick(x.player_id, x.tok, 59.91045, 10.7505, 5);         -- out → resolved
+  t := chase.tick(x.player_id, x.tok, 59.91059, 10.7511, 5);            -- in → new
+  assert (t ->> 'alert_host')::boolean, 'new entry after ack alerts';
+  assert (select count(*) from chase.alarms where player_id = x.player_id and kind = 'forbidden') = 2, 'second alarm after ack';
+  perform chase.tick(x.player_id, x.tok, 59.91045, 10.7505, 5);         -- out again before pause test
+  update chase.alarms set acked_at = now() where player_id = x.player_id;  -- teacher has seen everything
+
   -- Safety runs during pause too.
   perform chase.host_action(x.session_id, x.host, 'pause');
   t := chase.tick(x.player_id, x.tok, 59.91059, 10.7511, 5);            -- inside the zone

@@ -21,6 +21,8 @@
 -- An alarm stays in the teacher's strip until it is acked, even when resolved,
 -- so nothing disappears unseen. Escalation (outside > 100 m) raises the level
 -- and clears acked_at again. SOS never auto-resolves; ack resolves it.
+-- Re-entering a condition before the teacher acked reopens the same alarm
+-- (no pile-up from GPS noise at an edge).
 
 set search_path = chase, extensions, public;
 
@@ -129,6 +131,24 @@ begin
     from chase.alarms
    where player_id = p_player and kind = p_kind and resolved_at is null
    for update;
+  -- Flapping (GPS noise at a zone edge, signal coming and going): if the
+  -- previous alarm of this kind is resolved but the teacher has not acked it
+  -- yet, reopen it instead of piling up new ones. It is still unacked in the
+  -- strip, so no new alert is needed.
+  if v_id is null then
+    update chase.alarms
+       set resolved_at = null, pos = coalesce(p_pos, pos)
+     where id = (select id from chase.alarms
+                  where player_id = p_player and kind = p_kind and acked_at is null
+                  order by created_at desc limit 1)
+    returning id, level into v_id, v_level;
+    if v_id is not null then
+      if p_level > v_level then
+        update chase.alarms set level = p_level where id = v_id;
+      end if;
+      return false;
+    end if;
+  end if;
   if v_id is null then
     begin
       insert into chase.alarms (session_id, player_id, kind, level, pos)

@@ -159,3 +159,26 @@ Migrasjoner og tester kjøres som `postgres` (ikke superbruker), slik som i Supa
 - Fra **nettbrettbredde (lg)** vises elevlista alltid som en sidekolonne.
 - Verifisert med en kladdesverm på 7 boter (løper, står stille, vandrer ut, forbudt sone, mister signal, SOS). Den egentlige
   simulatoren (`/dev/sim`, `scripts/sim.mjs`, `lib/sim/`) er neste steg.
+
+## ADR-018 — GPS-simulatoren (2026-11-08)
+- **`lib/sim/`** er felles kode for nettleseren og Node.
+  - `behaviours.ts` har seedede bot-profiler (PLAN § 11.2): runner, hider, wanderer, forbidden, dropout, sos, cheater og jitter.
+    Botene beveger seg i et lokalt metrisk plan og rapporterer posisjoner med simulert nøyaktighet og støy.
+  - `driver.ts` kjører svermen. Botene er ekte spillere via API-et (join, tick, sos), og ticks spres jevnt over intervallet.
+  - Driveren måler tick-latens (p50/p95/p99) og **alarmtid**: tiden fra en bot faktisk er i en tilstand som skal varsles,
+    til lærerens snapshot viser alarmen. Tilstandene er SOS trykket, inne i forbudt sone, mer enn 40 m utenfor eller
+    60 s uten fix. En gammel alarm som er løst, men ikke kvittert, teller ikke for en ny hendelse.
+- **`/dev/sim`** finnes bare i dev eller med `SIM_ENABLED=1`. Siden kan lage en sim-økt (lærertokenet lagres lokalt, så
+  lærerpanelet kan åpnes i ny fane) eller koble seg til en PIN. Den kan starte 1–60 boter med valgfri blanding og seed,
+  og viser eget kart med botene (farge etter profil, rød kant når serveren melder fare), måletall og tidslinje.
+- **`scripts/sim.mjs`** er headless og bruker samme kode, buntet med esbuild ved oppstart.
+  - `--create` lager og starter en sim-økt og måler alarmtid som lærer.
+  - `--rpc` sender ticks rett til PostgREST og måler dermed database og PostgREST uten Next. Det er en øvre grense for tiden i databasen.
+  - `--assert` feiler hvis p95 ≥ 50 ms eller hvis en alarm bruker mer enn 5 s.
+- `?simgps=1` på `/play/[id]` (ADR-016) er punkt 1 i § 11, og manuell styring av én ekte klient.
+- **Funnet med simulatoren:** En elev som står i kanten av en forbudt sone, går inn og ut på grunn av GPS-støy. Hver ny
+  inngang laget en ny alarm (over 50 rader og en summer for hver). `_raise_alarm` **gjenåpner** nå den forrige alarmen
+  av samme type når den er løst, men ikke kvittert, og varsler ikke på nytt. Først etter at læreren har kvittert, gir en ny
+  inngang en ny alarm og et nytt varsel. Dette er dekket av en SQL-test.
+- Utsatt: CI-røyktest mot lokal Supabase (krever `supabase start` i Actions), seedede scenarioer med fangst (fase 3)
+  og Playwright e2e (§ 11.5).
