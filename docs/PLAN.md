@@ -264,7 +264,7 @@ Fysiske oppdrag gjøres der eleven er, aldri som en betingelse for å slippe str
 |---|---|---|
 | Kallenavn | `players` | Slettes 24 t etter øktslutt |
 | Gjenopptakskode (hash) og enhets-ID (tilfeldig) | `players` | Som over |
-| **Live-posisjon** (ett punkt per spiller, ingen historikk) | `player_live` (UNLOGGED) | **Slettes ved øktslutt** |
+| **Live-posisjon** (ett punkt per spiller, ingen historikk), med distanseanker og stillstandsanker (`last_good_pos`, `still_anchor`) | `player_live` (UNLOGGED) | **Slettes ved øktslutt** |
 | Alarmposisjon (punkt ved SOS eller geofence) | `alarms` | Nullstilles ved øktslutt |
 | Statistikk og poeng | `player_stats` | 24 t etter slutt (for seremoni og eventuell gjenvisning) |
 | Hendelseslogg | `events` | 24 t etter slutt, uten koordinater |
