@@ -186,6 +186,11 @@ Migrasjoner og tester kjøres som `postgres` (ikke superbruker), slik som i Supa
   Alle alarmtypene nådde læreren innen **1,0 s** (krav: 5 s): SOS 0,9 s, forbudt sone 0,0 s, utenfor 0,0 s og signaltap 1,0 s.
   Lærerens snapshot viste alle 60 botene med posisjon. Gjennom Next dev (uten `--rpc`) var p95 17–19 ms.
   Produksjonsprosjektet og Workers kan gi andre tall, så målingen bør gjentas der før utetesten.
+  **Prod 2026-11-09** (Worker-versjon `aaa0e616`, 10 boter i 2 min via `https://chase.sundaysuite.app`): 555 ticks uten feil,
+  alle 4 alarmtyper hos læreren innen 0,86 s. Rundtur fra klienten var p50 49 ms og p95 126 ms. Det er nettverk
+  klient → Cloudflare → Supabase, ikke tiden i databasen: `/api/health` (ett lett DB-kall) hadde median ~75 ms i samme
+  måling. Kravet om p95 under 50 ms gjelder `tick()` i databasen og er dokumentert lokalt. Prod-tallet viser at eleven
+  får svar langt innenfor tick-intervallet på 2 s.
 - **Konsekvens av «mulig inne» (ADR-013) som simulatoren viste:** Elever som passerer innenfor `min(acc, 15 m)` av
   en forbudt sone, utløser alarm, også om de egentlig er utenfor. Det er bevisst, men det må vurderes etter utetesten.
 - Utsatt: CI-røyktest mot lokal Supabase (krever `supabase start` i Actions), seedede scenarioer med fangst (fase 3)
