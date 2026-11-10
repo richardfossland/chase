@@ -31,15 +31,20 @@ create function pg_temp.age(p_session uuid, p_secs int) returns void language sq
    where id = p_session;
   update chase.alarms set acked_at = acked_at - make_interval(secs => p_secs)
    where session_id = p_session and acked_at is not null;
+  -- 0003: round rows and the phase clock age with the session.
+  update chase.rounds set started_at = started_at - make_interval(secs => p_secs) where session_id = p_session;
+  update chase.sessions set phase_ends_at = phase_ends_at - make_interval(secs => p_secs) where id = p_session;
 $$;
 
 -- New session + started game with one joined player; returns ids.
+-- countdown_s 0 so 'start' goes straight to 'live' (0003 added the countdown).
 create function pg_temp.setup(p_tag text, p_forbidden jsonb default null, p_start boolean default true)
 returns table (session_id uuid, player_id uuid, host text, tok text) language plpgsql as $$
 declare r jsonb; j jsonb;
 begin
   r := chase.create_session(pg_temp.h('host-' || p_tag), pg_temp.h('teacher-' || p_tag),
                             pg_temp.square(), pg_temp.assembly(), p_forbidden,
+                            p_plan => '{"rounds":[{"mode":"free","duration_s":1800}],"countdown_s":0}',
                             p_teacher_phone => '+47 912 34 567');
   assert (r ->> 'ok')::boolean, 'setup create_session: ' || r::text;
   j := chase.join_session(r ->> 'pin', 'P-' || p_tag, pg_temp.h('tok-' || p_tag), pg_temp.h('res-' || p_tag), 'dev-' || p_tag);
