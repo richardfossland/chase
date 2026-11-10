@@ -7,7 +7,7 @@
 import { vibrate } from "@/lib/client/gps";
 import { playBadge, playBeep, playBlip, playClaim, playFanfare, playGo, playWhistle } from "@/lib/client/sound";
 
-export type Cue = "claim" | "golden" | "lost" | "beep" | "go" | "roundEnd" | "badge";
+export type Cue = "claim" | "golden" | "lost" | "beep" | "go" | "roundEnd" | "badge" | "caught" | "danger";
 
 const PLAN: Record<Cue, { sound: () => void; vibe?: number | number[] }> = {
   claim: { sound: playClaim, vibe: [60, 40, 120] },
@@ -17,6 +17,8 @@ const PLAN: Record<Cue, { sound: () => void; vibe?: number | number[] }> = {
   go: { sound: playGo, vibe: 400 },
   roundEnd: { sound: playWhistle, vibe: [300, 100, 300] },
   badge: { sound: playBadge, vibe: [30, 30, 30] },
+  caught: { sound: playWhistle, vibe: [500, 100, 500] },
+  danger: { sound: playBlip, vibe: [80, 60, 80] },
 };
 
 export function cue(c: Cue): void {

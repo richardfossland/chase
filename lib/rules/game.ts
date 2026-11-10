@@ -38,10 +38,12 @@ export const GAME = {
   cell_m: 20,
 } as const;
 
-export type RoundMode = "free" | "posts";
+export type RoundMode = "free" | "posts" | "tag";
 export interface PlanRound {
   mode: RoundMode;
   duration_s: number;
+  /** Smittejakt only: «smitte» (convert) or «sisten» (swap). */
+  variant?: "convert" | "swap";
 }
 export interface Plan {
   rounds: PlanRound[];
@@ -68,9 +70,13 @@ export function normPlan(p: Partial<Plan> & { rounds?: unknown }): Plan | null {
   const rounds: PlanRound[] = [];
   for (const r of p.rounds as unknown as Array<Record<string, unknown>>) {
     const d = r?.duration_s;
-    if ((r?.mode !== "free" && r?.mode !== "posts") || typeof d !== "number" || !Number.isInteger(d)) return null;
+    if ((r?.mode !== "free" && r?.mode !== "posts" && r?.mode !== "tag") || typeof d !== "number" || !Number.isInteger(d)) return null;
     if (d < GAME.round_min_s || d > GAME.round_max_s) return null;
-    rounds.push({ mode: r.mode, duration_s: d });
+    if (r.mode === "tag") {
+      const v = r.variant ?? "convert";
+      if (v !== "convert" && v !== "swap") return null;
+      rounds.push({ mode: "tag", duration_s: d, variant: v });
+    } else rounds.push({ mode: r.mode, duration_s: d });
   }
   const cd = p.countdown_s ?? GAME.countdown_s;
   const br = p.breather_s ?? GAME.breather_s;
@@ -129,5 +135,7 @@ export function formatClock(s: number | null): string {
 }
 
 /** Badge ids awarded by chase._award_badges() / claim_qr(). */
-export const BADGES = ["first_post", "golden", "posts_5", "qr", "km_1", "active_10", "explorer_25"] as const;
+export const BADGES = [
+  "first_post", "golden", "posts_5", "qr", "km_1", "active_10", "explorer_25", "first_catch", "catches_5", "survivor",
+] as const;
 export type Badge = (typeof BADGES)[number];

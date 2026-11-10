@@ -67,8 +67,11 @@ if (args.create) {
     plan: {
       rounds: args.plan
         ? String(args.plan).split(",").map((x) => {
+            // posts:360 | free:180 | convert:300 | swap:300
             const [mode, secs] = x.split(":");
-            return { mode, duration_s: Number(secs) };
+            return mode === "convert" || mode === "swap"
+              ? { mode: "tag", variant: mode, duration_s: Number(secs) }
+              : { mode, duration_s: Number(secs) };
           })
         : [{ mode: "free", duration_s: Math.max(60, Math.round(minutes * 60)) }],
       countdown_s: Number(args.countdown ?? 10),
@@ -150,6 +153,14 @@ if (args.assert) {
     if (summary.game.rounds !== want) problems.push(`${summary.game.rounds} av ${want} runder`);
     if (String(args.plan).includes("posts") && summary.game.claims === 0) problems.push("ingen poster tatt");
     if (summary.game.duplicateClaims > 0) problems.push(`${summary.game.duplicateClaims} poster tatt to ganger`);
+    if (/convert|swap/.test(String(args.plan))) {
+      const fails = Object.entries(summary.game.catchFails)
+        .filter(([k]) => k === "too_far" || k === "no_fix")
+        .reduce((s, [, n]) => s + n, 0);
+      const tries = summary.game.catches + fails;
+      if (summary.game.catches === 0) problems.push("ingen fangster");
+      else if (fails / tries > 0.1) problems.push(`${fails} av ${tries} fangstforsøk avvist (> 10 % tvist)`);
+    }
   }
   const errs = Object.entries(summary.errors).filter(([k]) => !k.includes("stale"));
   if (errs.length) problems.push(`feil: ${JSON.stringify(Object.fromEntries(errs))}`);

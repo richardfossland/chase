@@ -107,3 +107,42 @@ export function setPosts(
     })),
   });
 }
+
+/** Smittejakt radar for hunters: last pinged prey positions, fading with age. */
+export function addRadarLayer(m: MlMap) {
+  m.addSource("radar", { type: "geojson", data: EMPTY });
+  m.addLayer({
+    id: "radar-ring",
+    type: "circle",
+    source: "radar",
+    paint: {
+      "circle-radius": 16,
+      "circle-color": "#3d9bff",
+      "circle-opacity": ["interpolate", ["linear"], ["get", "age"], 0, 0.35, 30, 0.05],
+      "circle-stroke-color": "#ffffff",
+      "circle-stroke-width": 1,
+      "circle-stroke-opacity": ["interpolate", ["linear"], ["get", "age"], 0, 0.9, 30, 0.2],
+    },
+  });
+  m.addLayer({
+    id: "radar-dot",
+    type: "circle",
+    source: "radar",
+    paint: {
+      "circle-radius": 6,
+      "circle-color": "#3d9bff",
+      "circle-opacity": ["interpolate", ["linear"], ["get", "age"], 0, 1, 30, 0.3],
+    },
+  });
+}
+
+export function setRadar(m: MlMap, pings: { pos: { lat: number; lng: number }; age_s: number }[]) {
+  m.getSource<GeoJSONSource>("radar")?.setData({
+    type: "FeatureCollection",
+    features: pings.map((p) => ({
+      type: "Feature",
+      properties: { age: p.age_s },
+      geometry: { type: "Point", coordinates: [p.pos.lng, p.pos.lat] },
+    })),
+  });
+}

@@ -103,6 +103,9 @@ export interface HostPlayer {
   round_points: number;
   posts: number;
   badges: number;
+  catches: number;
+  times_caught: number;
+  immune: boolean;
   distance_m: number;
   active_s: number;
 }
@@ -116,6 +119,7 @@ export interface RoundView {
   phase_ends_at: string | null;
   frozen: boolean;
   qr: boolean;
+  variant: "convert" | "swap" | null;
   next: PlanRound | null;
 }
 
@@ -183,6 +187,7 @@ export interface TickView {
   lost: boolean;
   new_badges: Badge[];
   summary: RoundSummary | null;
+  tag?: TagView;
   safety: { geofence: 0 | 1 | 2 | 3; forbidden: boolean; outside_m: number; uncertain: boolean };
   sos: { id: string; acked: boolean } | null;
   gather: { assembly: LatLng; distance_m: number; checked_in: boolean } | null;
@@ -202,6 +207,28 @@ export interface PlayerBootstrap {
 export type HostAction =
   | "start" | "next" | "extend" | "pause" | "resume" | "message" | "gather" | "end_gather"
   | "check_in" | "rename" | "kick" | "sit_out";
+
+/** Smittejakt layer of the tick view (chase._mode_tick). Never other players' exact positions for prey. */
+export interface TagView {
+  variant: "convert" | "swap";
+  code: string | null;
+  immune_until: string | null;
+  role_changed_at: string | null;
+  hunters: number;
+  prey: number;
+  prey_near?: number;
+  radar?: { pos: LatLng; age_s: number; stealth: boolean }[];
+  hunter_near?: boolean;
+}
+
+export interface CatchResult {
+  nickname: string;
+  points: number;
+  variant: "convert" | "swap";
+  last: boolean;
+  immuneUntil: string | null;
+  newBadges: Badge[];
+}
 
 export interface QrResult {
   n: number;
@@ -230,6 +257,8 @@ export const api = {
     post<PlayerBootstrap>(`/api/s/${sessionId}/me`, { playerId, token }),
   tick: (sessionId: string, body: { playerId: string; token: string; lat: number; lng: number; acc: number; speed?: number | null; ts?: number }) =>
     post<TickView>(`/api/s/${sessionId}/tick`, body, 6000),
+  catch: (sessionId: string, body: { playerId: string; token: string; code: string }) =>
+    post<CatchResult>(`/api/s/${sessionId}/catch`, body, 8000),
   qr: (sessionId: string, body: { playerId: string; token: string; code: string }) =>
     post<QrResult>(`/api/s/${sessionId}/qr`, body, 8000),
   sos: (sessionId: string, body: { playerId: string; token: string; lat?: number; lng?: number }) =>

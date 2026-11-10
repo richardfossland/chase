@@ -7,8 +7,9 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { ApiError, api, type PlayerBootstrap, type PostView, type RoundSummary, type TickView } from "@/lib/client/api";
+import { ApiError, api, type PlayerBootstrap, type PostView, type RoundSummary, type TagView, type TickView } from "@/lib/client/api";
 import { cue } from "@/lib/client/feedback";
+import { QRCode } from "@/lib/client/QRCode";
 import { QrScanner } from "@/lib/client/QrScanner";
 import { identity, type StoredPlayer } from "@/lib/client/identity";
 import { useDeviceGps, useSimGps, useWakeLock, vibrate, type Fix, type GpsState, type SimControls } from "@/lib/client/gps";
@@ -16,15 +17,20 @@ import { playBuzzer, playDing, unlockAudio } from "@/lib/client/sound";
 import { useChannel } from "@/lib/client/useChannel";
 import { no } from "@/lib/locale/no";
 import { bearing, haversine } from "@/lib/geo";
-import { addMeLayer, addPostsLayer, addSessionLayers, boundsOf, setMe, setPosts } from "@/lib/map/layers";
+import { addMeLayer, addPostsLayer, addRadarLayer, addSessionLayers, boundsOf, setMe, setPosts, setRadar } from "@/lib/map/layers";
 import { loadMapLibre } from "@/lib/map/maplibre";
 import { kartverketStyle } from "@/lib/map/style";
 import { channels } from "@/lib/realtime";
-import { formatClock, phaseLeftS } from "@/lib/rules/game";
+import { formatClock, phaseLeftS, type PlanRound } from "@/lib/rules/game";
+import { catchQr, parseCatch } from "@/lib/rules/tag";
 import { SAFETY } from "@/lib/rules/safety";
 import { parseQr } from "@/lib/qr";
 
 const t = no.play;
+
+function roundTitle(r: { mode: string; variant?: string | null }): string {
+  return r.mode === "tag" ? t.variants[r.variant ?? "convert"] : t.modes[r.mode];
+}
 const SIM_ALLOWED = process.env.NODE_ENV !== "production" || process.env.NEXT_PUBLIC_SIM_ENABLED === "1";
 const FAST_MS = 2000; // active round / gathering (PLAN §9.2)
 const SLOW_MS = 10000; // lobby / pause
@@ -99,6 +105,8 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
   const [badgeToast, setBadgeToast] = useState<{ id: number; text: string } | null>(null);
   const [scanning, setScanning] = useState(false);
   const [scanBusy, setScanBusy] = useState(false);
+  const [catching, setCatching] = useState(false);
+  const [showCode, setShowCode] = useState(false);
   const [offsetMs, setOffsetMs] = useState(0); // server − client clock (rule 6: server time is the truth)
 
   const fixRef = useRef<Fix | null>(null);
@@ -149,6 +157,12 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
       setTimeout(() => cue("badge"), view.claimed ? 700 : 0);
       setBadgeToast({ id: Date.now(), text: view.new_badges.map((b) => t.badges[b] ?? b).join(" · ") });
     }
+    // Smittejakt: my role flipped without me catching anyone → I was caught.
+    if (p && p.status === "live" && view.status === "live" && p.role === "prey" && view.role === "hunter") {
+      cue("caught");
+      setFlash({ id: Date.now(), text: t.caughtYou, sub: t.nowHunter, tone: "dim" });
+    }
+    if (view.tag?.hunter_near && !p?.tag?.hunter_near) cue("danger");
     if (p && p.status !== view.status) {
       if (view.status === "live" && (p.status === "countdown" || p.status === "breather")) cue("go");
       if (p.status === "live" && (view.status === "breather" || view.status === "gathering")) cue("roundEnd");
@@ -276,6 +290,36 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
     cue("beep");
   }, [status, leftNow, view?.round?.idx]);
 
+  const onCatch = useCallback(
+    async (text: string) => {
+      const code = parseCatch(text);
+      if (!code || scanBusy) {
+        if (!code) setFlash({ id: Date.now(), text: t.catchErr.bad_code, tone: "dim" });
+        return;
+      }
+      setScanBusy(true);
+      try {
+        const r = await api.catch(sessionId, { playerId: me.playerId, token: me.token, code });
+        setCatching(false);
+        cue("claim");
+        setFlash({
+          id: Date.now(),
+          text: t.caught(r.nickname, r.points),
+          sub: r.last ? t.lastCaught : r.variant === "swap" ? t.nowPrey : undefined,
+          tone: "ok",
+        });
+        if (r.newBadges.length) setBadgeToast({ id: Date.now(), text: r.newBadges.map((b) => t.badges[b] ?? b).join(" · ") });
+        void tickNow();
+      } catch (e) {
+        const c = e instanceof ApiError ? e.code : "";
+        setFlash({ id: Date.now(), text: t.catchErr[c] ?? t.qrError, tone: "dim" });
+      } finally {
+        setTimeout(() => setScanBusy(false), 1200);
+      }
+    },
+    [me.playerId, me.token, scanBusy, sessionId, tickNow],
+  );
+
   const onScan = useCallback(
     async (text: string) => {
       const code = parseQr(text, sessionId);
@@ -370,6 +414,11 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
   const nearest = nearestPost(gps.fix, posts);
   const summary = view?.summary ?? null;
   const playlistDone = status === "gathering" && !!summary && !!round && round.idx === round.count - 1;
+  const tag: TagView | null = (status === "live" || status === "paused") && mode === "tag" ? (view?.tag ?? null) : null;
+  const role = view?.role;
+  const isHunter = !!tag && role === "hunter";
+  const isPrey = !!tag && role === "prey";
+  const immuneLeft = tag?.immune_until ? phaseLeftS(tag.immune_until, offsetMs, now) : null;
 
   // Banner: one main message, most urgent first (safety beats game).
   let tone: Tone = "neutral";
@@ -378,11 +427,19 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
   if (status === "countdown" && round) {
     tone = "warn";
     title = t.countdown;
-    body = `${t.roundOf(round.idx + 1, round.count)} · ${t.modes[mode]}`;
+    body = `${t.roundOf(round.idx + 1, round.count)} · ${roundTitle(round)}`;
   }
-  if (status === "live") {
+  if (status === "live" && isHunter && tag) {
+    tone = "hunter";
+    title = t.hunter;
+    body = tag.prey_near ? t.preyNear(tag.prey_near) : t.hunterHint;
+  } else if (status === "live" && isPrey && tag) {
     tone = "live";
-    title = t.modes[mode];
+    title = t.prey;
+    body = immuneLeft ? t.immune(immuneLeft) : tag.hunter_near ? t.hunterNear : t.preyHint;
+  } else if (status === "live") {
+    tone = "live";
+    title = roundTitle(round ?? { mode });
     body =
       view?.claim ? t.claiming
       : mode === "posts" && nearest ? t.nearestPost(nearest.m, t.dirs[Math.round(nearest.deg / 45) % 8])
@@ -459,8 +516,20 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
         )}
       </header>
 
-      <div className="relative min-h-0 flex-1">
-        <PlayerMap boot={boot} fix={gps.fix} posts={posts} activeId={view?.claim?.post_id ?? null} />
+      {tag && (
+        <div className="flex items-center justify-between gap-2 px-4 pb-2 text-sm font-bold">
+          <span className="opacity-90">{t.counts(tag.hunters, tag.prey)}</span>
+          {isPrey && tag.code && (
+            <button className="rounded-full bg-black/30 px-3 py-1 font-mono font-black tracking-widest" onClick={() => setShowCode(true)}>
+              {t.yourCode} {tag.code}
+            </button>
+          )}
+          {isHunter && tag.radar?.length ? <span className="opacity-80">{t.radarAge(Math.min(...tag.radar.map((r) => r.age_s)))}</span> : null}
+        </div>
+      )}
+
+      <div className={`relative min-h-0 flex-1 ${tag?.hunter_near && !immuneLeft ? "ring-[10px] ring-inset ring-hunter animate-pulse" : ""}`}>
+        <PlayerMap boot={boot} fix={gps.fix} posts={posts} activeId={view?.claim?.post_id ?? null} radar={isHunter ? (tag?.radar ?? []) : []} />
         {sim && <SimPad sim={sim} />}
         {summary && (status === "breather" || status === "gathering") && (
           <SummaryCard summary={summary} next={status === "breather" ? (round?.next ?? null) : null} />
@@ -469,6 +538,27 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
 
       <footer className="flex items-center gap-3 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         <SosButton onFire={sendSos} disabled={!!sosOpen} />
+        {isHunter && status === "live" && (
+          <button
+            className="flex-1 rounded-2xl border-2 border-white bg-hunter px-4 py-4 text-center text-lg font-black text-white"
+            onClick={() => {
+              unlockAudio();
+              setCatching(true);
+            }}
+            data-testid="catch"
+          >
+            {t.catchBtn}
+          </button>
+        )}
+        {isPrey && tag?.code && (
+          <button
+            className="flex-1 rounded-2xl border border-white/30 bg-black/30 px-4 py-4 text-center text-lg font-black"
+            onClick={() => setShowCode(true)}
+            data-testid="show-code"
+          >
+            {t.showCode}
+          </button>
+        )}
         {round?.qr && status === "live" && mode === "posts" && (
           <button
             className="flex-1 rounded-2xl border border-white/30 bg-black/30 px-4 py-4 text-center text-lg font-black"
@@ -508,7 +598,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
       {flash && (
         <div
           key={flash.id}
-          className={`pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center text-center ${
+          className={`pointer-events-none absolute inset-0 z-40 flex flex-col items-center justify-center text-center ${
             flash.tone === "gold" ? "bg-gold/85 text-ink" : flash.tone === "ok" ? "bg-ok/80 text-ink" : "bg-black/60 text-white"
           } animate-[flash_1.6s_ease-out_forwards]`}
           role="status"
@@ -520,6 +610,22 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
       )}
 
       {scanning && <QrScanner onCode={onScan} onClose={() => setScanning(false)} busy={scanBusy} />}
+      {catching && isHunter && (
+        <QrScanner onCode={onCatch} onClose={() => setCatching(false)} busy={scanBusy} title={t.catchTitle} codeLabel={t.preyCode} numeric />
+      )}
+      {showCode && isPrey && tag?.code && (
+        <button
+          className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-white p-6 text-center text-ink"
+          onClick={() => setShowCode(false)}
+          data-testid="code-sheet"
+        >
+          <p className="text-2xl font-black">{t.yourCode}</p>
+          <QRCode value={catchQr(tag.code)} size={260} />
+          <p className="font-mono text-7xl font-black tracking-[0.2em]">{tag.code}</p>
+          <p className="text-lg font-bold">{t.codeHint}</p>
+          <p className="text-sm font-bold opacity-60">{no.qr.close}</p>
+        </button>
+      )}
 
       {(sosOpen || sosAcked) && (
         <div
@@ -546,10 +652,11 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
   );
 }
 
-type Tone = "neutral" | "live" | "pause" | "edge" | "warn" | "danger" | "ok";
+type Tone = "neutral" | "live" | "hunter" | "pause" | "edge" | "warn" | "danger" | "ok";
 const TONE_BG: Record<Tone, string> = {
   neutral: "bg-ink text-txt",
   live: "bg-prey text-white",
+  hunter: "bg-hunter text-white",
   pause: "bg-ink-3 text-txt",
   edge: "bg-prey text-white ring-[10px] ring-inset ring-warn",
   warn: "bg-warn text-ink",
@@ -568,7 +675,19 @@ function GpsChip({ fix, lost }: { fix: Fix | null; lost: boolean }) {
   );
 }
 
-function PlayerMap({ boot, fix, posts, activeId }: { boot: PlayerBootstrap; fix: Fix | null; posts: PostView[]; activeId: string | null }) {
+function PlayerMap({
+  boot,
+  fix,
+  posts,
+  activeId,
+  radar,
+}: {
+  boot: PlayerBootstrap;
+  fix: Fix | null;
+  posts: PostView[];
+  activeId: string | null;
+  radar: NonNullable<TagView["radar"]>;
+}) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<MlMap | null>(null);
   const [ready, setReady] = useState(false);
@@ -588,6 +707,7 @@ function PlayerMap({ boot, fix, posts, activeId }: { boot: PlayerBootstrap; fix:
       m.on("load", () => {
         addSessionLayers(m, boot.geo);
         addPostsLayer(m);
+        addRadarLayer(m);
         addMeLayer(m);
         setReady(true);
       });
@@ -607,6 +727,10 @@ function PlayerMap({ boot, fix, posts, activeId }: { boot: PlayerBootstrap; fix:
   useEffect(() => {
     if (ready && map.current) setPosts(map.current, posts, activeId);
   }, [ready, posts, activeId]);
+
+  useEffect(() => {
+    if (ready && map.current) setRadar(map.current, radar);
+  }, [ready, radar]);
 
   return (
     <div className="absolute inset-0">
@@ -765,7 +889,7 @@ function nearestPost(fix: Fix | null, posts: PostView[]): { m: number; deg: numb
 }
 
 /** Breather / end card: this round's effort (PLAN §13 phase 2 «rundeoppsummering»). */
-function SummaryCard({ summary, next }: { summary: RoundSummary; next: { mode: "free" | "posts"; duration_s: number } | null }) {
+function SummaryCard({ summary, next }: { summary: RoundSummary; next: PlanRound | null }) {
   const cell = "rounded-xl bg-black/30 p-3";
   return (
     <div className="absolute inset-x-3 bottom-3 z-10 rounded-2xl border border-line bg-ink-2/95 p-4 text-txt shadow-2xl backdrop-blur" data-testid="summary">
@@ -792,7 +916,7 @@ function SummaryCard({ summary, next }: { summary: RoundSummary; next: { mode: "
       {summary.badges.length > 0 && (
         <p className="mt-1 text-sm font-bold">{summary.badges.map((b) => t.badges[b] ?? b).join(" · ")}</p>
       )}
-      {next && <p className="mt-3 font-extrabold">{t.next(t.modes[next.mode], Math.round(next.duration_s / 60))}</p>}
+      {next && <p className="mt-3 font-extrabold">{t.next(roundTitle(next), Math.round(next.duration_s / 60))}</p>}
     </div>
   );
 }

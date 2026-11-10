@@ -35,6 +35,8 @@ export interface BotStep {
 /** What a bot learns from its last tick response (phase 2): posts to run to, game phase. */
 export interface BotView {
   status?: string;
+  role?: string;
+  tag?: { radar?: { pos: { lat: number; lng: number } }[]; hunter_near?: boolean } | null;
   posts?: { pos: { lat: number; lng: number } }[] | null;
   gather?: { checked_in: boolean } | null;
 }
@@ -139,6 +141,12 @@ export function createBot(kind: Behaviour, geo: SimGeo, opts: BotOptions) {
       if (!view.gather?.checked_in) seek(a as XY, dt, 1.4);
     } else if (!special && view.status === "breather") {
       wander(dt, 0.5, true);
+    } else if (!special && view.status === "live" && view.role === "hunter" && view.tag?.radar?.length) {
+      // Smittejakt hunter: run to the freshest radar ping.
+      const ping = view.tag.radar[0].pos;
+      seek(proj.toXY([ping.lng, ping.lat]) as XY, dt, baseSpeed + 0.5);
+    } else if (!special && view.status === "live" && view.role === "prey" && view.tag?.hunter_near) {
+      wander(dt, baseSpeed + 1, true);   // prey: sprint somewhere when the ring pulses
     } else if ((kind === "runner" || kind === "hider") && view.status === "live" && nearestPostXY()) {
       seek(nearestPostXY()!, dt, kind === "hider" ? 1.5 : baseSpeed);
     } else switch (kind) {

@@ -26,7 +26,10 @@ export const createSessionBody = z.object({
   // Shape only; chase._norm_plan() is the authority on limits (twin: lib/rules/game.ts).
   plan: z
     .object({
-      rounds: z.array(z.object({ mode: z.enum(["free", "posts"]), duration_s: z.number().int() })).min(1).max(10),
+      rounds: z
+        .array(z.object({ mode: z.enum(["free", "posts", "tag"]), duration_s: z.number().int(), variant: z.enum(["convert", "swap"]).optional() }))
+        .min(1)
+        .max(10),
       countdown_s: z.number().int().optional(),
       breather_s: z.number().int().optional(),
       qr_posts: z.number().int().optional(),
@@ -59,6 +62,7 @@ export const tickBody = playerAuth.extend({
 });
 
 export const qrBody = playerAuth.extend({ code: z.string().min(3).max(16) });
+export const catchBody = playerAuth.extend({ code: z.string().min(4).max(32) });
 
 export const sosBody = playerAuth.extend({ lat: lat.optional(), lng: lng.optional() });
 

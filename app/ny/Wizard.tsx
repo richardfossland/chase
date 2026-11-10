@@ -686,6 +686,7 @@ function DrawControls(props: {
 }
 
 const ROUND_MINUTES = [3, 4, 5, 6, 8, 10, 15];
+const ROUND_KINDS = ["posts", "convert", "swap", "free"] as const;
 const BREATHERS = [0, 30, 60, 90, 120];
 const QR_COUNTS = [0, 4, 6, 8, 12];
 
@@ -723,12 +724,21 @@ function PlaylistEditor(props: { plan: Plan; onChange: (p: Plan) => void; chip: 
                 </button>
               </div>
             </div>
-            <div className="mt-2 flex gap-1.5">
-              {(["posts", "free"] as RoundMode[]).map((m) => (
-                <button key={m} className={chip(r.mode === m)} onClick={() => setRound(i, { mode: m })}>
-                  {p.modes[m]}
-                </button>
-              ))}
+            <div className="mt-2 grid grid-cols-2 gap-1.5">
+              {ROUND_KINDS.map((k) => {
+                const on = r.mode === "tag" ? r.variant === k : r.mode === k;
+                return (
+                  <button
+                    key={k}
+                    className={chip(on)}
+                    onClick={() =>
+                      setRound(i, k === "convert" || k === "swap" ? { mode: "tag", variant: k } : { mode: k as RoundMode, variant: undefined })
+                    }
+                  >
+                    {p.modes[k]}
+                  </button>
+                );
+              })}
             </div>
             <div className="mt-2 flex flex-wrap gap-1.5">
               {ROUND_MINUTES.map((m) => (

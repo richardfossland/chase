@@ -22,6 +22,7 @@ export function dotState(p: HostPlayer, sos: boolean, status: SessionStatus) {
   if (p.signal === "lost" || p.signal === "none") return { bg: "#6b7280", ring: "#ffffff", pulse: false };
   if (status === "gathering") return p.checked_in ? { bg: "#4fd18b", ring: "#ffffff", pulse: false } : { bg: "#ffb020", ring: "#ffffff", pulse: false };
   if (p.role === "sitting_out") return { bg: "#a78bfa", ring: "#ffffff", pulse: false };
+  if (p.role === "hunter") return { bg: "#ff5a4e", ring: p.geofence === 1 ? "#ffb020" : "#ffffff", pulse: false };
   if (p.geofence === 1) return { bg: "#3d9bff", ring: "#ffb020", pulse: false };
   if (p.signal === "uncertain") return { bg: "#3d9bff", ring: "#9ca3af", pulse: false };
   return { bg: "#3d9bff", ring: "#ffffff", pulse: false };

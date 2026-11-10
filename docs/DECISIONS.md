@@ -259,3 +259,33 @@ standard spilleliste, og **syntetisert WebAudio** for lyd (ingen lydfiler).
   - Ikke dekket før den felles utetesten: låst skjerm i pustepausen (ny GPS innen 10 s etter opplåsing) og
     posttvist med ekte GPS. Kameraskanneren er ikke prøvd på ekte telefon, fordi nettleserpanelet ikke har kamera.
     Kodeinntasting er testet.
+
+## ADR-021 — Fase 3: valg og del 1, Smittejakt (2026-11-10)
+Eierens valg 2026-11-10:
+- Seremonien vises på **lærerens mobil og elevmobilene** samtidig, og storskjerm kommer i fase 7.
+- Malen «Full gymtime» er **variert**: fri løping 3 → postjakt 6 → smittejakt 6 → postjakt med sone 6 → sisten med sone 6, med 60 s pauser.
+- Fase 3 leveres **i tre deler med deploy**: 1) Smittejakt og synlighet, 2) krympende sone, 3) overstyring, paller, seremoni og maler.
+- «Vil spille igjen» lagres bare som **anonym telling**.
+
+**Del 1** (`0004_tag.sql`):
+- **Modus `tag`** har variantene `convert` (smitte) og `swap` (sisten). I veiviseren heter de «Smittejakt» og «Sisten».
+- **Roller deles ut ved rundestart:** omtrent 15 % jegere, minst 1. Elever som sitter over, er ikke med i utdelingen.
+- **Fangstkoder:** alle får en kode på fire sifre som er unik i økta, og alle kodene deles ut samtidig så de ikke kolliderer. Koden roteres etter hver fangst og ved hver runde.
+- **`chase.catch()`** kontrollerer rolle, at runden er i gang, avstand ≤ `min(50, max(30, accA + accB))` med ferske posisjoner (under 20 s), immunitet og kode.
+  - Jegeren får +15. Andre jegere som var innenfor 30 m av byttet de siste 10 s, får +5 i assist.
+  - I sisten bytter jeger og bytte roller, og den nye byttet får 20 s immunitet (ingen tag-back).
+  - I smitte blir byttet jeger. Når det siste byttet er tatt, får det +25 og runden slutter.
+  - Bytter får +1 per 5 s de overlever. I smitte får de som overlever til tiden er ute, +25 og merket «Overlevde».
+- **Fangster serialiseres** med en egen advisory-lock per økt, som tas før noen radlås. Det gir eksakt «siste bytte» og ingen dobbel fangst, og den kan ikke gi deadlock med `tick()`, som låser spiller → økt.
+- **Mislykkede forsøk** logges som `catch_fail` med årsak (`too_far`, `no_fix`, `immune`, `bad_code` …). Det er grunnlaget for «90 % uten tvist».
+- **Synlighet** (PLAN § 9.3, avgjort i SQL):
+  - Jegere får radarping av byttene hvert 30. s, hvert 10. s for et bytte som har stått stille i over 15 s, og pingen hoppes over ved fart over 2 m/s («stealth»).
+  - Jegere får også «Bytte i nærheten» når et bytte er under 30 m unna.
+  - Bytter ser bare en pulserende ring når en jeger er innenfor 60 m, aldri et punkt.
+- **Modus-kroker:** `_mode_begin`, `_mode_finish`, `_mode_upkeep` og `_mode_tick` er utvidelsespunkter, så del 2 (sone) slipper å kopiere `tick()` igjen.
+- **Pause** forskyver også overlevelsesklokka og immuniteten.
+- **Klient:**
+  - Jegeren har rød skjerm med radarprikker som blekner, og en «Fang»-knapp som åpner kameraskanner med sifferfelt.
+  - Byttet har blå skjerm, «Vis koden min» med stor QR og fire sifre, varselring og skjoldnedtelling.
+  - Begge får blink, lyd og vibrasjon ved fangst, og når rollen deres skifter.
+- **Sim:** jegerboter løper mot den ferskeste radarpingen og «tar» et bytte innenfor 12 m med koden til byttet. `--assert` feiler hvis mer enn 10 % av forsøkene avvises som tvist (`too_far` eller `no_fix`). Lokalt med 20 boter og spillelista smitte 150 s + sisten 150 s ble det 38 fangster med 0 tvister, og spillelista gikk til samling av seg selv. `immune` og `bad_code` (utdatert kode i botens visning) er forventet og telles ikke som tvist.

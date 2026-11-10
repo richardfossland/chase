@@ -13,7 +13,21 @@ type Detector = { detect: (src: CanvasImageSource) => Promise<{ rawValue: string
  * BarcodeDetector where the browser has it (Android Chrome); jsQR on canvas
  * frames elsewhere (iOS Safari). Nothing leaves the phone except the code.
  */
-export function QrScanner({ onCode, onClose, busy }: { onCode: (text: string) => void; onClose: () => void; busy: boolean }) {
+export function QrScanner({
+  onCode,
+  onClose,
+  busy,
+  title = t.title,
+  codeLabel = t.codeLabel,
+  numeric = false,
+}: {
+  onCode: (text: string) => void;
+  onClose: () => void;
+  busy: boolean;
+  title?: string;
+  codeLabel?: string;
+  numeric?: boolean;
+}) {
   const video = useRef<HTMLVideoElement>(null);
   const [camError, setCamError] = useState(false);
   const [typed, setTyped] = useState("");
@@ -77,9 +91,9 @@ export function QrScanner({ onCode, onClose, busy }: { onCode: (text: string) =>
   }, [onCode]);
 
   return (
-    <div className="absolute inset-0 z-30 flex flex-col bg-ink text-txt" role="dialog" aria-label={t.title}>
+    <div className="absolute inset-0 z-30 flex flex-col bg-ink text-txt" role="dialog" aria-label={title}>
       <div className="flex items-center justify-between px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3">
-        <h2 className="text-2xl font-black">{t.title}</h2>
+        <h2 className="text-2xl font-black">{title}</h2>
         <button className="rounded-xl border border-line px-4 py-2 font-bold" onClick={onClose}>
           {t.close}
         </button>
@@ -105,13 +119,14 @@ export function QrScanner({ onCode, onClose, busy }: { onCode: (text: string) =>
       >
         <input
           value={typed}
-          onChange={(e) => setTyped(e.target.value.toUpperCase())}
-          placeholder={t.codePlaceholder}
-          maxLength={7}
+          onChange={(e) => setTyped(numeric ? e.target.value.replace(/\D/g, "") : e.target.value.toUpperCase())}
+          placeholder={numeric ? "0000" : t.codePlaceholder}
+          maxLength={numeric ? 4 : 7}
+          inputMode={numeric ? "numeric" : "text"}
           autoCapitalize="characters"
           autoComplete="off"
           className="min-w-0 flex-1 rounded-xl border border-line bg-ink-2 px-3 py-3 text-center text-2xl font-black tracking-[0.3em] outline-none focus:border-gold"
-          aria-label={t.codeLabel}
+          aria-label={codeLabel}
         />
         <button className="rounded-xl bg-gold px-5 py-3 text-lg font-extrabold text-ink disabled:opacity-40" disabled={busy || !typed.trim()}>
           {t.send}

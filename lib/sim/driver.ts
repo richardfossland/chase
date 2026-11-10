@@ -56,6 +56,8 @@ export interface SimStats {
     statuses: string[];          // teacher-side status sequence (deduplicated)
     playlistDone: boolean;
     rounds: number;
+    catches: number;
+    catchFails: Record<string, number>;
   };
 }
 
@@ -103,7 +105,7 @@ export function startSwarm(opts: SwarmOptions) {
     errors: {},
     latencies: [],
     alarms: [],
-    game: { claims: 0, golden: 0, lost: 0, qr: 0, duplicateClaims: 0, claimedIds: new Set(), statuses: [], playlistDone: false, rounds: 0 },
+    game: { claims: 0, golden: 0, lost: 0, qr: 0, duplicateClaims: 0, claimedIds: new Set(), statuses: [], playlistDone: false, rounds: 0, catches: 0, catchFails: {} },
   };
   const players: SimPlayer[] = [];
   const timers: ReturnType<typeof setInterval>[] = [];
@@ -163,9 +165,39 @@ export function startSwarm(opts: SwarmOptions) {
         stats.game.claimedIds.add(claimed.post_id);
       }
       if (r.data.lost) stats.game.lost++;
+      void tryCatch(p);
       // A signal-loss check is satisfied once the bot reports again.
       stats.alarms = stats.alarms.filter((a) => !(a.player === p.playerId && a.kind === "signal" && a.seenAt === null && a.expectedAt > Date.now()));
     } else err(`tick_${r.status}_${String(r.data.error ?? "")}`);
+  }
+
+  // Smittejakt: a hunter bot that the server says is near prey looks for a prey
+  // bot within 12 m (true positions, the "touch") and scans its code.
+  const lastTry = new Map<string, number>();
+  async function tryCatch(h: SimPlayer) {
+    const v = h.view as { status?: string; role?: string; tag?: { prey_near?: number } } | null;
+    if (!v || v.status !== "live" || v.role !== "hunter" || !v.tag?.prey_near) return;
+    if (Date.now() - (lastTry.get(h.playerId) ?? 0) < 4000) return;
+    const hp = h.bot.truePos();
+    const target = players.find((q) => {
+      const qv = q.view as { role?: string; tag?: { code?: string | null; immune_until?: string | null } } | null;
+      if (!qv || qv.role !== "prey" || !qv.tag?.code || q === h) return false;
+      const qp = q.bot.truePos();
+      const dy = (qp.lat - hp.lat) * 111_320;
+      const dx = (qp.lng - hp.lng) * 111_320 * Math.cos((hp.lat * Math.PI) / 180);
+      return Math.hypot(dx, dy) < 12;
+    });
+    if (!target) return;
+    lastTry.set(h.playerId, Date.now());
+    const code = (target.view as { tag: { code: string } }).tag.code;
+    const r = await opts.transport.post(`/api/s/${sessionId}/catch`, { playerId: h.playerId, token: h.token, code });
+    if (r.status === 200) {
+      stats.game.catches++;
+      log(`🦠 ${h.nickname} fanget ${target.nickname}`);
+    } else {
+      const k = String(r.data.error ?? r.status);
+      stats.game.catchFails[k] = (stats.game.catchFails[k] ?? 0) + 1;
+    }
   }
 
   async function pollHost() {
@@ -287,6 +319,8 @@ export function summarize(stats: SimStats) {
       duplicateClaims: stats.game.duplicateClaims,
       rounds: stats.game.rounds,
       playlistDone: stats.game.playlistDone,
+      catches: stats.game.catches,
+      catchFails: stats.game.catchFails,
       statuses: stats.game.statuses,
     },
     ticks: stats.ticks,

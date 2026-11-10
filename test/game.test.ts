@@ -25,7 +25,8 @@ describe("GAME twin of chase.kg()", () => {
     expect(Object.fromEntries(pairs)).toEqual(GAME);
   });
   it("badge ids match the SQL", () => {
-    for (const b of BADGES) expect(sql).toContain(`'${b}'`);
+    const all = sql + readFileSync(new URL("../supabase/migrations/0004_tag.sql", import.meta.url), "utf8");
+    for (const b of BADGES) expect(all).toContain(`'${b}'`);
   });
 });
 
@@ -42,7 +43,8 @@ describe("normPlan", () => {
   it("rejects what the server rejects", () => {
     const bad: unknown[] = [
       { rounds: [] },
-      { rounds: [{ mode: "tag", duration_s: 300 }] },
+      { rounds: [{ mode: "flag", duration_s: 300 }] },
+      { rounds: [{ mode: "tag", duration_s: 300, variant: "bogus" }] },
       { rounds: [{ mode: "posts", duration_s: 30 }] },
       { rounds: [{ mode: "posts", duration_s: 99999 }] },
       { rounds: [{ mode: "posts", duration_s: "360" }] },
@@ -52,6 +54,10 @@ describe("normPlan", () => {
       { rounds: Array.from({ length: 11 }, () => ({ mode: "free", duration_s: 60 })) },
     ];
     for (const b of bad) expect(normPlan(b as never)).toBeNull();
+  });
+  it("tag rounds carry a variant", () => {
+    expect(normPlan({ rounds: [{ mode: "tag", duration_s: 300 }] })?.rounds[0]).toEqual({ mode: "tag", duration_s: 300, variant: "convert" });
+    expect(normPlan({ rounds: [{ mode: "tag", duration_s: 300, variant: "swap" }] })?.rounds[0].variant).toBe("swap");
   });
   it("default plan is valid and ~21 min", () => {
     expect(normPlan(DEFAULT_PLAN)).toEqual(DEFAULT_PLAN);

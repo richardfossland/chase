@@ -17,6 +17,10 @@ import { useHostSession, type HostSession } from "./useHostSession";
 
 const h = no.host;
 
+function roundName(r: { mode: string; variant?: string | null }): string {
+  return r.mode === "tag" ? h.round.variants[r.variant ?? "convert"] : h.round.modes[r.mode];
+}
+
 type Sheet =
   | null
   | { kind: "player"; id: string }
@@ -401,7 +405,7 @@ function LobbyBoard({
           {plan?.rounds?.length ? (
             <p className="mt-3 text-sm font-bold text-txt-dim">
               {h.round.playlist(plan.rounds.length, Math.round(planTotalS(plan) / 60))}:{" "}
-              {plan.rounds.map((r) => `${h.round.modes[r.mode]} ${Math.round(r.duration_s / 60)}′`).join(" → ")}
+              {plan.rounds.map((r) => `${roundName(r)} ${Math.round(r.duration_s / 60)}′`).join(" → ")}
             </p>
           ) : null}
           {plan?.qr_posts ? (
@@ -521,6 +525,9 @@ function PlayerCard({
         <Stat label={h.card.active} value={no.play.minutes(p.active_s)} />
         <Stat label={h.card.points} value={String(p.points)} />
       </dl>
+      {(p.catches > 0 || p.times_caught > 0) && (
+        <p className="mt-2 text-sm font-bold text-txt-dim">{h.card.tagStats(p.catches, p.times_caught)}</p>
+      )}
       {(p.posts > 0 || p.badges > 0) && (
         <p className="mt-2 text-sm font-bold text-txt-dim">
           {h.card.extra(p.posts, p.badges, p.round_points)}
@@ -714,10 +721,15 @@ function RoundBar({
     <div className="pointer-events-auto flex items-center gap-2 rounded-xl bg-ink-2/95 px-3 py-2 backdrop-blur" data-testid="round-bar">
       <div className="min-w-0 flex-1">
         <p className="text-sm font-black">
-          {h.round.of(r.idx + 1, r.count)} · {h.round.modes[r.mode]}
+          {h.round.of(r.idx + 1, r.count)} · {roundName(r)}
           {snap.status !== "live" ? ` · ${h.status[snap.status]}` : ""}
         </p>
         {live && r.mode === "posts" && <p className="text-xs font-bold text-txt-dim">{h.round.posts(open, taken)}</p>}
+        {live && r.mode === "tag" && (
+          <p className="text-xs font-bold text-txt-dim">
+            {h.round.counts(snap.players.filter((p) => p.role === "hunter").length, snap.players.filter((p) => p.role === "prey").length)}
+          </p>
+        )}
       </div>
       <span className="font-mono text-2xl font-black tabular-nums">{r.frozen ? "⏸" : formatClock(left)}</span>
       {live && (

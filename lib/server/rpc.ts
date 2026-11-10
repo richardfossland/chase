@@ -36,6 +36,10 @@ const STATUS: Record<string, number> = {
   bad_code: 404,
   not_now: 409,
   not_playing: 403,
+  not_hunter: 403,
+  too_far: 409,
+  immune: 409,
+  no_fix: 409,
 };
 
 /** HTTP status for an RPC error code (bad_* and unknown → 400). */
