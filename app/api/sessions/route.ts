@@ -2,6 +2,7 @@ import { rpc, respond, guarded } from "@/lib/server/rpc";
 import { ipKey, limited, parseBody } from "@/lib/server/route";
 import { createSessionBody } from "@/lib/server/schemas";
 import { newToken, sha256Hex } from "@/lib/server/tokens";
+import { DEFAULT_PLAN } from "@/lib/rules/game";
 
 // Teacher creates a session. Returns the raw host token ONCE; only its hash is stored.
 export const POST = guarded(async (req) => {
@@ -17,7 +18,7 @@ export const POST = guarded(async (req) => {
     p_boundary: body.boundary,
     p_assembly: body.assembly,
     p_forbidden: body.forbidden ?? null,
-    p_plan: body.plan ?? { rounds: [{ mode: "free", duration_s: 600 }] },
+    p_plan: body.plan ?? DEFAULT_PLAN,
     p_settings: body.settings ?? {},
     p_teacher_phone: body.teacherPhone ?? null,
     p_is_sim: body.sim === true && process.env.SIM_ENABLED === "1",

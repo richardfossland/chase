@@ -45,6 +45,18 @@ export interface SimStats {
   errors: Record<string, number>;
   latencies: number[];
   alarms: AlarmCheck[];
+  /** Phase 2 game accounting. */
+  game: {
+    claims: number;
+    golden: number;
+    lost: number;
+    qr: number;
+    duplicateClaims: number;
+    claimedIds: Set<string>;
+    statuses: string[];          // teacher-side status sequence (deduplicated)
+    playlistDone: boolean;
+    rounds: number;
+  };
 }
 
 export interface SwarmOptions {
@@ -85,7 +97,14 @@ const KIND_NO: Record<Behaviour, string> = {
 export function startSwarm(opts: SwarmOptions) {
   const tickMs = opts.tickMs ?? 2000;
   const log = opts.onLog ?? (() => {});
-  const stats: SimStats = { startedAt: Date.now(), ticks: 0, errors: {}, latencies: [], alarms: [] };
+  const stats: SimStats = {
+    startedAt: Date.now(),
+    ticks: 0,
+    errors: {},
+    latencies: [],
+    alarms: [],
+    game: { claims: 0, golden: 0, lost: 0, qr: 0, duplicateClaims: 0, claimedIds: new Set(), statuses: [], playlistDone: false, rounds: 0 },
+  };
   const players: SimPlayer[] = [];
   const timers: ReturnType<typeof setInterval>[] = [];
   let stopped = false;
@@ -135,6 +154,15 @@ export function startSwarm(opts: SwarmOptions) {
       stats.ticks++;
       p.lastTickAt = Date.now();
       p.view = r.data;
+      p.bot.observe(r.data as never);
+      const claimed = r.data.claimed as { post_id: string; kind: string } | null | undefined;
+      if (claimed) {
+        stats.game.claims++;
+        if (claimed.kind === "golden") stats.game.golden++;
+        if (stats.game.claimedIds.has(claimed.post_id)) stats.game.duplicateClaims++;
+        stats.game.claimedIds.add(claimed.post_id);
+      }
+      if (r.data.lost) stats.game.lost++;
       // A signal-loss check is satisfied once the bot reports again.
       stats.alarms = stats.alarms.filter((a) => !(a.player === p.playerId && a.kind === "signal" && a.seenAt === null && a.expectedAt > Date.now()));
     } else err(`tick_${r.status}_${String(r.data.error ?? "")}`);
@@ -145,6 +173,12 @@ export function startSwarm(opts: SwarmOptions) {
     const r = await opts.transport.post(`/api/s/${sessionId}/snapshot`, { hostToken: opts.hostToken });
     if (r.status !== 200) return err(`snapshot_${r.status}`);
     const now = Date.now();
+    const st = String(r.data.status);
+    const g = stats.game;
+    if (g.statuses[g.statuses.length - 1] !== st) g.statuses.push(st);
+    g.playlistDone = r.data.playlist_done === true;
+    const round = r.data.round as { idx: number } | null;
+    if (round) g.rounds = Math.max(g.rounds, round.idx + 1);
     const alarms = (r.data.alarms as Array<{ player_id: string; kind: AlarmKind; resolved: boolean; created_at: string }>) ?? [];
     for (const c of stats.alarms) {
       if (c.seenAt !== null || c.expectedAt > now + 1000) continue;
@@ -246,6 +280,15 @@ export function summarize(stats: SimStats) {
   const alarmLat = stats.alarms.filter((a) => a.seenAt !== null).map((a) => (a.seenAt! - a.expectedAt) / 1000);
   return {
     seconds: Math.round((Date.now() - stats.startedAt) / 1000),
+    game: {
+      claims: stats.game.claims,
+      golden: stats.game.golden,
+      lost: stats.game.lost,
+      duplicateClaims: stats.game.duplicateClaims,
+      rounds: stats.game.rounds,
+      playlistDone: stats.game.playlistDone,
+      statuses: stats.game.statuses,
+    },
     ticks: stats.ticks,
     errors: stats.errors,
     tickMs: { p50: percentile(lat, 50), p95: percentile(lat, 95), p99: percentile(lat, 99), max: lat.length ? Math.max(...lat) : 0 },

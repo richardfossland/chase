@@ -13,6 +13,7 @@ const HIDDEN_POLL_MS = 10000; // keep healing in the background, slower
 const SIREN_EVERY_MS = 4000;
 
 export interface HostSession {
+  sessionId: string;
   snap: Snapshot | null;
   geo: SessionGeo | null;
   error: string | null;
@@ -144,5 +145,5 @@ export function useHostSession(sessionId: string, token: string | null): HostSes
     [sessionId, token, refresh],
   );
 
-  return { snap, geo, error, refresh, act, ack, end };
+  return { sessionId, snap, geo, error, refresh, act, ack, end };
 }

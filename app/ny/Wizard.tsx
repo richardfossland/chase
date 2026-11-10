@@ -20,17 +20,17 @@ import {
   type LngLat,
 } from "@/lib/geo";
 import { no } from "@/lib/locale/no";
+import { DEFAULT_PLAN, GAME, normPlan, planTotalS, type Plan, type RoundMode } from "@/lib/rules/game";
 import { loadMapLibre } from "@/lib/map/maplibre";
 import { DEFAULT_CENTER, kartverketStyle } from "@/lib/map/style";
 
 const t = no.wizard;
 
-type Step = "intro" | "area" | "forbidden" | "assembly" | "safety";
+type Step = "intro" | "area" | "forbidden" | "assembly" | "playlist" | "safety";
 type AreaMode = "circle" | "draw";
 type DrawTarget = "area" | "forbidden" | null;
 
-const STEPS: Step[] = ["area", "forbidden", "assembly", "safety"];
-const DURATIONS = [5, 10, 15, 20, 30];
+const STEPS: Step[] = ["area", "forbidden", "assembly", "playlist", "safety"];
 const WARN_MAX_M2 = 500_000;
 const WARN_MIN_M2 = 3_000;
 const HARD_MIN_M2 = 500;
@@ -103,7 +103,7 @@ export default function Wizard() {
   const [assembly, setAssembly] = useState<LngLat | null>(null);
 
   const [phone, setPhone] = useState("");
-  const [minutes, setMinutes] = useState(10);
+  const [plan, setPlan] = useState<Plan>(DEFAULT_PLAN);
   const [checks, setChecks] = useState<boolean[]>(t.safety.checks.map(() => false));
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -352,7 +352,7 @@ export default function Wizard() {
           ? { type: "MultiPolygon", coordinates: forbidden.map((r) => [closeRing(r).map((p) => [p[0], p[1]])]) }
           : null,
         teacherPhone: phone.trim() || null,
-        plan: { rounds: [{ mode: "free", duration_s: minutes * 60 }] },
+        plan,
       });
       identity.saveHostToken(res.sessionId, res.hostToken);
       router.replace(`/host/${res.sessionId}`);
@@ -565,8 +565,22 @@ export default function Wizard() {
               <button className={secondary} onClick={() => goTo("forbidden")}>
                 {t.back}
               </button>
-              <button className={primary} disabled={!assembly || assemblyFar || assemblyForbidden} onClick={() => goTo("safety")}>
+              <button className={primary} disabled={!assembly || assemblyFar || assemblyForbidden} onClick={() => goTo("playlist")}>
                 {t.next}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {step === "playlist" && (
+          <div className={sheet}>
+            <PlaylistEditor plan={plan} onChange={setPlan} chip={chip} />
+            <div className="mt-4 flex justify-between gap-2">
+              <button className={secondary} onClick={() => goTo("assembly")}>
+                {t.back}
+              </button>
+              <button className={primary} disabled={!normPlan(plan)} onClick={() => goTo("safety")}>
+                {t.playlist.next}
               </button>
             </div>
           </div>
@@ -589,15 +603,6 @@ export default function Wizard() {
               <span className="mt-1 block text-xs text-txt-dim">{t.safety.phoneHint}</span>
             </label>
 
-            <p className="mt-4 text-sm font-semibold">{t.safety.duration}</p>
-            <div className="mt-2 flex gap-1.5">
-              {DURATIONS.map((d) => (
-                <button key={d} className={chip(minutes === d)} onClick={() => setMinutes(d)}>
-                  {t.safety.minutes(d)}
-                </button>
-              ))}
-            </div>
-
             <fieldset className="mt-4">
               <legend className="text-sm font-semibold">{t.safety.checklist}</legend>
               {t.safety.checks.map((label, i) => (
@@ -616,7 +621,7 @@ export default function Wizard() {
 
             {createError && <p className="mt-3 text-sm font-semibold text-danger">{createError}</p>}
             <div className="mt-4 flex justify-between gap-2">
-              <button className={secondary} onClick={() => goTo("assembly")} disabled={creating}>
+              <button className={secondary} onClick={() => goTo("playlist")} disabled={creating}>
                 {t.back}
               </button>
               <button className={primary} disabled={!checks.every(Boolean) || creating} onClick={create}>
@@ -676,6 +681,100 @@ function DrawControls(props: {
           ✓ {t.area.finish}
         </button>
       </div>
+    </div>
+  );
+}
+
+const ROUND_MINUTES = [3, 4, 5, 6, 8, 10, 15];
+const BREATHERS = [0, 30, 60, 90, 120];
+const QR_COUNTS = [0, 4, 6, 8, 12];
+
+/** Playlist step (PLAN §13 phase 2): rounds with mode + length, breather, physical QR cards. */
+function PlaylistEditor(props: { plan: Plan; onChange: (p: Plan) => void; chip: (on: boolean) => string }) {
+  const { plan, onChange, chip } = props;
+  const p = t.playlist;
+  const setRound = (i: number, patch: Partial<Plan["rounds"][number]>) =>
+    onChange({ ...plan, rounds: plan.rounds.map((r, j) => (j === i ? { ...r, ...patch } : r)) });
+  const move = (i: number) => {
+    const rounds = [...plan.rounds];
+    [rounds[i - 1], rounds[i]] = [rounds[i], rounds[i - 1]];
+    onChange({ ...plan, rounds });
+  };
+  const iconBtn = "rounded-lg border border-line px-2.5 py-1.5 text-sm font-bold transition hover:bg-ink-3 disabled:opacity-30";
+  return (
+    <div>
+      <p className="text-sm text-txt-dim">{p.lead}</p>
+      <ol className="mt-3 space-y-2">
+        {plan.rounds.map((r, i) => (
+          <li key={i} className="rounded-xl bg-ink p-3">
+            <div className="flex items-center gap-2">
+              <span className="font-extrabold">{p.round(i + 1)}</span>
+              <div className="ml-auto flex gap-1.5">
+                <button className={iconBtn} disabled={i === 0} onClick={() => move(i)} aria-label={p.up}>
+                  ↑
+                </button>
+                <button
+                  className={iconBtn}
+                  disabled={plan.rounds.length <= 1}
+                  onClick={() => onChange({ ...plan, rounds: plan.rounds.filter((_, j) => j !== i) })}
+                  aria-label={p.remove}
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+            <div className="mt-2 flex gap-1.5">
+              {(["posts", "free"] as RoundMode[]).map((m) => (
+                <button key={m} className={chip(r.mode === m)} onClick={() => setRound(i, { mode: m })}>
+                  {p.modes[m]}
+                </button>
+              ))}
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {ROUND_MINUTES.map((m) => (
+                <button
+                  key={m}
+                  className={`${chip(r.duration_s === m * 60)} flex-none px-2.5`}
+                  onClick={() => setRound(i, { duration_s: m * 60 })}
+                >
+                  {p.minutes(m)}
+                </button>
+              ))}
+            </div>
+          </li>
+        ))}
+      </ol>
+      <button
+        className="mt-2 w-full rounded-xl border border-dashed border-line py-2.5 text-sm font-bold text-txt-dim transition hover:bg-ink-3 disabled:opacity-40"
+        disabled={plan.rounds.length >= GAME.max_rounds}
+        onClick={() => onChange({ ...plan, rounds: [...plan.rounds, { ...plan.rounds[plan.rounds.length - 1] }] })}
+      >
+        {p.add}
+      </button>
+
+      <p className="mt-4 text-sm font-semibold">{p.breather}</p>
+      <div className="mt-2 flex gap-1.5">
+        {BREATHERS.map((b) => (
+          <button key={b} className={chip(plan.breather_s === b)} onClick={() => onChange({ ...plan, breather_s: b })}>
+            {b === 0 ? p.breatherNone : p.breatherS(b)}
+          </button>
+        ))}
+      </div>
+
+      {plan.rounds.some((r) => r.mode === "posts") && (
+        <>
+          <p className="mt-4 text-sm font-semibold">{p.qr}</p>
+          <div className="mt-2 flex gap-1.5">
+            {QR_COUNTS.map((n) => (
+              <button key={n} className={chip(plan.qr_posts === n)} onClick={() => onChange({ ...plan, qr_posts: n })}>
+                {n === 0 ? p.qrNone : n}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1 text-xs text-txt-dim">{p.qrHint}</p>
+        </>
+      )}
+      <p className="mt-4 text-sm font-bold">{p.total(Math.round(planTotalS(plan) / 60))}</p>
     </div>
   );
 }

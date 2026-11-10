@@ -92,3 +92,38 @@ export function playSiren(): void {
 export function audioReady(): boolean {
   return getCtx()?.state === "running";
 }
+
+// ── Game feedback (phase 2). Short, distinct, readable at a run. ──
+
+/** Post claimed: bright rising arpeggio. */
+export function playClaim(): void {
+  [784, 988, 1175, 1568].forEach((f, i) => tone(f, i * 0.07, 0.18, "triangle", 0.2));
+}
+
+/** Someone else took the post you were on. */
+export function playBlip(): void {
+  tone(330, 0, 0.15, "sine", 0.18);
+  tone(247, 0.12, 0.25, "sine", 0.16);
+}
+
+/** Countdown beep (3-2-1). */
+export function playBeep(): void {
+  tone(880, 0, 0.12, "square", 0.14);
+}
+
+/** Round starts: long high beep. */
+export function playGo(): void {
+  tone(1320, 0, 0.5, "square", 0.18);
+  tone(1760, 0, 0.5, "triangle", 0.1);
+}
+
+/** Round over: two-tone whistle. */
+export function playWhistle(): void {
+  tone(2093, 0, 0.25, "sine", 0.2);
+  tone(1760, 0.28, 0.45, "sine", 0.2);
+}
+
+/** Badge earned: sparkle. */
+export function playBadge(): void {
+  [1568, 2093, 2637].forEach((f, i) => tone(f, i * 0.06, 0.22, "sine", 0.12));
+}

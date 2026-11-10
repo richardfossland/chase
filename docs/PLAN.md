@@ -267,6 +267,8 @@ Fysiske oppdrag gjøres der eleven er, aldri som en betingelse for å slippe str
 | **Live-posisjon** (ett punkt per spiller, ingen historikk), med distanseanker og stillstandsanker (`last_good_pos`, `still_anchor`) | `player_live` (UNLOGGED) | **Slettes ved øktslutt** |
 | Alarmposisjon (punkt ved SOS eller geofence) | `alarms` | Nullstilles ved øktslutt |
 | Statistikk og poeng | `player_stats` | 24 t etter slutt (for seremoni og eventuell gjenvisning) |
+| Utforskerruter (20 × 20 m-ruter besøkt, en grov spor-liste) | `player_stats.cells` | **Tømmes ved øktslutt**, bare antallet (`explorer_n`) beholdes i 24 t |
+| Poster (punkt) og postklaim (hvem tok hvilken post når) | `posts`, `post_claims` | **Slettes ved øktslutt** |
 | Hendelseslogg | `events` | 24 t etter slutt, uten koordinater |
 | Lærerens telefonnummer | `sessions` | Nullstilles ved øktslutt |
 | **Anonymt sammendrag** | `session_summaries` | Beholdes: antall spillere, varighet, moduser, total og median distanse og aktive minutter som histogram. **Ingen koordinater, navn eller område.** |
@@ -534,7 +536,7 @@ Fase 1–3 gir **spillbar MVP for kroppsøvingstimen**. Hver fase avsluttes med 
 - 60 sim-bots kjører i 20 minutter med `tick()` p95 under 50 ms i databasen, og lærerpanelet viser alle bots.
 - Varsler for SOS, forbudt sone, utenfor område og signaltap når læreren innen **5 s** i simulatoren.
 - En SQL-test beviser at `player_live`, alarmposisjoner og telefonnummer er tomme etter `end_session()`.
-- **Utetest:** 3 ekte mobiler (iPhone + Android) på skolegården, der alle sikkerhetsvarsler utløses og kvitteres riktig, og opprop fungerer.
+- **Utetest (utsatt til felles utetest, ADR-019):** 3 ekte mobiler (iPhone + Android) på skolegården, der alle sikkerhetsvarsler utløses og kvitteres riktig, og opprop fungerer.
 
 ### Fase 2 – Spilleliste, Postjakt og poeng
 
@@ -543,7 +545,7 @@ Fase 1–3 gir **spillbar MVP for kroppsøvingstimen**. Hver fase avsluttes med 
 - Poeng, bevegelsespoeng, `player_stats` per runde, enkle merker, elevens rundeoppsummering i pustepausen.
 - Lyd, blink og vibrasjon som feedback-system.
 
-**Ferdig når:** En utetest med minst 5 personer kjører en spilleliste med 3 postjakt-runder fra start til slutt **uten at læreren gjør noe annet enn å trykke Start og Avslutt**. Ingen posttvist der GPS-nøyaktigheten er under 15 m. Pustepausen fungerer med låst mobil (ny GPS innen 10 s etter opplåsing).
+**Ferdig når** (utetesten er utsatt til den felles utetesten, ADR-019; sim-delen er dekket, ADR-020): En utetest med minst 5 personer kjører en spilleliste med 3 postjakt-runder fra start til slutt **uten at læreren gjør noe annet enn å trykke Start og Avslutt**. Ingen posttvist der GPS-nøyaktigheten er under 15 m. Pustepausen fungerer med låst mobil (ny GPS innen 10 s etter opplåsing).
 
 ### Fase 3 – Smittejakt, krympende sone og seremoni → **MVP**
 

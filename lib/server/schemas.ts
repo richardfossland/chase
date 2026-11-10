@@ -23,8 +23,14 @@ export const createSessionBody = z.object({
   assembly: point,
   forbidden: multiPolygon.nullish(),
   teacherPhone: z.string().max(24).nullish(),
+  // Shape only; chase._norm_plan() is the authority on limits (twin: lib/rules/game.ts).
   plan: z
-    .object({ rounds: z.array(z.object({ mode: z.literal("free"), duration_s: z.number().int().min(60).max(3600) })).min(1).max(1) })
+    .object({
+      rounds: z.array(z.object({ mode: z.enum(["free", "posts"]), duration_s: z.number().int() })).min(1).max(10),
+      countdown_s: z.number().int().optional(),
+      breather_s: z.number().int().optional(),
+      qr_posts: z.number().int().optional(),
+    })
     .optional(),
   settings: z.record(z.string(), z.unknown()).optional(),
   sim: z.boolean().optional(),
@@ -47,16 +53,22 @@ export const tickBody = playerAuth.extend({
   lat,
   lng,
   acc: z.number().min(0).max(10_000),
-  speed: z.number().min(0).max(200).nullish(),
+  // Informational only: an absurd value (sim teleport, broken sensor) must not drop the fix.
+  speed: z.number().nullish().transform((v) => (v == null || !Number.isFinite(v) || v < 0 || v > 200 ? null : v)),
   ts: z.number().int().positive().optional(), // client epoch ms, ordering only
 });
+
+export const qrBody = playerAuth.extend({ code: z.string().min(3).max(16) });
 
 export const sosBody = playerAuth.extend({ lat: lat.optional(), lng: lng.optional() });
 
 export const hostAuth = z.object({ hostToken: token });
 
 export const hostActionBody = hostAuth.extend({
-  action: z.enum(["start", "pause", "resume", "message", "gather", "end_gather", "check_in", "rename", "kick", "sit_out"]),
+  action: z.enum([
+    "start", "next", "extend", "pause", "resume", "message", "gather", "end_gather",
+    "check_in", "rename", "kick", "sit_out",
+  ]),
   payload: z
     .object({
       player_id: uuid.optional(),
@@ -64,6 +76,7 @@ export const hostActionBody = hostAuth.extend({
       nickname: z.string().max(40).optional(),
       checked: z.boolean().optional(),
       on: z.boolean().optional(),
+      seconds: z.number().int().optional(),
     })
     .optional(),
 });

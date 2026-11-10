@@ -63,3 +63,13 @@ describe("schemas", () => {
     expect(hostActionBody.safeParse({ hostToken: newToken(), action: "drop_table" }).success).toBe(false);
   });
 });
+
+describe("tickBody speed", () => {
+  it("drops an absurd speed instead of rejecting the fix", () => {
+    const base = { playerId: "6c760c64-f172-4100-9d95-5d60b3c202c2", token: "a".repeat(32), lat: 59.9, lng: 10.7, acc: 5 };
+    expect(tickBody.parse({ ...base, speed: 40000 }).speed).toBeNull();
+    expect(tickBody.parse({ ...base, speed: -1 }).speed).toBeNull();
+    expect(tickBody.parse({ ...base, speed: 3.2 }).speed).toBe(3.2);
+    expect(tickBody.parse(base).speed).toBeNull();
+  });
+});

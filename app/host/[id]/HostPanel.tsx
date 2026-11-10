@@ -9,6 +9,7 @@ import { identity } from "@/lib/client/identity";
 import { QRCode } from "@/lib/client/QRCode";
 import { audioReady, unlockAudio } from "@/lib/client/sound";
 import { no } from "@/lib/locale/no";
+import { formatClock, phaseLeftS, planTotalS } from "@/lib/rules/game";
 import { SAFETY } from "@/lib/rules/safety";
 
 import HostMap, { dotState, type HostMapHandle } from "./HostMap";
@@ -91,6 +92,8 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
   const gathering = snap.status === "gathering";
   const paused = snap.status === "paused";
   const joinUrl = origin ? `${origin}/j/${snap.pin}` : "";
+  const playlistDone = snap.playlist_done;
+  const qrCount = snap.plan?.qr_posts ?? 0;
 
   function focusAlarm(a: HostAlarm) {
     if (a.pos) mapRef.current?.flyTo(a.pos.lat, a.pos.lng);
@@ -132,9 +135,17 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
     >
       <div className="relative h-full">
         {lobby ? (
-          <LobbyBoard pin={snap.pin} joinUrl={joinUrl} players={snap.players} onSelect={select} />
+          <LobbyBoard pin={snap.pin} joinUrl={joinUrl} players={snap.players} onSelect={select} snap={snap} sessionId={hs.sessionId} />
         ) : (
-          <HostMap ref={mapRef} geo={geo} players={snap.players} sosPlayers={sosPlayers} status={snap.status} onSelect={select} />
+          <HostMap
+            ref={mapRef}
+            geo={geo}
+            players={snap.players}
+            posts={snap.posts ?? []}
+            sosPlayers={sosPlayers}
+            status={snap.status}
+            onSelect={select}
+          />
         )}
 
         {/* top: status + alarm strip */}
@@ -149,6 +160,7 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
               </button>
             )}
           </div>
+          <RoundBar snap={snap} act={hs.act} onConfirm={setConfirm} />
           <AlarmStrip alarms={snap.alarms} onAck={(ids) => ids.forEach((id) => void hs.ack(id))} onFocus={focusAlarm} />
           {hs.error === "network" || hs.error === "timeout" ? (
             <p className="pointer-events-auto rounded-xl bg-warn px-3 py-2 text-sm font-bold text-ink">{h.errors.network}</p>
@@ -170,7 +182,13 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
 
         {/* bottom bar */}
         <nav className="absolute inset-x-0 bottom-0 z-10 grid grid-cols-4 gap-2 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
-          {lobby ? (
+          {gathering && playlistDone ? (
+            <>
+              <BarButton icon="■" label={h.endSession} tone="gold" className="col-span-2" onClick={endFlow} />
+              <BarButton icon="📣" label={h.message} onClick={() => setSheet({ kind: "message", to: null })} />
+              <BarButton icon="⋯" label={h.more} onClick={() => setSheet({ kind: "more" })} />
+            </>
+          ) : lobby ? (
             <>
               <BarButton
                 icon="▶"
@@ -263,6 +281,11 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
           {sheet.kind === "more" && (
             <div className="grid gap-2">
               <SheetButton onClick={() => setSheet({ kind: "qr" })}>▦ {h.showQr}</SheetButton>
+              {qrCount > 0 && (
+                <Link href={`/host/${hs.sessionId}/poster`} className="rounded-xl bg-ink px-3 py-3 text-left font-bold hover:bg-ink-3">
+                  {h.printQr(qrCount)}
+                </Link>
+              )}
               <SheetButton onClick={() => setSheet({ kind: "players" })}>👥 {h.playersList} ({snap.players.length})</SheetButton>
               <SheetButton danger onClick={endFlow}>
                 ■ {h.endSession}
@@ -346,7 +369,22 @@ function AlarmStrip({ alarms, onAck, onFocus }: { alarms: HostAlarm[]; onAck: (i
   );
 }
 
-function LobbyBoard({ pin, joinUrl, players, onSelect }: { pin: string; joinUrl: string; players: HostPlayer[]; onSelect: (id: string) => void }) {
+function LobbyBoard({
+  pin,
+  joinUrl,
+  players,
+  onSelect,
+  snap,
+  sessionId,
+}: {
+  pin: string;
+  joinUrl: string;
+  players: HostPlayer[];
+  onSelect: (id: string) => void;
+  snap: Snapshot;
+  sessionId: string;
+}) {
+  const plan = snap.plan;
   return (
     <div className="h-full overflow-y-auto px-4 pt-16 pb-28">
       <section className="mx-auto flex max-w-3xl flex-col items-center gap-4 rounded-3xl border border-line bg-ink-2 p-6 text-center sm:flex-row sm:text-left">
@@ -360,6 +398,17 @@ function LobbyBoard({ pin, joinUrl, players, onSelect }: { pin: string; joinUrl:
           <p className="font-mono text-6xl font-black tracking-[0.15em] text-gold" data-testid="pin">
             {pin}
           </p>
+          {plan?.rounds?.length ? (
+            <p className="mt-3 text-sm font-bold text-txt-dim">
+              {h.round.playlist(plan.rounds.length, Math.round(planTotalS(plan) / 60))}:{" "}
+              {plan.rounds.map((r) => `${h.round.modes[r.mode]} ${Math.round(r.duration_s / 60)}′`).join(" → ")}
+            </p>
+          ) : null}
+          {plan?.qr_posts ? (
+            <Link href={`/host/${sessionId}/poster`} className="mt-3 inline-block rounded-xl border border-gold px-4 py-2 font-extrabold text-gold">
+              {h.printQr(plan.qr_posts)}
+            </Link>
+          ) : null}
         </div>
       </section>
       <section className="mx-auto mt-6 max-w-3xl">
@@ -472,6 +521,11 @@ function PlayerCard({
         <Stat label={h.card.active} value={no.play.minutes(p.active_s)} />
         <Stat label={h.card.points} value={String(p.points)} />
       </dl>
+      {(p.posts > 0 || p.badges > 0) && (
+        <p className="mt-2 text-sm font-bold text-txt-dim">
+          {h.card.extra(p.posts, p.badges, p.round_points)}
+        </p>
+      )}
 
       {renaming ? (
         <form
@@ -622,4 +676,67 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 function Center({ children }: { children: React.ReactNode }) {
   return <main className="flex min-h-dvh flex-col items-center justify-center px-6 text-center">{children}</main>;
+}
+
+/** Round clock + teacher round controls (PLAN §13 phase 2: «neste runde, forleng»). */
+function RoundBar({
+  snap,
+  act,
+  onConfirm,
+}: {
+  snap: Snapshot;
+  act: HostSession["act"];
+  onConfirm: (c: Confirm) => void;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  const [offset, setOffset] = useState(0);
+  useEffect(() => {
+    const iv = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(iv);
+  }, []);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- server clock offset from the last poll
+    setOffset(Date.parse(snap.server_now) - Date.now());
+  }, [snap.server_now]);
+
+  const r = snap.round;
+  if (!r || snap.status === "lobby") return null;
+  if (snap.playlist_done) {
+    return <p className="pointer-events-auto rounded-xl bg-ok px-3 py-2 text-sm font-black text-ink">✔ {h.round.done}</p>;
+  }
+  const left = phaseLeftS(r.phase_ends_at, offset, now);
+  const live = snap.status === "live";
+  const between = snap.status === "countdown" || snap.status === "breather";
+  const open = (snap.posts ?? []).filter((p) => !p.claimed_by).length;
+  const taken = (snap.posts ?? []).filter((p) => p.claimed_by).length;
+  const btn = "rounded-lg border border-line px-3 py-2 text-sm font-black hover:bg-ink-3";
+  return (
+    <div className="pointer-events-auto flex items-center gap-2 rounded-xl bg-ink-2/95 px-3 py-2 backdrop-blur" data-testid="round-bar">
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-black">
+          {h.round.of(r.idx + 1, r.count)} · {h.round.modes[r.mode]}
+          {snap.status !== "live" ? ` · ${h.status[snap.status]}` : ""}
+        </p>
+        {live && r.mode === "posts" && <p className="text-xs font-bold text-txt-dim">{h.round.posts(open, taken)}</p>}
+      </div>
+      <span className="font-mono text-2xl font-black tabular-nums">{r.frozen ? "⏸" : formatClock(left)}</span>
+      {live && (
+        <button className={btn} onClick={() => void act("extend", { seconds: 60 })}>
+          {h.round.extend}
+        </button>
+      )}
+      {(live || between) && (
+        <button
+          className={btn}
+          onClick={() =>
+            live
+              ? onConfirm({ message: h.round.nextConfirm, label: h.round.next, run: () => void act("next") })
+              : void act("next")
+          }
+        >
+          {live ? h.round.next : h.round.startNow}
+        </button>
+      )}
+    </div>
+  );
 }

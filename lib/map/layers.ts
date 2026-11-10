@@ -57,3 +57,53 @@ export function boundsOf(geo: SessionGeo): [[number, number], [number, number]] 
     [Math.max(...lngs), Math.max(...lats)],
   ];
 }
+
+/** Postjakt posts (PLAN §3.1). Colour/size by value; the post being claimed gets a white ring. */
+export function addPostsLayer(m: MlMap, beforeId?: string) {
+  m.addSource("posts", { type: "geojson", data: EMPTY });
+  m.addLayer(
+    {
+      id: "posts-halo",
+      type: "circle",
+      source: "posts",
+      filter: ["==", ["get", "kind"], "golden"],
+      paint: { "circle-radius": 22, "circle-color": "#ffd23f", "circle-opacity": 0.35, "circle-blur": 0.4 },
+    },
+    beforeId,
+  );
+  m.addLayer(
+    {
+      id: "posts-dot",
+      type: "circle",
+      source: "posts",
+      paint: {
+        "circle-radius": ["case", ["==", ["get", "kind"], "golden"], 13, [">=", ["get", "value"], 20], 11, 9],
+        "circle-color": [
+          "case",
+          ["==", ["get", "kind"], "golden"], "#ffd23f",
+          ["to-boolean", ["get", "claimed"]], "#6b7280",
+          [">=", ["get", "value"], 20], "#ff8a3d",
+          "#ebb84b",
+        ],
+        "circle-stroke-color": ["case", ["to-boolean", ["get", "active"]], "#ffffff", "#1b1f2a"],
+        "circle-stroke-width": ["case", ["to-boolean", ["get", "active"]], 5, 2],
+      },
+    },
+    beforeId,
+  );
+}
+
+export function setPosts(
+  m: MlMap,
+  posts: { id: string; pos: { lat: number; lng: number }; value: number; kind: string; claimed_by?: string | null }[],
+  activeId?: string | null,
+) {
+  m.getSource<GeoJSONSource>("posts")?.setData({
+    type: "FeatureCollection",
+    features: posts.map((p) => ({
+      type: "Feature",
+      properties: { id: p.id, value: p.value, kind: p.kind, active: p.id === activeId, claimed: !!p.claimed_by },
+      geometry: { type: "Point", coordinates: [p.pos.lng, p.pos.lat] },
+    })),
+  });
+}

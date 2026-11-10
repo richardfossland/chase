@@ -195,3 +195,67 @@ Migrasjoner og tester kjøres som `postgres` (ikke superbruker), slik som i Supa
   en forbudt sone, utløser alarm, også om de egentlig er utenfor. Det er bevisst, men det må vurderes etter utetesten.
 - Utsatt: CI-røyktest mot lokal Supabase (krever `supabase start` i Actions), seedede scenarioer med fangst (fase 3)
   og Playwright e2e (§ 11.5).
+
+## ADR-019 — Utetestene samles til slutt (2026-11-10)
+
+Eieren har bestemt at utetestene i «Ferdig når» for hver fase ikke kjøres fase for fase. De samles i én felles
+utetest når alle fasene er ferdige. Fasene regnes som ferdige når resten av kravene er oppfylt (sim, SQL-tester, CI).
+Utetestpunktene står fortsatt i PLAN § 13 og er sjekklista for den felles testen. Varselstøy ved forbudte soner (ADR-018)
+vurderes da. Konsekvens: feil som bare viser seg på ekte enheter (GPS i lommen, låst skjerm, iOS-lyd) blir oppdaget
+seint, så simulatoren og `useDeviceGps` må dekke så mye som mulig underveis.
+
+## ADR-020 — Spilleliste, Postjakt og poeng (fase 2, 2026-11-10)
+Eierens valg 2026-11-10: fysiske QR-poster med **kameraskanner og kode** som reserve, **3 × 6 min postjakt** som
+standard spilleliste, og **syntetisert WebAudio** for lyd (ingen lydfiler).
+
+- **Øktklokka** (`0003_playlist_posts_points.sql`): `status` går nedtelling → runde → pustepause → … → samling, og
+  `phase_ends_at` sier når fasen er over. `chase._advance()` utfører overgangene lat fra `tick()`, `host_snapshot()`
+  og `claim_qr()` (PLAN § 9.2), uten cron. Den henter seg inn eksakt: hver fase starter på forrige `phase_ends_at`,
+  ikke på «nå», så en stille periode på serveren gir samme tidslinje. Én advisory xact-lock per økt serialiserer overganger
+  og poster. Et kall som ikke får låsen, hopper bare over (neste tick tar det).
+  - Pause og samling **fryser** klokka (`frozen_at`). Ved fortsett forskyves rundeslutt, gylden post og utløp med den
+    frosne tiden.
+  - **Etter siste runde går økta selv til samling med opprop.** Læreren trenger bare Start og Avslutt
+    («Ferdig når» i fase 2). «Fortsett spill» finnes ikke da, fordi det ikke er noe å gå tilbake til.
+  - Læreren kan trykke «Neste» (hopp over resten av fasen) og «+1 min» (bare i runde).
+  - `start` går til nedtelling (standard 10 s). Med `countdown_s: 0` blir det runde med en gang. 0002-testene bruker det.
+- **Spillelista** valideres av `chase._norm_plan()`: 1–10 runder, `free` eller `posts`, 60–1800 s, nedtelling 0–30 s,
+  pustepause 0–300 s og 0–12 QR-poster. TS-tvillingen er `lib/rules/game.ts` (`GAME` = `chase.kg()`, diffet i test).
+- **Postjakt** (PLAN § 3.1):
+  - Postene legges inne i området minst 10 m fra grensa og minst 10 m fra forbudte soner, minst 25 m fra spillere med fersk fix og
+    minst 30 m fra andre åpne poster. Reglene løsnes i den rekkefølgen i stedet for å feile (`ST_GeneratePoints` med
+    30 kandidater).
+  - Antall er spillere/4, mellom 3 og 15. En post som tas, erstattes ved neste tick.
+  - Verdien er 10 nær sentrum og 20 i ytterkanten (andel sentrum→kant ≥ 0,6). Én **gylden post** (50 p, 60 s,
+    ytterkant) dukker opp mellom 35 og 65 % av runder på minst 2 min, og alle telefoner får et hint om den.
+  - **Klaim:** innenfor `max(12 m, acc)` på **to påfølgende ticks** (ca. 2 s). Aldri med dårligere fix enn 25 m.
+    `UPDATE … WHERE claimed_by IS NULL` gjør at en post aldri kan tas to ganger.
+- **Fysiske QR-poster** er kort for hele økta (`round_idx -1`, ingen posisjon) med en kode på 5 tegn uten tvetydige tegn.
+  QR-koden er en URL (`/q/<økt>/<kode>`), så telefonens eget kamera også virker. Hver elev kan ta hvert kort
+  **én gang per postjakt-runde**: 15 p, og +5 til den første. Ruta begrenser til 20 forsøk i minuttet, så koder ikke
+  kan gjettes. Skanneren bruker `BarcodeDetector` der den finnes og ellers `jsqr` (iOS). Utskrift ligger på `/host/[id]/poster`.
+  - Kjent svakhet: et bilde av kortet kan deles. Det er godtatt i skolebruk og kan rettes senere med roterende koder.
+- **Poeng:** postverdi + **bevegelsespoeng** (+1 per 50 m i runden, maks 20). `player_stats.round_*` holder runden og
+  skrives til `per_round` ved rundeslutt. Rundeoppsummeringen vises i pustepausen og etter siste runde.
+- **Merker** gis én gang per økt i samme tick: første post, gyllen post, 5 poster i én runde, QR-post, 1 km,
+  10 aktive minutter og 25 utforskerruter (20 × 20 m).
+- **Personvern (PLAN § 8 oppdatert):** utforskerrutene er et grovt spor, så `end_session()` tømmer `cells` og
+  beholder bare antallet (`explorer_n`). Poster og postklaim slettes ved øktslutt.
+- **Tilbakemelding:** `lib/client/feedback.ts` samler lyd og vibrasjon for hver hendelse (klaim, gyllen post, «noen
+  var først», 3-2-1, start, rundeslutt, merke), med blink på skjermen. iOS har ikke vibrasjon, så alt er også hørbart
+  eller synlig. Sikkerhetslydene har forrang.
+- **Funnet under testing:** en simulert teleport ga fart > 200 m/s, og hele ticken ble avvist med 400. `speed` er bare
+  informativ, så en urimelig verdi blir nå `null` i stedet for å felle posisjonen.
+- **Fase 2 i simulatoren, målt 2026-11-10 på lokal Supabase gjennom Next dev:**
+  `node scripts/sim.mjs --create --bots 60 --plan posts:360,posts:360,posts:360 --breather 60 --qr 6 --until-done --end --assert`
+  gikk i 1273 s med standardblandingen (inkludert SOS-, forbudt-, vandrer- og dropout-boter).
+  - **Spillelista gikk fra start til samling uten andre lærerhandlinger:** nedtelling → runde → pustepause ×2 → runde →
+    samling. Det ble 38 094 ticks uten feil, 2 571 postklaim, 3 gylne poster og **0 poster tatt to ganger**. 48 ganger var en annen
+    først (riktig håndtert som «noen var først»).
+  - Tick rundtur gjennom Next var p50 15 ms og p95 42 ms. p99 var 194 ms og maks 1,6 s ved rundeoverganger med mange postplasseringer
+    på én gang. Alle fire alarmtypene nådde læreren innen 0,93 s, også midt i postjakt.
+  - «Avslutt» ga opprop med 5 savnede: spesialbotene som med vilje ikke går til samlingspunktet. Deretter
+    «Avslutt likevel». Med bare vanlige boter (20 boter, 3 × 90 s) gikk Avslutt rett gjennom på opprop.
+  - Ikke dekket før den felles utetesten: låst skjerm i pustepausen (ny GPS innen 10 s etter opplåsing) og
+    posttvist med ekte GPS. Kameraskanneren er ikke prøvd på ekte telefon, fordi nettleserpanelet ikke har kamera.
+    Kodeinntasting er testet.

@@ -60,3 +60,12 @@ body {
 .animate-ping-slow {
   animation: chase-pulse 1.2s ease-in-out infinite;
 }
+
+/* Claim / result flash on the player screen: pop in, hold, fade. */
+@keyframes flash {
+  0% { opacity: 0; transform: scale(0.9); }
+  12% { opacity: 1; transform: scale(1.04); }
+  25% { transform: scale(1); }
+  75% { opacity: 1; }
+  100% { opacity: 0; }
+}

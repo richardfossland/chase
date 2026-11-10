@@ -7,17 +7,22 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { ApiError, api, type PlayerBootstrap, type TickView } from "@/lib/client/api";
+import { ApiError, api, type PlayerBootstrap, type PostView, type RoundSummary, type TickView } from "@/lib/client/api";
+import { cue } from "@/lib/client/feedback";
+import { QrScanner } from "@/lib/client/QrScanner";
 import { identity, type StoredPlayer } from "@/lib/client/identity";
 import { useDeviceGps, useSimGps, useWakeLock, vibrate, type Fix, type GpsState, type SimControls } from "@/lib/client/gps";
 import { playBuzzer, playDing, unlockAudio } from "@/lib/client/sound";
 import { useChannel } from "@/lib/client/useChannel";
 import { no } from "@/lib/locale/no";
-import { addMeLayer, addSessionLayers, boundsOf, setMe } from "@/lib/map/layers";
+import { bearing, haversine } from "@/lib/geo";
+import { addMeLayer, addPostsLayer, addSessionLayers, boundsOf, setMe, setPosts } from "@/lib/map/layers";
 import { loadMapLibre } from "@/lib/map/maplibre";
 import { kartverketStyle } from "@/lib/map/style";
 import { channels } from "@/lib/realtime";
+import { formatClock, phaseLeftS } from "@/lib/rules/game";
 import { SAFETY } from "@/lib/rules/safety";
+import { parseQr } from "@/lib/qr";
 
 const t = no.play;
 const SIM_ALLOWED = process.env.NODE_ENV !== "production" || process.env.NEXT_PUBLIC_SIM_ENABLED === "1";
@@ -90,11 +95,19 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
   const [toast, setToast] = useState<{ id: number; text: string } | null>(null);
   const [sosLocal, setSosLocal] = useState(false);
   const [sosDismissed, setSosDismissed] = useState<string | null>(null);
+  const [flash, setFlash] = useState<{ id: number; text: string; sub?: string; tone: "ok" | "gold" | "dim" } | null>(null);
+  const [badgeToast, setBadgeToast] = useState<{ id: number; text: string } | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const [scanBusy, setScanBusy] = useState(false);
+  const [offsetMs, setOffsetMs] = useState(0); // server − client clock (rule 6: server time is the truth)
 
   const fixRef = useRef<Fix | null>(null);
   const inflight = useRef(false);
   const seenMsg = useRef<Set<number>>(new Set());
   const danger = useRef(false);
+  const prev = useRef<TickView | null>(null);
+  const seenGolden = useRef<Set<string>>(new Set());
+  const beeped = useRef<string>("");
 
   useEffect(() => {
     fixRef.current = gps.fix;
@@ -113,6 +126,36 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
     return () => clearInterval(iv);
   }, []);
 
+  // Game feedback for one tick response (sound + vibration + flash).
+  // Safety cues (buzzer in the effect below) always win.
+  const react = useCallback((view: TickView) => {
+    const p = prev.current;
+    prev.current = view;
+    if (view.claimed) {
+      const gold = view.claimed.kind === "golden";
+      cue(gold ? "golden" : "claim");
+      setFlash({ id: Date.now(), text: t.claimed(view.claimed.value), sub: gold ? t.goldenClaimed : undefined, tone: gold ? "gold" : "ok" });
+    } else if (view.lost) {
+      cue("lost");
+      setFlash({ id: Date.now(), text: t.lost, tone: "dim" });
+    }
+    for (const post of view.posts ?? []) {
+      if (post.kind !== "golden" || seenGolden.current.has(post.id)) continue;
+      seenGolden.current.add(post.id);
+      if (!view.claimed) cue("golden");
+      setToast({ id: Date.now(), text: t.golden });
+    }
+    if (view.new_badges?.length) {
+      setTimeout(() => cue("badge"), view.claimed ? 700 : 0);
+      setBadgeToast({ id: Date.now(), text: view.new_badges.map((b) => t.badges[b] ?? b).join(" · ") });
+    }
+    if (p && p.status !== view.status) {
+      if (view.status === "live" && (p.status === "countdown" || p.status === "breather")) cue("go");
+      if (p.status === "live" && (view.status === "breather" || view.status === "gathering")) cue("roundEnd");
+    }
+
+  }, []);
+
   const tickNow = useCallback(async () => {
     const f = fixRef.current;
     if (!f || inflight.current || Date.now() - f.at > STALE_FIX_MS) return;
@@ -127,7 +170,9 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
         speed: f.speed,
         ts: Date.now(), // send time: orders requests; the same fix may be re-sent while standing still
       });
+      setOffsetMs(Date.parse(v.server_now) - Date.now());
       setView(v);
+      react(v);
       if (v.status === "ended") setEnded(true);
     } catch (e) {
       const code = e instanceof ApiError ? e.code : "";
@@ -137,7 +182,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
     } finally {
       inflight.current = false;
     }
-  }, [me.playerId, me.token, sessionId]);
+  }, [me.playerId, me.token, sessionId, react]);
 
   const status = view?.status ?? boot.status;
   const fast = status === "live" || status === "gathering" || status === "countdown";
@@ -163,6 +208,29 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
   useChannel(ready ? channels.all(sessionId) : null, onHint);
   useChannel(ready ? channels.player(sessionId, me.playerId) : null, onHint);
 
+  // Tick the moment the current phase ends (countdown → round → breather), so
+  // the screen flips with the server instead of on the next 10 s interval.
+  const phaseEnds = view?.round?.frozen ? null : (view?.round?.phase_ends_at ?? null);
+  useEffect(() => {
+    if (!ready || !phaseEnds) return;
+    const ms = Date.parse(phaseEnds) - (Date.now() + offsetMs) + 300;
+    if (ms < 0 || ms > 30 * 60_000) return;
+    const tm = setTimeout(() => void tickNow(), ms);
+    return () => clearTimeout(tm);
+  }, [ready, phaseEnds, offsetMs, tickNow]);
+
+  // Back from a locked screen (breather in the pocket): report as soon as GPS has a fresh fix.
+  useEffect(() => {
+    if (!ready) return;
+    const onVis = () => {
+      if (document.visibilityState !== "visible") return;
+      unlockAudio();
+      setTimeout(() => void tickNow(), 1500);
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [ready, tickNow]);
+
   // Feedback: buzzer + vibration when entering danger; ding for new messages.
   useEffect(() => {
     if (!view) return;
@@ -172,6 +240,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
       vibrate([300, 150, 300]);
     }
     danger.current = isDanger;
+
     for (const m of view.messages) {
       if (seenMsg.current.has(m.id)) continue;
       seenMsg.current.add(m.id);
@@ -186,6 +255,59 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
     const tm = setTimeout(() => setToast(null), 8000);
     return () => clearTimeout(tm);
   }, [toast]);
+  useEffect(() => {
+    if (!flash) return;
+    const tm = setTimeout(() => setFlash(null), 1600);
+    return () => clearTimeout(tm);
+  }, [flash]);
+  useEffect(() => {
+    if (!badgeToast) return;
+    const tm = setTimeout(() => setBadgeToast(null), 5000);
+    return () => clearTimeout(tm);
+  }, [badgeToast]);
+
+  // 3-2-1 beeps at the end of the countdown (from server time).
+  const leftNow = phaseLeftS(view?.round?.phase_ends_at, offsetMs, now);
+  useEffect(() => {
+    if (status !== "countdown" || leftNow === null || leftNow < 1 || leftNow > 3) return;
+    const key = `${view?.round?.idx}:${leftNow}`;
+    if (beeped.current === key) return;
+    beeped.current = key;
+    cue("beep");
+  }, [status, leftNow, view?.round?.idx]);
+
+  const onScan = useCallback(
+    async (text: string) => {
+      const code = parseQr(text, sessionId);
+      if (!code || scanBusy) {
+        if (!code) setFlash({ id: Date.now(), text: t.qrBad, tone: "dim" });
+        return;
+      }
+      setScanBusy(true);
+      try {
+        const r = await api.qr(sessionId, { playerId: me.playerId, token: me.token, code });
+        setScanning(false);
+        if (r.already) {
+          setFlash({ id: Date.now(), text: t.qrPost(r.n), sub: t.qrAlready, tone: "dim" });
+        } else {
+          cue("claim");
+          setFlash({ id: Date.now(), text: t.qrOk(r.value, r.first), sub: t.qrPost(r.n), tone: "ok" });
+          if (r.newBadges.length) setBadgeToast({ id: Date.now(), text: r.newBadges.map((b) => t.badges[b] ?? b).join(" · ") });
+        }
+        void tickNow();
+      } catch (e) {
+        const code2 = e instanceof ApiError ? e.code : "";
+        setFlash({
+          id: Date.now(),
+          text: code2 === "bad_code" ? t.qrBad : code2 === "not_now" ? t.qrNotNow : t.qrError,
+          tone: "dim",
+        });
+      } finally {
+        setTimeout(() => setScanBusy(false), 1200);   // don't re-scan the same card instantly
+      }
+    },
+    [me.playerId, me.token, scanBusy, sessionId, tickNow],
+  );
 
   // Server says acked → local "sent" state ends; the green receipt closes itself after 10 s.
   const ackedId = view?.sos?.acked ? view.sos.id : null;
@@ -241,14 +363,36 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
   const sosOpen = sosLocal || (view?.sos && !view.sos.acked);
   const sosAcked = !!view?.sos?.acked && view.sos.id !== sosDismissed;
 
+  const round = view?.round ?? null;
+  const mode = round?.mode ?? "free";
+  const left = phaseLeftS(round?.phase_ends_at, offsetMs, now);
+  const posts = status === "live" || status === "paused" ? (view?.posts ?? []) : [];
+  const nearest = nearestPost(gps.fix, posts);
+  const summary = view?.summary ?? null;
+  const playlistDone = status === "gathering" && !!summary && !!round && round.idx === round.count - 1;
+
   // Banner: one main message, most urgent first (safety beats game).
   let tone: Tone = "neutral";
   let title: string = t.lobby;
   let body: string | undefined = t.lobbyHint;
+  if (status === "countdown" && round) {
+    tone = "warn";
+    title = t.countdown;
+    body = `${t.roundOf(round.idx + 1, round.count)} · ${t.modes[mode]}`;
+  }
   if (status === "live") {
     tone = "live";
-    title = t.live;
-    body = undefined;
+    title = t.modes[mode];
+    body =
+      view?.claim ? t.claiming
+      : mode === "posts" && nearest ? t.nearestPost(nearest.m, t.dirs[Math.round(nearest.deg / 45) % 8])
+      : left !== null && round && left > round.duration_s - 10 ? t.modeHint[mode]
+      : undefined;
+  }
+  if (status === "breather") {
+    tone = "pause";
+    title = t.breather;
+    body = t.breatherBody;
   }
   if (status === "paused") {
     tone = "pause";
@@ -257,7 +401,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
   }
   if (status === "gathering" && view?.gather) {
     tone = view.gather.checked_in ? "ok" : "warn";
-    title = view.gather.checked_in ? t.checkedIn : t.gather;
+    title = view.gather.checked_in ? t.checkedIn : playlistDone ? t.done : t.gather;
     body = view.gather.checked_in ? undefined : t.gatherBody(view.gather.distance_m);
   }
   if (view && status !== "lobby") {
@@ -289,27 +433,54 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
         </h1>
         {body && <p className="mt-2 text-lg font-bold opacity-90">{body}</p>}
         {gpsLost && <p className="mt-2 rounded-xl bg-black/30 px-3 py-2 font-bold">{t.gpsLost}</p>}
-        {view && (
-          <dl className="mt-3 flex gap-6">
+        {status === "countdown" && left !== null && (
+          <p className="mt-2 text-8xl font-black tabular-nums leading-none" data-testid="countdown">
+            {left}
+          </p>
+        )}
+        {view && status !== "countdown" && (
+          <dl className="mt-3 flex items-end gap-5">
             <div>
-              <dt className="text-xs font-bold uppercase opacity-70">{t.distance}</dt>
-              <dd className="text-2xl font-black">{t.meters(view.stats.distance_m)}</dd>
+              <dt className="text-xs font-bold uppercase opacity-70">{t.points}</dt>
+              <dd className="text-4xl font-black tabular-nums" data-testid="points">{view.stats.points}</dd>
             </div>
-            <div>
-              <dt className="text-xs font-bold uppercase opacity-70">{t.active}</dt>
-              <dd className="text-2xl font-black">{t.minutes(view.stats.active_s)}</dd>
+            {round && (status === "live" || status === "paused" || status === "breather") && (
+              <div>
+                <dt className="text-xs font-bold uppercase opacity-70">{status === "breather" ? t.breather : t.timeLeft}</dt>
+                <dd className="text-4xl font-black tabular-nums" data-testid="clock">{formatClock(left)}</dd>
+              </div>
+            )}
+            <div className="ml-auto text-right text-sm font-bold opacity-90">
+              <p>{t.meters(view.stats.distance_m)}</p>
+              <p>{t.minutes(view.stats.active_s)} {t.active.toLowerCase()}</p>
+              {view.stats.posts > 0 && <p>{t.postsN(view.stats.posts)}</p>}
             </div>
           </dl>
         )}
       </header>
 
       <div className="relative min-h-0 flex-1">
-        <PlayerMap boot={boot} fix={gps.fix} />
+        <PlayerMap boot={boot} fix={gps.fix} posts={posts} activeId={view?.claim?.post_id ?? null} />
         {sim && <SimPad sim={sim} />}
+        {summary && (status === "breather" || status === "gathering") && (
+          <SummaryCard summary={summary} next={status === "breather" ? (round?.next ?? null) : null} />
+        )}
       </div>
 
       <footer className="flex items-center gap-3 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         <SosButton onFire={sendSos} disabled={!!sosOpen} />
+        {round?.qr && status === "live" && mode === "posts" && (
+          <button
+            className="flex-1 rounded-2xl border border-white/30 bg-black/30 px-4 py-4 text-center text-lg font-black"
+            onClick={() => {
+              unlockAudio();
+              setScanning(true);
+            }}
+            data-testid="scan"
+          >
+            {t.scan}
+          </button>
+        )}
         {boot.teacherPhone && (
           <a
             href={`tel:${boot.teacherPhone}`}
@@ -326,6 +497,29 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
           <p className="mt-1 text-xl font-black">{toast.text}</p>
         </div>
       )}
+
+      {badgeToast && !toast && (
+        <div className="absolute inset-x-3 top-[max(0.75rem,env(safe-area-inset-top))] rounded-2xl border border-gold bg-ink-2 p-4 shadow-2xl" role="status">
+          <p className="text-xs font-bold uppercase text-gold">{t.newBadge}</p>
+          <p className="mt-1 text-xl font-black">{badgeToast.text}</p>
+        </div>
+      )}
+
+      {flash && (
+        <div
+          key={flash.id}
+          className={`pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center text-center ${
+            flash.tone === "gold" ? "bg-gold/85 text-ink" : flash.tone === "ok" ? "bg-ok/80 text-ink" : "bg-black/60 text-white"
+          } animate-[flash_1.6s_ease-out_forwards]`}
+          role="status"
+          data-testid="flash"
+        >
+          <p className="text-7xl font-black">{flash.text}</p>
+          {flash.sub && <p className="mt-2 text-2xl font-black">{flash.sub}</p>}
+        </div>
+      )}
+
+      {scanning && <QrScanner onCode={onScan} onClose={() => setScanning(false)} busy={scanBusy} />}
 
       {(sosOpen || sosAcked) && (
         <div
@@ -374,7 +568,7 @@ function GpsChip({ fix, lost }: { fix: Fix | null; lost: boolean }) {
   );
 }
 
-function PlayerMap({ boot, fix }: { boot: PlayerBootstrap; fix: Fix | null }) {
+function PlayerMap({ boot, fix, posts, activeId }: { boot: PlayerBootstrap; fix: Fix | null; posts: PostView[]; activeId: string | null }) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<MlMap | null>(null);
   const [ready, setReady] = useState(false);
@@ -393,6 +587,7 @@ function PlayerMap({ boot, fix }: { boot: PlayerBootstrap; fix: Fix | null }) {
       });
       m.on("load", () => {
         addSessionLayers(m, boot.geo);
+        addPostsLayer(m);
         addMeLayer(m);
         setReady(true);
       });
@@ -408,6 +603,10 @@ function PlayerMap({ boot, fix }: { boot: PlayerBootstrap; fix: Fix | null }) {
   useEffect(() => {
     if (ready && map.current && fix) setMe(map.current, fix.lng, fix.lat);
   }, [ready, fix]);
+
+  useEffect(() => {
+    if (ready && map.current) setPosts(map.current, posts, activeId);
+  }, [ready, posts, activeId]);
 
   return (
     <div className="absolute inset-0">
@@ -551,6 +750,49 @@ function SimPad({ sim }: { sim: SimControls }) {
         <input type="checkbox" checked={sim.signal} onChange={(e) => sim.setSignal(e.target.checked)} />
         {t.sim.signal}
       </label>
+    </div>
+  );
+}
+
+function nearestPost(fix: Fix | null, posts: PostView[]): { m: number; deg: number } | null {
+  if (!fix || !posts.length) return null;
+  let best: { m: number; deg: number } | null = null;
+  for (const p of posts) {
+    const m = haversine([fix.lng, fix.lat], [p.pos.lng, p.pos.lat]);
+    if (!best || m < best.m) best = { m, deg: bearing([fix.lng, fix.lat], [p.pos.lng, p.pos.lat]) };
+  }
+  return best;
+}
+
+/** Breather / end card: this round's effort (PLAN §13 phase 2 «rundeoppsummering»). */
+function SummaryCard({ summary, next }: { summary: RoundSummary; next: { mode: "free" | "posts"; duration_s: number } | null }) {
+  const cell = "rounded-xl bg-black/30 p-3";
+  return (
+    <div className="absolute inset-x-3 bottom-3 z-10 rounded-2xl border border-line bg-ink-2/95 p-4 text-txt shadow-2xl backdrop-blur" data-testid="summary">
+      <p className="text-sm font-extrabold text-gold">{t.summary(summary.round + 1)}</p>
+      <dl className="mt-2 grid grid-cols-2 gap-2">
+        <div className={cell}>
+          <dt className="text-xs font-bold uppercase opacity-70">{t.sumPoints}</dt>
+          <dd className="text-3xl font-black">{summary.points}</dd>
+        </div>
+        <div className={cell}>
+          <dt className="text-xs font-bold uppercase opacity-70">{t.sumPosts}</dt>
+          <dd className="text-3xl font-black">{summary.posts}</dd>
+        </div>
+        <div className={cell}>
+          <dt className="text-xs font-bold uppercase opacity-70">{t.sumDistance}</dt>
+          <dd className="text-2xl font-black">{t.meters(summary.distance_m)}</dd>
+        </div>
+        <div className={cell}>
+          <dt className="text-xs font-bold uppercase opacity-70">{t.sumActive}</dt>
+          <dd className="text-2xl font-black">{t.minutes(summary.active_s)}</dd>
+        </div>
+      </dl>
+      {summary.move_pts > 0 && <p className="mt-2 text-sm font-bold">{t.sumMove(summary.move_pts)}</p>}
+      {summary.badges.length > 0 && (
+        <p className="mt-1 text-sm font-bold">{summary.badges.map((b) => t.badges[b] ?? b).join(" · ")}</p>
+      )}
+      {next && <p className="mt-3 font-extrabold">{t.next(t.modes[next.mode], Math.round(next.duration_s / 60))}</p>}
     </div>
   );
 }

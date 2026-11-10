@@ -23,15 +23,17 @@ export const POST = guarded(async (req, ctx) => {
     p_lat: body.lat,
     p_lng: body.lng,
     p_acc: body.acc,
-    p_speed: body.speed ?? null,
+    p_speed: body.speed,
     p_client_ts: body.ts ? new Date(body.ts).toISOString() : null,
     p_session: id,
   });
   // Safety first: push the host a refetch hint the moment an alarm is new or escalated.
   if (r.ok && r.alert_host) defer(() => broadcast(channels.host(id), events.alarm), "tick-alarm");
+  // A phase changed or a golden post appeared: every phone ticks now instead of on its next interval.
+  if (r.ok && r.hint_all) defer(() => broadcast(channels.all(id), events.state), "tick-advance");
   return respond(r, (x) => {
-    const { ok: _ok, alert_host: _a, session_id: _s, ...view } = x;
-    void _ok; void _a; void _s;
+    const { ok: _ok, alert_host: _a, session_id: _s, hint_all: _h, ...view } = x;
+    void _ok; void _a; void _s; void _h;
     return view;
   });
 });

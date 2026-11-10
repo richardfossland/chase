@@ -32,6 +32,13 @@ export interface BotStep {
   expect: Array<"forbidden" | "outside">;
 }
 
+/** What a bot learns from its last tick response (phase 2): posts to run to, game phase. */
+export interface BotView {
+  status?: string;
+  posts?: { pos: { lat: number; lng: number } }[] | null;
+  gather?: { checked_in: boolean } | null;
+}
+
 export interface BotOptions {
   seed: number;
   sosAfterS?: number; // `sos` bot
@@ -63,6 +70,7 @@ export function createBot(kind: Behaviour, geo: SimGeo, opts: BotOptions) {
   }
 
   let heading = r() * Math.PI * 2;
+  let view: BotView = {};
   let t = 0;
   let sosSent = false;
   const baseSpeed = kind === "cheater" ? 7 + r() : kind === "runner" || kind === "dropout" || kind === "sos" ? 2 + r() * 2 : 1.3;
@@ -103,13 +111,37 @@ export function createBot(kind: Behaviour, geo: SimGeo, opts: BotOptions) {
     pos = [pos[0] + (dx / d) * s, pos[1] + (dy / d) * s];
   }
 
+  // Postjakt: runners (and hiders, slowly) go for the nearest open post.
+  function nearestPostXY(): XY | null {
+    let best: XY | null = null;
+    let bestD = Infinity;
+    for (const p of view.posts ?? []) {
+      const xy = proj.toXY([p.pos.lng, p.pos.lat]) as XY;
+      const d = Math.hypot(xy[0] - pos[0], xy[1] - pos[1]);
+      if (d < bestD) {
+        bestD = d;
+        best = xy;
+      }
+    }
+    return best;
+  }
+
   function step(dt: number): BotStep {
     t += dt;
     const before: XY = [pos[0], pos[1]];
     let sos = false;
     let signal = true;
+    const special = kind === "wanderer" || kind === "forbidden" || kind === "cheater" || kind === "sos";
 
-    switch (kind) {
+    // Shared phase behaviour for ordinary bots: walk to the assembly point when
+    // gathering, stroll in the breather, chase posts in a Postjakt round.
+    if (!special && view.status === "gathering") {
+      if (!view.gather?.checked_in) seek(a as XY, dt, 1.4);
+    } else if (!special && view.status === "breather") {
+      wander(dt, 0.5, true);
+    } else if ((kind === "runner" || kind === "hider") && view.status === "live" && nearestPostXY()) {
+      seek(nearestPostXY()!, dt, kind === "hider" ? 1.5 : baseSpeed);
+    } else switch (kind) {
       case "runner":
       case "cheater":
         wander(dt, baseSpeed, true);
@@ -163,6 +195,9 @@ export function createBot(kind: Behaviour, geo: SimGeo, opts: BotOptions) {
   return {
     kind,
     step,
+    observe: (v: BotView) => {
+      view = v;
+    },
     /** True local position (for the sim map), not the noisy reported one. */
     truePos: () => {
       const ll = proj.toLngLat(pos[0], pos[1]);

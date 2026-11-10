@@ -3,6 +3,8 @@
 // Typed fetch wrappers around the Chase API (pattern from Sjakk's lib/client/api.ts).
 // Tokens and positions travel only in POST bodies — never in URLs.
 
+import type { Badge, Plan, PlanRound, RoundMode } from "@/lib/rules/game";
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -98,8 +100,43 @@ export interface HostPlayer {
   forbidden: boolean;
   still_s: number | null;
   points: number;
+  round_points: number;
+  posts: number;
+  badges: number;
   distance_m: number;
   active_s: number;
+}
+
+/** Round clock as chase._round_view() returns it (server times). */
+export interface RoundView {
+  idx: number;
+  count: number;
+  mode: RoundMode;
+  duration_s: number;
+  phase_ends_at: string | null;
+  frozen: boolean;
+  qr: boolean;
+  next: PlanRound | null;
+}
+
+export interface PostView {
+  id: string;
+  pos: LatLng;
+  value: number;
+  kind: "normal" | "golden";
+  radius_m?: number;
+  expires_at: string | null;
+  claimed_by?: string | null;
+}
+
+export interface RoundSummary {
+  round: number;
+  points: number;
+  posts: number;
+  distance_m: number;
+  active_s: number;
+  move_pts: number;
+  badges: Badge[];
 }
 
 export interface HostAlarm {
@@ -120,10 +157,15 @@ export interface Snapshot {
   pin: string;
   round_idx: number;
   round_started_at: string | null;
+  round: RoundView | null;
+  plan: Plan;
   paused_at: string | null;
   gather_started_at: string | null;
+  playlist_done: boolean;
   players: HostPlayer[];
   alarms: HostAlarm[];
+  posts: PostView[] | null;
+  qr_cards: { n: number; code: string; value: number }[] | null;
   geo: SessionGeo | null;
 }
 
@@ -132,8 +174,15 @@ export interface TickView {
   status: SessionStatus;
   round_idx: number;
   round_started_at: string | null;
+  round: RoundView | null;
   role: string;
-  stats: { points: number; distance_m: number; active_s: number };
+  stats: { points: number; distance_m: number; active_s: number; posts: number; round_points: number; badges: Badge[] };
+  posts: PostView[] | null;
+  claim: { post_id: string; hits: number; need: number } | null;
+  claimed: { post_id: string; value: number; kind: "normal" | "golden" } | null;
+  lost: boolean;
+  new_badges: Badge[];
+  summary: RoundSummary | null;
   safety: { geofence: 0 | 1 | 2 | 3; forbidden: boolean; outside_m: number; uncertain: boolean };
   sos: { id: string; acked: boolean } | null;
   gather: { assembly: LatLng; distance_m: number; checked_in: boolean } | null;
@@ -150,7 +199,17 @@ export interface PlayerBootstrap {
   serverNow: string;
 }
 
-export type HostAction = "start" | "pause" | "resume" | "message" | "gather" | "end_gather" | "check_in" | "rename" | "kick" | "sit_out";
+export type HostAction =
+  | "start" | "next" | "extend" | "pause" | "resume" | "message" | "gather" | "end_gather"
+  | "check_in" | "rename" | "kick" | "sit_out";
+
+export interface QrResult {
+  n: number;
+  value: number;
+  first: boolean;
+  already: boolean;
+  newBadges: Badge[];
+}
 
 export const api = {
   createSession: (body: {
@@ -159,7 +218,7 @@ export const api = {
     assembly: GeoJsonPoint;
     forbidden?: GeoJsonMultiPolygon | null;
     teacherPhone?: string | null;
-    plan?: { rounds: { mode: "free"; duration_s: number }[] };
+    plan?: Plan;
     sim?: boolean;
   }) => post<CreatedSession>("/api/sessions", body),
 
@@ -171,13 +230,15 @@ export const api = {
     post<PlayerBootstrap>(`/api/s/${sessionId}/me`, { playerId, token }),
   tick: (sessionId: string, body: { playerId: string; token: string; lat: number; lng: number; acc: number; speed?: number | null; ts?: number }) =>
     post<TickView>(`/api/s/${sessionId}/tick`, body, 6000),
+  qr: (sessionId: string, body: { playerId: string; token: string; code: string }) =>
+    post<QrResult>(`/api/s/${sessionId}/qr`, body, 8000),
   sos: (sessionId: string, body: { playerId: string; token: string; lat?: number; lng?: number }) =>
     post<{ alarmId: string; new: boolean }>(`/api/s/${sessionId}/sos`, body, 15000),
 
   snapshot: (sessionId: string, hostToken: string, geo = false) =>
     post<Snapshot>(`/api/s/${sessionId}/snapshot`, { hostToken, geo }, 6000),
   hostAction: (sessionId: string, hostToken: string, action: HostAction, payload?: Record<string, unknown>) =>
-    post<{ status: SessionStatus }>(`/api/s/${sessionId}/host`, { hostToken, action, payload }),
+    post<{ status: SessionStatus; round: RoundView | null }>(`/api/s/${sessionId}/host`, { hostToken, action, payload }),
   ack: (sessionId: string, hostToken: string, alarmId: string) =>
     post<{ alarmId: string }>(`/api/s/${sessionId}/ack`, { hostToken, alarmId }),
   end: (sessionId: string, hostToken: string, force = false) =>

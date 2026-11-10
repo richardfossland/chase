@@ -5,8 +5,8 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import type { Map as MlMap, Marker } from "maplibre-gl";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 
-import type { HostPlayer, SessionGeo, SessionStatus } from "@/lib/client/api";
-import { addSessionLayers, boundsOf } from "@/lib/map/layers";
+import type { HostPlayer, PostView, SessionGeo, SessionStatus } from "@/lib/client/api";
+import { addPostsLayer, addSessionLayers, boundsOf, setPosts } from "@/lib/map/layers";
 import { loadMapLibre } from "@/lib/map/maplibre";
 import { kartverketStyle } from "@/lib/map/style";
 import { SAFETY } from "@/lib/rules/safety";
@@ -29,8 +29,15 @@ export function dotState(p: HostPlayer, sos: boolean, status: SessionStatus) {
 
 const HostMap = forwardRef<
   HostMapHandle,
-  { geo: SessionGeo; players: HostPlayer[]; sosPlayers: Set<string>; status: SessionStatus; onSelect: (id: string) => void }
->(function HostMap({ geo, players, sosPlayers, status, onSelect }, ref) {
+  {
+    geo: SessionGeo;
+    players: HostPlayer[];
+    posts: PostView[];
+    sosPlayers: Set<string>;
+    status: SessionStatus;
+    onSelect: (id: string) => void;
+  }
+>(function HostMap({ geo, players, posts, sosPlayers, status, onSelect }, ref) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<MlMap | null>(null);
   const lib = useRef<Awaited<ReturnType<typeof loadMapLibre>> | null>(null);
@@ -63,6 +70,7 @@ const HostMap = forwardRef<
       m.addControl(new ml.NavigationControl({ showCompass: false }), "bottom-right");
       m.on("load", () => {
         addSessionLayers(m, geo);
+        addPostsLayer(m);
         setReady(true);
       });
       map.current = m;
@@ -117,6 +125,11 @@ const HostMap = forwardRef<
       }
     }
   }, [ready, players, sosPlayers, status]);
+
+  // Posts of the round: open in colour, taken in grey (teacher sees both).
+  useEffect(() => {
+    if (ready && map.current) setPosts(map.current, posts);
+  }, [ready, posts]);
 
   return (
     <div className="absolute inset-0">

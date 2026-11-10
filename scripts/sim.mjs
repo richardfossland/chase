@@ -17,9 +17,18 @@
 //   --rpc             send ticks straight to PostgREST (measures DB + PostgREST,
 //                     not Next). Reads NEXT_PUBLIC_SUPABASE_URL and
 //                     SUPABASE_SERVICE_ROLE_KEY from env or .env.development.local
-//   --end             end the session (force) when done (with --create)
+//   --plan SPEC       playlist for --create, e.g. "posts:120,posts:120,posts:120"
+//                     (default: one free round of --minutes)
+//   --breather S      breather between rounds (default 60)
+//   --countdown S     countdown before each round (default 10)
+//   --qr N            physical QR cards in the session (default 0)
+//   --until-done      stop as soon as the playlist is done (cap: --minutes)
+//   --end             end the session when done (with --create): roll call
+//                     first, then force if someone is missing
 //   --assert          exit 1 unless tick p95 < --p95 ms (default 50) and every
-//                     expected alarm reached the teacher within 5 s
+//                     expected alarm reached the teacher within 5 s; with --plan
+//                     also: the playlist ran to the end on its own, posts were
+//                     claimed and no post was claimed twice
 //   --json FILE       write the summary as JSON
 //
 // Positions are generated, never read from real pupils, and never logged.
@@ -55,6 +64,17 @@ if (args.create) {
       coordinates: [square(59.91115, 10.7518, 25, 20).coordinates],
     },
     sim: true,
+    plan: {
+      rounds: args.plan
+        ? String(args.plan).split(",").map((x) => {
+            const [mode, secs] = x.split(":");
+            return { mode, duration_s: Number(secs) };
+          })
+        : [{ mode: "free", duration_s: Math.max(60, Math.round(minutes * 60)) }],
+      countdown_s: Number(args.countdown ?? 10),
+      breather_s: Number(args.breather ?? 60),
+      qr_posts: Number(args.qr ?? 0),
+    },
   });
   if (r.status !== 200) fail(`create_session: ${r.status} ${JSON.stringify(r.data)}`);
   ({ pin, hostToken, sessionId } = r.data);
@@ -87,19 +107,32 @@ if (args.create) {
 const progress = setInterval(() => {
   const s = sim.summarize(swarm.stats);
   console.log(
-    `[${s.seconds}s] ticks ${s.ticks}  p50 ${s.tickMs.p50} ms  p95 ${s.tickMs.p95} ms  ` +
-      `alarmer ${s.alarms.seen}/${s.alarms.expected}  feil ${JSON.stringify(s.errors)}`,
+    `[${s.seconds}s] ${s.game.statuses.at(-1) ?? "?"} r${s.game.rounds}  ticks ${s.ticks}  p50 ${s.tickMs.p50} ms  p95 ${s.tickMs.p95} ms  ` +
+      `alarmer ${s.alarms.seen}/${s.alarms.expected}  poster ${s.game.claims} (gull ${s.game.golden})  feil ${JSON.stringify(s.errors)}`,
   );
 }, 10_000);
 
-await new Promise((r) => setTimeout(r, minutes * 60_000));
+const deadline = Date.now() + minutes * 60_000;
+while (Date.now() < deadline) {
+  await new Promise((r) => setTimeout(r, 1000));
+  // Give the bots ~40 s to walk to the assembly point after the last round.
+  if (args["until-done"] && swarm.stats.game.playlistDone) {
+    await new Promise((r) => setTimeout(r, 40_000));
+    break;
+  }
+}
 swarm.stop();
 clearInterval(progress);
 // Give the teacher poll a last chance to see alarms that came due at the very end.
 await new Promise((r) => setTimeout(r, 1500));
 
 const summary = { bots: kinds.length, mix: count(kinds), rpc: !!args.rpc, ...sim.summarize(swarm.stats) };
-if (args.create && args.end) await http.post(`/api/s/${sessionId}/end`, { hostToken, force: true });
+if (args.create && args.end) {
+  // Teacher presses «Avslutt»: roll call guard first (PLAN §6), force only if needed.
+  const e = await http.post(`/api/s/${sessionId}/end`, { hostToken });
+  summary.end = e.status === 200 ? "ok" : `missing ${(e.data.missing ?? []).length}`;
+  if (e.status !== 200) await http.post(`/api/s/${sessionId}/end`, { hostToken, force: true });
+}
 console.log(JSON.stringify(summary, null, 2));
 if (args.json) writeFileSync(args.json, JSON.stringify(summary, null, 2));
 
@@ -110,6 +143,13 @@ if (args.assert) {
     if (summary.alarms.maxDelayS !== null && summary.alarms.maxDelayS > 5) problems.push(`alarm brukte ${summary.alarms.maxDelayS} s (> 5 s)`);
     const overdue = swarm.stats.alarms.filter((a) => a.seenAt === null && Date.now() - a.expectedAt > 5000);
     if (overdue.length) problems.push(`${overdue.length} alarm(er) kom aldri fram: ${overdue.map((a) => a.kind).join(", ")}`);
+  }
+  if (args.plan && hostToken) {
+    const want = String(args.plan).split(",").length;
+    if (!summary.game.playlistDone) problems.push(`spillelista ble ikke ferdig (status ${summary.game.statuses.join("→")})`);
+    if (summary.game.rounds !== want) problems.push(`${summary.game.rounds} av ${want} runder`);
+    if (String(args.plan).includes("posts") && summary.game.claims === 0) problems.push("ingen poster tatt");
+    if (summary.game.duplicateClaims > 0) problems.push(`${summary.game.duplicateClaims} poster tatt to ganger`);
   }
   const errs = Object.entries(summary.errors).filter(([k]) => !k.includes("stale"));
   if (errs.length) problems.push(`feil: ${JSON.stringify(Object.fromEntries(errs))}`);
