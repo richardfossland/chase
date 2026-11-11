@@ -13,6 +13,7 @@ import { formatClock, phaseLeftS, planTotalS } from "@/lib/rules/game";
 import { SAFETY } from "@/lib/rules/safety";
 
 import { HostCeremony } from "./HostCeremony";
+import { EventChip, EventSheet } from "./HostEvents";
 import HostMap, { dotState, type HostMapHandle } from "./HostMap";
 import { useHostSession, type HostSession } from "./useHostSession";
 
@@ -30,7 +31,8 @@ type Sheet =
   | { kind: "more" }
   | { kind: "players"; missingOnly?: boolean }
   | { kind: "qr" }
-  | { kind: "ceremony" };
+  | { kind: "ceremony" }
+  | { kind: "events" };
 
 type Confirm = null | { message: string; label?: string; danger?: boolean; run: () => void };
 
@@ -154,6 +156,7 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
             status={snap.status}
             zone={snap.round?.zone ?? null}
             serverNow={snap.server_now}
+            eventTarget={snap.event && !snap.event.done && snap.event.kind === "sprint" ? snap.event.target : null}
             onSelect={select}
           />
         )}
@@ -172,6 +175,8 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
           </div>
           <RoundBar snap={snap} act={hs.act} onConfirm={setConfirm} />
           <AlarmStrip alarms={snap.alarms} onAck={(ids) => ids.forEach((id) => void hs.ack(id))} onFocus={focusAlarm} />
+          {/* Under the alarms: safety beats game (CLAUDE.md rule 4). */}
+          {!ceremony && <EventChip snap={snap} onOpen={() => setSheet({ kind: "events" })} />}
           {hs.error === "network" || hs.error === "timeout" ? (
             <p className="pointer-events-auto rounded-xl bg-warn px-3 py-2 text-sm font-bold text-ink">{h.errors.network}</p>
           ) : null}
@@ -195,7 +200,11 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
 
         {/* bottom bar */}
         {!ceremony && (
-        <nav className="absolute inset-x-0 bottom-0 z-10 grid grid-cols-4 gap-2 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+        <nav
+          className={`absolute inset-x-0 bottom-0 z-10 grid gap-2 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] ${
+            lobby || (gathering && playlistDone) ? "grid-cols-4" : "grid-cols-5"
+          }`}
+        >
           {gathering && playlistDone ? (
             <>
               <BarButton icon="🏆" label={no.ceremony.start} tone="gold" className="col-span-2" onClick={() => setSheet({ kind: "ceremony" })} />
@@ -219,6 +228,7 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
             </>
           ) : (
             <>
+              {/* PLAN §6: ⏸ · 📣 · ⚡ · 🧲 · ⋯ — ⚡ needs a round (0007) */}
               <BarButton
                 icon={paused ? "▶" : "⏸"}
                 label={paused ? h.resume : h.pause}
@@ -226,6 +236,12 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
                 onClick={() => void hs.act(paused ? "resume" : "pause")}
               />
               <BarButton icon="📣" label={h.message} onClick={() => setSheet({ kind: "message", to: null })} />
+              <BarButton
+                icon="⚡"
+                label={no.events.button}
+                tone={snap.event && !snap.event.done ? "gold" : undefined}
+                onClick={() => setSheet({ kind: "events" })}
+              />
               <BarButton
                 icon="🧲"
                 label={gathering ? h.endGather : h.gather}
@@ -302,6 +318,7 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
               }}
             />
           )}
+          {sheet.kind === "events" && <EventSheet snap={snap} hs={hs} />}
           {sheet.kind === "more" && (
             <div className="grid gap-2">
               <SheetButton onClick={() => setSheet({ kind: "qr" })}>▦ {h.showQr}</SheetButton>

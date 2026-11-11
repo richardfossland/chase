@@ -24,6 +24,8 @@
 //   --qr N            physical QR cards in the session (default 0)
 //   --until-done      stop as soon as the playlist is done (cap: --minutes)
 //   --ceremony        with --until-done: run the ceremony (0006), bots vote «vil spille igjen»
+//   --events S        with --create: automatic events every S s (0007); bots run to targets,
+//                     use power-ups, press «Ferdig»; the teacher confirms missions
 //   --end             end the session when done (with --create): roll call
 //                     first, then force if someone is missing
 //   --assert          exit 1 unless tick p95 < --p95 ms (default 50) and every
@@ -81,6 +83,7 @@ if (args.create) {
       countdown_s: Number(args.countdown ?? 10),
       breather_s: Number(args.breather ?? 60),
       qr_posts: Number(args.qr ?? 0),
+      ...(args.events ? { event_every_s: Number(args.events) } : {}),
     },
   });
   if (r.status !== 200) fail(`create_session: ${r.status} ${JSON.stringify(r.data)}`);
@@ -178,6 +181,13 @@ if (args.assert) {
     }
   }
   if (/\+zone/.test(String(args.plan)) && summary.game.zoneHits === 0) problems.push("ingen fikk sonebonus");
+  if (args.events && hostToken) {
+    const n = Object.values(summary.game.events).reduce((a, b) => a + b, 0);
+    if (n === 0) problems.push("ingen hendelser startet");
+    if (summary.game.sprintMax > 3) problems.push(`${summary.game.sprintMax} vinnere i én sprint (maks 3)`);
+    if (n > 0 && summary.game.prizes === 0) problems.push("ingen fikk premie i hendelsene");
+    if (summary.game.missionsDone > summary.game.missionsConfirmed) problems.push(`${summary.game.missionsDone - summary.game.missionsConfirmed} oppdrag ble aldri bekreftet`);
+  }
   const errs = Object.entries(summary.errors).filter(([k]) => !k.includes("stale"));
   if (errs.length) problems.push(`feil: ${JSON.stringify(Object.fromEntries(errs))}`);
   if (problems.length) {

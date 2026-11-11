@@ -30,6 +30,14 @@
   - bytt jeger/bytte,
   - gjør til dommer,
   - send beskjed.
+- **⚡ Hendelser** kommer av seg selv hvert 90. sekund (kan slås av i ⚡-arket). Med **⚡** starter du én selv med ett trykk til:
+  - sprint til punkt,
+  - fysisk oppdrag,
+  - samlingsalarm,
+  - gyllen post (Postjakt),
+  - rollebytte-storm og mørkelegging (Smittejakt).
+- **Fysisk oppdrag:** elevene gjør øvelsen der de står og trykker «Ferdig». Du bekrefter i ⚡-arket, én og én eller «Bekreft alle». Med QR-poster kan de skanne en post i stedet.
+- **Power-ups** (skjold, radar, lokkedue, turbo) er premier i hendelsene og brukes med ett trykk på elevens mobil.
 - I pustepausen kan elevene låse mobilen. Be dem låse den opp igjen når du blåser i fløyta.
 - Trenger du mer tid, bruker du **+1 min**. **Neste** hopper over resten av runden. **⏸** pauser alle klokker.
 

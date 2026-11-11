@@ -353,3 +353,39 @@ Eierens valg 2026-11-11: **læreren starter seremonien**, **læreren trykker «N
   - Lokalt, 12 boter: alle krav oppfylt.
 - **Deploy 2026-11-11:** migrasjon 0006 er i prod. Wrapperne `host_action`/`host_snapshot`, `vote_again`, `_podiums_from` og `_tag_rebalance` kan bare kjøres av service_role, `kc()` gir 3/2/6.95, og cron `chase-purge-expired` er aktiv. Worker `0d91c315` er bygget fra `be354a7` (rollback `f9986735` = del 2).
   - Prod-sim, 10 boter, poster+sone 90 s og smitte 90 s med `--ceremony`: 20 poster, 8 fangster, 21 sonebonuser, 0 feil, tick p95 185 ms. Seremonien ga 7 paller, alle 10 på pall, 10/10 kort og 10 stemmer (8 ja, 2 nei). Alle forventede alarmer nådde læreren innen 0,9 s. «Avslutt» stoppet på oppropet (5 ikke ved samlingspunktet) og ble tvunget, som forventet.
+
+## ADR-024 — Fase 4: hendelser, power-ups og flere merker (2026-11-11)
+Eierens valg 2026-11-11:
+- **Hendelser** kommer automatisk hvert 90. sekund, og læreren kan i tillegg utløse dem med ⚡ og ett trykk til.
+- **Power-ups** fås bare som premie i hendelser.
+- **Fysiske oppdrag** bekreftes med en QR-post eller av læreren.
+- Hele fasen leveres **samlet**.
+
+Migrasjon 0007 og tvillingen `lib/rules/events.ts`:
+- **Hendelsesmotoren:**
+  - Én hendelse om gangen per runde. Den ligger i `rounds.state.ev` med absolutte tider og er en ren funksjon av tid (regel 6), slik sonen er.
+  - Pause flytter tidene. Automatikken bruker `plan.event_every_s`: 0 = av, ellers 60–300. Veiviseren foreslår 90.
+  - Læreren kan slå automatikken av og på underveis.
+  - Det startes ingen ny hendelse når det er for lite igjen av runden. Rundeslutt avslutter hendelsen.
+- **Hendelsene** (hvilke som kan velges, avhenger av modus):
+  - **Sprint til punkt** (alle moduser): et punkt dukker opp minst 40 m fra alle. De tre første innenfor max(12 m, acc), med en fix bedre enn 25 m, får 20 p og en power-up.
+  - **Fysisk oppdrag** (alle moduser): en øvelse der eleven står. Eleven skanner en QR-post, eller trykker «Ferdig» så læreren bekrefter (én og én eller alle). Gir 15 p og merket «Oppdrag». Automatikken velger det bare når økta har QR-poster. Ellers utløser læreren det selv.
+  - **Samlingsalarm** (alle moduser): alle som når samlingspunktet innen 60 s, får 10 p. De tre første får en power-up, og de siste får en øvelse på skjermen. Ingen straff (regel 5).
+  - **Gyllen post** (Postjakt): en gyllen post nå.
+  - **Rollebytte-storm** (Smittejakt): alle roller byttes i 30 s med 5 s immunitet. Fangster følger Sisten-regler, så runden ikke kan ta slutt midt i stormen. Etterpå byttes rollene tilbake.
+  - **Mørkelegging** (Smittejakt): jegerne har ingen radar i 45 s.
+- **Power-ups:**
+  - Inventaret har plass til 2, og de brukes med ett trykk.
+  - Skjold (immun i 15 s, bytte) og radar (alle motstandere i 5 s) virker bare i Smittejakt.
+  - Lokkedue (falskt radar-ping 40 m unna i 30 s, bytte) virker også bare i Smittejakt.
+  - Turbo (dobbel bevegelsespoeng i 30 s) virker i alle moduser.
+  - Premien trekkes blant dem som passer for runden. Er inventaret fullt, blir det bare poeng.
+- **Merker:** nye merker er 500 m, 5 aktive min, overlevde 60 s, fangst-trippel (3 fangster i én runde), utforsker 10 ruter, sprint, oppdrag, samling og første power-up.
+  - **Avvik fra PLAN §4:** merkene lagres med en gang (serveren er sannheten, og eksisterende tester gjelder fortsatt). Mobilen viser høyst ett nytt merke per 30 s og legger resten i kø, så det ikke blir støy.
+- **Personvern:** lokkeduens punkt ligger i `player_live`, som slettes ved «Avslutt». Deltakelse i hendelser (`event_entries`) slettes med økta (PLAN §8).
+- **Testet lokalt:**
+  - DB-testene er grønne for alle migrasjoner (kjørt to ganger), og 126 TS-tester er grønne. Tvillingen `lib/rules/events.ts` gir det samme som SQL-en på de samme testdataene.
+  - Sim med 20 boter (Postjakt, Smitte, Sisten + sone, hendelser hvert 60. s, 4 QR-poster, seremoni): 5 hendelser, 78 premier, 36 av 36 oppdrag bekreftet, 9 power-ups vunnet og brukt, tick p95 23 ms, 0 feil.
+  - I nettleseren: ⚡ → sprint med to trykk (tre vinnere, så slutt), oppdrag → «Ferdig» → godkjent med +15 og merke, skjold (immun 15 s), og rollebytte-storm med tilbakebytte.
+- **Låser:** `_ev_invert` låser spillerradene før statistikken, i samme rekkefølge som `catch()`, så storm og fangst samtidig ikke gir vranglås.
+- **Ustabil test:** sone-testen fra 0005 sammenlignet r0, som er rundet til 0,1 m, med eksakt avstand. Den kunne feile når sentrum ble trukket uheldig, så den har nå 0,05 m margin. Migrasjonen er ikke endret.

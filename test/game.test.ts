@@ -27,7 +27,8 @@ describe("GAME twin of chase.kg()", () => {
   });
   it("badge ids match the SQL", () => {
     const all = sql + readFileSync(new URL("../supabase/migrations/0004_tag.sql", import.meta.url), "utf8")
-      + readFileSync(new URL("../supabase/migrations/0005_zone.sql", import.meta.url), "utf8");
+      + readFileSync(new URL("../supabase/migrations/0005_zone.sql", import.meta.url), "utf8")
+      + readFileSync(new URL("../supabase/migrations/0007_events_powerups.sql", import.meta.url), "utf8");
     for (const b of BADGES) expect(all).toContain(`'${b}'`);
   });
 });
@@ -55,8 +56,16 @@ describe("normPlan", () => {
       { rounds: [{ mode: "posts", duration_s: 360 }], breather_s: -1 },
       { rounds: [{ mode: "posts", duration_s: 360 }], qr_posts: 13 },
       { rounds: Array.from({ length: 11 }, () => ({ mode: "free", duration_s: 60 })) },
+      { rounds: [{ mode: "posts", duration_s: 360 }], event_every_s: 30 },
+      { rounds: [{ mode: "posts", duration_s: 360 }], event_every_s: 301 },
+      { rounds: [{ mode: "posts", duration_s: 360 }], event_every_s: "90" },
     ];
     for (const b of bad) expect(normPlan(b as never)).toBeNull();
+  });
+  it("event_every_s (0007): 90 kept, 0 omitted", () => {
+    expect(normPlan({ rounds: [{ mode: "posts", duration_s: 300 }], event_every_s: 90 })?.event_every_s).toBe(90);
+    expect(normPlan({ rounds: [{ mode: "posts", duration_s: 300 }], event_every_s: 0 })).not.toHaveProperty("event_every_s");
+    expect(normPlan({ rounds: [{ mode: "posts", duration_s: 300 }] })).not.toHaveProperty("event_every_s");
   });
   it("tag rounds carry a variant", () => {
     expect(normPlan({ rounds: [{ mode: "tag", duration_s: 300 }] })?.rounds[0]).toEqual({ mode: "tag", duration_s: 300, variant: "convert" });

@@ -8,6 +8,8 @@
 //     pressed, inside a forbidden zone, > 40 m outside, 60 s without a fix)
 //     until the teacher's snapshot shows that alarm. Needs the host token.
 
+import { powerupCheck } from "@/lib/rules/events";
+
 import { createBot, type Behaviour, type Bot, type BotFix, type SimGeo } from "./behaviours";
 
 export type AlarmKind = "sos" | "forbidden" | "outside" | "signal";
@@ -64,6 +66,16 @@ export interface SimStats {
     /** Ceremony (0006): bots that saw their «ditt beste»-kort, and their «vil spille igjen» votes. */
     bestCards: number;
     votes: number;
+    /** Phase 4 (0007): events seen by the teacher (per kind), prizes, power-ups, missions. */
+    events: Record<string, number>;
+    eventKeys: Set<string>;
+    sprintMax: number;
+    prizes: number;
+    powerupsGot: number;
+    powerupsUsed: number;
+    powerupFails: Record<string, number>;
+    missionsDone: number;
+    missionsConfirmed: number;
   };
 }
 
@@ -111,7 +123,8 @@ export function startSwarm(opts: SwarmOptions) {
     errors: {},
     latencies: [],
     alarms: [],
-    game: { claims: 0, golden: 0, lost: 0, qr: 0, duplicateClaims: 0, claimedIds: new Set(), statuses: [], playlistDone: false, rounds: 0, catches: 0, catchFails: {}, zoneHits: 0, zonePen: 0, bestCards: 0, votes: 0 },
+    game: { claims: 0, golden: 0, lost: 0, qr: 0, duplicateClaims: 0, claimedIds: new Set(), statuses: [], playlistDone: false, rounds: 0, catches: 0, catchFails: {}, zoneHits: 0, zonePen: 0, bestCards: 0, votes: 0,
+      events: {}, eventKeys: new Set(), sprintMax: 0, prizes: 0, powerupsGot: 0, powerupsUsed: 0, powerupFails: {}, missionsDone: 0, missionsConfirmed: 0 },
   };
   const players: SimPlayer[] = [];
   const timers: ReturnType<typeof setInterval>[] = [];
@@ -168,6 +181,7 @@ export function startSwarm(opts: SwarmOptions) {
         stats.game.zoneHits += z0 && z1.hits >= z0.hits ? z1.hits - z0.hits : z1.hits;
         stats.game.zonePen += z0 && z1.pen >= z0.pen ? z1.pen - z0.pen : z1.pen;
       }
+      const prevView = p.view;
       p.view = r.data;
       const cer = (r.data as { ceremony?: { best: unknown; voted: boolean | null } }).ceremony;
       if (cer?.best && !voted.has(p.playerId)) {
@@ -187,6 +201,7 @@ export function startSwarm(opts: SwarmOptions) {
       }
       if (r.data.lost) stats.game.lost++;
       void tryCatch(p);
+      void tryEvent(p, prevView);
       // A signal-loss check is satisfied once the bot reports again.
       stats.alarms = stats.alarms.filter((a) => !(a.player === p.playerId && a.kind === "signal" && a.seenAt === null && a.expectedAt > Date.now()));
     } else err(`tick_${r.status}_${String(r.data.error ?? "")}`);
@@ -222,6 +237,42 @@ export function startSwarm(opts: SwarmOptions) {
     }
   }
 
+  // Events (0007): count prizes, press «Ferdig» on a mission, use power-ups now and then.
+  const missionSent = new Set<string>();
+  const lastPu = new Map<string, number>();
+  type EvV = { no: number; kind: string; done: boolean; me: { state: string; powerup: string | null } | null } | null | undefined;
+  async function tryEvent(p: SimPlayer, before: Record<string, unknown> | null) {
+    const v = p.view as { status?: string; role?: string; round?: { idx: number; mode: string } | null; event?: EvV; power?: { inv: string[] } } | null;
+    if (!v) return;
+    const ev = v.event;
+    const pev = (before as { event?: EvV } | null)?.event;
+    if (ev?.me && ev.me.state !== "pending" && !(pev?.no === ev.no && pev.me?.state === ev.me.state)) {
+      stats.game.prizes++;
+      if (ev.me.powerup) stats.game.powerupsGot++;
+    }
+    if (v.status !== "live") return;
+    const key = `${p.playerId}:${v.round?.idx}:${ev?.no}`;
+    if (ev && ev.kind === "mission" && !ev.done && !ev.me && !missionSent.has(key) && p.kind !== "hider") {
+      missionSent.add(key);
+      const r = await opts.transport.post(`/api/s/${sessionId}/event`, { playerId: p.playerId, token: p.token, action: "mission" });
+      if (r.status === 200) stats.game.missionsDone++;
+      else err(`mission_${r.status}_${String(r.data.error ?? "")}`);
+    }
+    const inv = v.power?.inv ?? [];
+    if (!inv.length || Date.now() - (lastPu.get(p.playerId) ?? 0) < 8000) return;
+    const kind = inv.find((k) => powerupCheck(k, v.round?.mode as never, v.role ?? "neutral") === null);
+    if (!kind) return;
+    lastPu.set(p.playerId, Date.now());
+    const r = await opts.transport.post(`/api/s/${sessionId}/event`, { playerId: p.playerId, token: p.token, action: "powerup", kind });
+    if (r.status === 200) {
+      stats.game.powerupsUsed++;
+      log(`✨ ${p.nickname} brukte ${kind}`);
+    } else {
+      const k = String(r.data.error ?? r.status);
+      stats.game.powerupFails[k] = (stats.game.powerupFails[k] ?? 0) + 1;
+    }
+  }
+
   async function pollHost() {
     if (!opts.hostToken || stopped) return;
     const r = await opts.transport.post(`/api/s/${sessionId}/snapshot`, { hostToken: opts.hostToken });
@@ -244,6 +295,23 @@ export function startSwarm(opts: SwarmOptions) {
       stats.alarms = stats.alarms.filter((c) => c.expectedAt !== Infinity);
     }
     g.playlistDone ||= r.data.playlist_done === true;   // sticky: the ceremony follows
+    // Events (0007): count each one once, check the sprint cap, confirm missions like a teacher would.
+    const ev = r.data.event as { no: number; kind: string; entries: { state: string }[] } | null;
+    const ridx = (r.data.round as { idx: number } | null)?.idx ?? -1;
+    if (ev) {
+      const key = `${ridx}:${ev.no}`;
+      if (!g.eventKeys.has(key)) {
+        g.eventKeys.add(key);
+        g.events[ev.kind] = (g.events[ev.kind] ?? 0) + 1;
+        log(`⚡ hendelse: ${ev.kind}`);
+      }
+      if (ev.kind === "sprint") g.sprintMax = Math.max(g.sprintMax, ev.entries.filter((x) => x.state === "won").length);
+    }
+    const pending = (r.data.mission_pending as unknown[] | undefined) ?? [];
+    if (pending.length) {
+      const c = await opts.transport.post(`/api/s/${sessionId}/host`, { hostToken: opts.hostToken, action: "mission_confirm", payload: {} });
+      if (c.status === 200) g.missionsConfirmed += Number(c.data.confirmed ?? 0);
+    }
     const round = r.data.round as { idx: number } | null;
     if (round) g.rounds = Math.max(g.rounds, round.idx + 1);
     const alarms = (r.data.alarms as Array<{ player_id: string; kind: AlarmKind; resolved: boolean; created_at: string }>) ?? [];
@@ -360,6 +428,14 @@ export function summarize(stats: SimStats) {
       zonePen: stats.game.zonePen,
       bestCards: stats.game.bestCards,
       votes: stats.game.votes,
+      events: stats.game.events,
+      sprintMax: stats.game.sprintMax,
+      prizes: stats.game.prizes,
+      powerupsGot: stats.game.powerupsGot,
+      powerupsUsed: stats.game.powerupsUsed,
+      powerupFails: stats.game.powerupFails,
+      missionsDone: stats.game.missionsDone,
+      missionsConfirmed: stats.game.missionsConfirmed,
       statuses: stats.game.statuses,
     },
     ticks: stats.ticks,

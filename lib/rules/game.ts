@@ -5,6 +5,8 @@
 // clock, claim ring, wizard totals). test/game.test.ts diffs GAME against the
 // SQL and runs the same vectors as test/sql/0003_playlist_posts_points.test.sql.
 
+import { EVENTS } from "./events";
+
 export const GAME = {
   countdown_s: 10,
   countdown_max_s: 30,
@@ -53,6 +55,8 @@ export interface Plan {
   countdown_s: number;
   breather_s: number;
   qr_posts: number;
+  /** Automatic events every this many seconds (0007, lib/rules/events.ts); absent = off. */
+  event_every_s?: number;
 }
 
 /** The wizard's default (decided 2026-11-10): 3 × 6 min Postjakt, 60 s breather. */
@@ -65,6 +69,7 @@ export const DEFAULT_PLAN: Plan = {
   countdown_s: GAME.countdown_s,
   breather_s: GAME.breather_s,
   qr_posts: 0,
+  event_every_s: 90,
 };
 
 /** Ready-made playlists (PLAN §2.1, owner's choice 2026-11-10: «Full gymtime» = variert). */
@@ -79,6 +84,7 @@ export const TEMPLATES = {
     countdown_s: GAME.countdown_s,
     breather_s: GAME.breather_s,
     qr_posts: 0,
+    event_every_s: 90,
   },
   gym: {
     rounds: [
@@ -91,6 +97,7 @@ export const TEMPLATES = {
     countdown_s: GAME.countdown_s,
     breather_s: GAME.breather_s,
     qr_posts: 0,
+    event_every_s: 90,
   },
 } satisfies Record<string, Plan>;
 export type TemplateId = keyof typeof TEMPLATES;
@@ -118,7 +125,14 @@ export function normPlan(p: Partial<Plan> & { rounds?: unknown }): Plan | null {
   const qr = p.qr_posts ?? 0;
   const int = (x: unknown, max: number) => typeof x === "number" && Number.isInteger(x) && x >= 0 && x <= max;
   if (!int(cd, GAME.countdown_max_s) || !int(br, GAME.breather_max_s) || !int(qr, GAME.qr_max)) return null;
-  return { rounds, countdown_s: cd, breather_s: br, qr_posts: qr };
+  const out: Plan = { rounds, countdown_s: cd, breather_s: br, qr_posts: qr };
+  // 0007: 0 / absent = off (omitted), else 60..300 (EVENTS.every_min_s/max_s).
+  const ev = p.event_every_s;
+  if (ev !== undefined && ev !== null) {
+    if (typeof ev !== "number" || !Number.isInteger(ev) || (ev !== 0 && (ev < EVENTS.every_min_s || ev > EVENTS.every_max_s))) return null;
+    if (ev > 0) out.event_every_s = ev;
+  }
+  return out;
 }
 
 /** Total playlist time in seconds: countdowns + rounds + breathers between rounds. */
@@ -172,5 +186,7 @@ export function formatClock(s: number | null): string {
 /** Badge ids awarded by chase._award_badges() / claim_qr(). */
 export const BADGES = [
   "first_post", "golden", "posts_5", "qr", "km_1", "active_10", "explorer_25", "first_catch", "catches_5", "survivor", "zone_master",
+  // 0007 (fase 4)
+  "m500", "active_5", "explorer_10", "catch_3", "survived_60", "sprint", "mission", "gathered", "powerup",
 ] as const;
 export type Badge = (typeof BADGES)[number];

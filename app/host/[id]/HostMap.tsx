@@ -6,9 +6,10 @@ import type { Map as MlMap, Marker } from "maplibre-gl";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 
 import type { HostPlayer, PostView, SessionGeo, SessionStatus } from "@/lib/client/api";
-import { addPostsLayer, addSessionLayers, addZoneLayer, boundsOf, setPosts, setZone } from "@/lib/map/layers";
+import { addEventLayer, addPostsLayer, addSessionLayers, addZoneLayer, boundsOf, setEvent, setPosts, setZone } from "@/lib/map/layers";
 import { loadMapLibre } from "@/lib/map/maplibre";
 import { kartverketStyle } from "@/lib/map/style";
+import { EVENTS } from "@/lib/rules/events";
 import { SAFETY } from "@/lib/rules/safety";
 import { zoneAt, type ZoneState } from "@/lib/rules/zone";
 
@@ -40,9 +41,11 @@ const HostMap = forwardRef<
     /** Live zone round (0005) + the server clock it runs on. */
     zone: ZoneState | null;
     serverNow: string;
+    /** Sprint target of the current event (0007). */
+    eventTarget?: { lat: number; lng: number } | null;
     onSelect: (id: string) => void;
   }
->(function HostMap({ geo, players, posts, sosPlayers, status, zone, serverNow, onSelect }, ref) {
+>(function HostMap({ geo, players, posts, sosPlayers, status, zone, serverNow, eventTarget = null, onSelect }, ref) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<MlMap | null>(null);
   const lib = useRef<Awaited<ReturnType<typeof loadMapLibre>> | null>(null);
@@ -77,6 +80,7 @@ const HostMap = forwardRef<
         addSessionLayers(m, geo);
         addZoneLayer(m);
         addPostsLayer(m);
+        addEventLayer(m);
         setReady(true);
       });
       map.current = m;
@@ -136,6 +140,12 @@ const HostMap = forwardRef<
   useEffect(() => {
     if (ready && map.current) setPosts(map.current, posts);
   }, [ready, posts]);
+
+  const tLat = eventTarget?.lat ?? null;
+  const tLng = eventTarget?.lng ?? null;
+  useEffect(() => {
+    if (ready && map.current) setEvent(map.current, tLat !== null && tLng !== null ? { lat: tLat, lng: tLng } : null, EVENTS.sprint_reach_m);
+  }, [ready, tLat, tLng]);
 
   // Zone: a pure function of server time, redrawn each second (same circle as the phones).
   useEffect(() => {

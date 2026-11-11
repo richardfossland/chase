@@ -91,7 +91,8 @@ begin
   -- The final circle (≈ 28 m) fits: centre at least that far inside the edge (± rounding).
   v_inner := ST_Buffer((select boundary from chase.sessions where id = s), -27);
   assert ST_Covers(v_inner, chase._zone_center(z)), 'centre far enough inside';
-  assert (z -> 'r' ->> 0)::float8 >= ST_Distance(chase._zone_center(z), chase._pt(59.91, 10.75)), 'r0 covers the corners';
+  -- r0 is rounded to 0.1 m (_zone_radii), so allow that much.
+  assert (z -> 'r' ->> 0)::float8 >= ST_Distance(chase._zone_center(z), chase._pt(59.91, 10.75)) - 0.05, 'r0 covers the corners';
 
   -- Phase 0 covers everything: a corner is inside, view is in the tick.
   c := pg_temp.far_corner(s);

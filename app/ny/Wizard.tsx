@@ -688,6 +688,7 @@ function DrawControls(props: {
 const ROUND_MINUTES = [3, 4, 5, 6, 8, 10, 15];
 const ROUND_KINDS = ["posts", "convert", "swap", "free"] as const;
 const BREATHERS = [0, 30, 60, 90, 120];
+const EVENT_EVERY = [0, 60, 90, 120] as const;
 const QR_COUNTS = [0, 4, 6, 8, 12];
 
 /** Playlist step (PLAN §13 phase 2): rounds with mode + length, breather, physical QR cards. */
@@ -807,6 +808,16 @@ function PlaylistEditor(props: { plan: Plan; onChange: (p: Plan) => void; chip: 
           <p className="mt-1 text-xs text-txt-dim">{p.qrHint}</p>
         </>
       )}
+      {/* Fase 4 (0007): automatic events, wizard default 90 s (ADR-024). */}
+      <p className="mt-4 text-sm font-semibold">{no.events.wizard.label}</p>
+      <div className="mt-2 flex gap-1.5">
+        {EVENT_EVERY.map((n) => (
+          <button key={n} className={chip((plan.event_every_s ?? 0) === n)} onClick={() => onChange({ ...plan, event_every_s: n || undefined })}>
+            {n === 0 ? no.events.wizard.off : no.events.wizard.every(n)}
+          </button>
+        ))}
+      </div>
+      <p className="mt-1 text-xs text-txt-dim">{no.events.wizard.help}</p>
       <p className="mt-4 text-sm font-bold">{p.total(Math.round(planTotalS(plan) / 60))}</p>
     </div>
   );

@@ -33,6 +33,7 @@ export const createSessionBody = z.object({
       countdown_s: z.number().int().optional(),
       breather_s: z.number().int().optional(),
       qr_posts: z.number().int().optional(),
+      event_every_s: z.number().int().optional(),
     })
     .optional(),
   settings: z.record(z.string(), z.unknown()).optional(),
@@ -65,6 +66,10 @@ export const qrBody = playerAuth.extend({ code: z.string().min(3).max(16) });
 export const catchBody = playerAuth.extend({ code: z.string().min(4).max(32) });
 
 export const againBody = playerAuth.extend({ yes: z.boolean() });
+export const eventBody = z.discriminatedUnion("action", [
+  playerAuth.extend({ action: z.literal("powerup"), kind: z.enum(["shield", "radar", "decoy", "turbo"]) }),
+  playerAuth.extend({ action: z.literal("mission") }),
+]);
 
 export const sosBody = playerAuth.extend({ lat: lat.optional(), lng: lng.optional() });
 
@@ -75,6 +80,7 @@ export const hostActionBody = hostAuth.extend({
     "start", "next", "extend", "pause", "resume", "message", "gather", "end_gather",
     "check_in", "rename", "kick", "sit_out",
     "ceremony_start", "ceremony_next", "ceremony_back", "vote_again", "adjust_points", "set_role", "referee_award",
+    "event_start", "event_stop", "mission_confirm", "events_auto",
   ]),
   payload: z
     .object({
@@ -89,6 +95,7 @@ export const hostActionBody = hostAuth.extend({
       role: z.enum(["hunter", "prey", "referee", "player"]).optional(),
       spread: z.boolean().optional(),
       yes: z.boolean().optional(),
+      kind: z.enum(["sprint", "mission", "gather", "golden", "storm", "blackout"]).optional(),
     })
     .optional(),
 });

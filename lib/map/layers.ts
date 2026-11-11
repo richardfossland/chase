@@ -209,3 +209,54 @@ export function setZone(m: MlMap, z: { c: { lat: number; lng: number }; r: numbe
   }
   src.setData({ type: "FeatureCollection", features });
 }
+
+/** Event target (0007): the sprint point as a gold ring of its reach radius + a dot. */
+export function addEventLayer(m: MlMap) {
+  m.addSource("event", { type: "geojson", data: EMPTY });
+  m.addLayer({
+    id: "event-reach",
+    type: "fill",
+    source: "event",
+    filter: ["==", ["get", "kind"], "reach"],
+    paint: { "fill-color": "#ffc83d", "fill-opacity": 0.3 },
+  });
+  m.addLayer({
+    id: "event-ring",
+    type: "line",
+    source: "event",
+    filter: ["==", ["get", "kind"], "reach"],
+    paint: { "line-color": "#ffc83d", "line-width": 3 },
+  });
+  m.addLayer({
+    id: "event-dot",
+    type: "circle",
+    source: "event",
+    filter: ["==", ["get", "kind"], "dot"],
+    paint: { "circle-radius": 9, "circle-color": "#ffc83d", "circle-stroke-color": "#111827", "circle-stroke-width": 3 },
+  });
+  // Radar power-up: every opponent for a few seconds.
+  m.addLayer({
+    id: "event-live",
+    type: "circle",
+    source: "event",
+    filter: ["==", ["get", "kind"], "live"],
+    paint: { "circle-radius": 8, "circle-color": "#ff5a4e", "circle-stroke-color": "#ffffff", "circle-stroke-width": 2 },
+  });
+}
+
+export function setEvent(m: MlMap, target: { lat: number; lng: number } | null, reachM: number, live: { lat: number; lng: number }[] = []) {
+  const src = m.getSource<GeoJSONSource>("event");
+  if (!src) return;
+  const features: Feature[] = live.map((p) => ({
+    type: "Feature",
+    properties: { kind: "live" },
+    geometry: { type: "Point", coordinates: [p.lng, p.lat] },
+  }));
+  if (target) {
+    features.push(
+      { type: "Feature", properties: { kind: "reach" }, geometry: { type: "Polygon", coordinates: [circleRing(target, reachM)] } },
+      { type: "Feature", properties: { kind: "dot" }, geometry: { type: "Point", coordinates: [target.lng, target.lat] } },
+    );
+  }
+  src.setData({ type: "FeatureCollection", features });
+}

@@ -24,6 +24,7 @@ export const POST = guarded(async (req, ctx) => {
     value: x.value,
     first: x.first ?? false,
     already: x.already ?? false,
+    mission: x.mission ?? false,   // 0007: a QR scan during a mission confirms it
     newBadges: x.new_badges ?? [],
   }));
 });

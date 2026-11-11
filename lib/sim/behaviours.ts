@@ -43,6 +43,8 @@ export interface BotView {
   gather?: { checked_in: boolean } | null;
   round?: { zone?: ZoneState | null } | null;
   zone?: { inside: boolean } | null;
+  /** 0007: sprint point / assembly point to run to while the event is open. */
+  event?: { kind: string; done: boolean; target: { lat: number; lng: number } | null; me: unknown } | null;
 }
 
 export interface BotOptions {
@@ -155,6 +157,9 @@ export function createBot(kind: Behaviour, geo: SimGeo, opts: BotOptions) {
       if (!view.gather?.checked_in) seek(a as XY, dt, 1.4);
     } else if (!special && view.status === "breather") {
       wander(dt, 0.5, true);
+    } else if (!special && kind !== "hider" && view.status === "live" && view.event && !view.event.done && !view.event.me && view.event.target) {
+      // Event (0007): sprint to the point / to the assembly point.
+      seek(proj.toXY([view.event.target.lng, view.event.target.lat]) as XY, dt, baseSpeed + 1);
     } else if (!special && kind !== "hider" && view.status === "live" && zoneSeek()) {
       // Krympende sone: get inside the circle (the next one once it is announced). Hiders don't bother.
       seek(zoneSeek()!, dt, baseSpeed + 0.5);

@@ -19,6 +19,8 @@ export interface HostSession {
   error: string | null;
   refresh: () => Promise<void>;
   act: (action: HostAction, payload?: Record<string, unknown>) => Promise<boolean>;
+  /** Like act, but hands back the error code (null = done) for messages in a sheet. */
+  tryAct: (action: HostAction, payload?: Record<string, unknown>) => Promise<string | null>;
   ack: (alarmId: string) => Promise<void>;
   end: (force: boolean) => Promise<{ ok: true } | { ok: false; missing: { id: string; nickname: string }[] }>;
 }
@@ -113,6 +115,20 @@ export function useHostSession(sessionId: string, token: string | null): HostSes
     [sessionId, token, refresh],
   );
 
+  const tryAct = useCallback(
+    async (action: HostAction, payload?: Record<string, unknown>) => {
+      if (!token) return "auth";
+      try {
+        await api.hostAction(sessionId, token, action, payload);
+        void refresh();
+        return null;
+      } catch (e) {
+        return e instanceof ApiError ? e.code : "network";
+      }
+    },
+    [sessionId, token, refresh],
+  );
+
   const ack = useCallback(
     async (alarmId: string) => {
       if (!token) return;
@@ -145,5 +161,5 @@ export function useHostSession(sessionId: string, token: string | null): HostSes
     [sessionId, token, refresh],
   );
 
-  return { sessionId, snap, geo, error, refresh, act, ack, end };
+  return { sessionId, snap, geo, error, refresh, act, tryAct, ack, end };
 }

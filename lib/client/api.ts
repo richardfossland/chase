@@ -4,6 +4,7 @@
 // Tokens and positions travel only in POST bodies — never in URLs.
 
 import type { Badge, Plan, PlanRound, RoundMode } from "@/lib/rules/game";
+import type { EventKind, Powerup } from "@/lib/rules/events";
 import type { BestCard, PodiumCat } from "@/lib/rules/podiums";
 import type { ZoneState } from "@/lib/rules/zone";
 
@@ -179,6 +180,47 @@ export interface Snapshot {
   geo: SessionGeo | null;
   referee_awards: string[];
   ceremony: CeremonyView | null;
+  /** 0007: the current event (+ who reached it), what ⚡ may start now, the automatic switch. */
+  event: HostEventView | null;
+  event_kinds: EventKind[] | null;
+  events_auto: boolean;
+  events_every_s: number;
+  mission_pending: { player_id: string; nickname: string }[];
+}
+
+/** One event as the server keeps it (rounds.state.ev, 0007). Server times. */
+export interface EventBase {
+  no: number;
+  kind: EventKind;
+  at: string;
+  ends_at: string;
+  closes_at: string;
+  done: boolean;
+  target: LatLng | null;
+  /** Mission: index into no.events.missions. */
+  mission: number | null;
+}
+
+export interface HostEventView extends EventBase {
+  done_at: string | null;
+  entries: { player_id: string; nickname: string; state: "won" | "reached" | "pending" | "done"; place: number | null; points: number; powerup: Powerup | null }[];
+}
+
+/** The phone's event (chase._ev_tick). */
+export interface EventView extends EventBase {
+  frozen_at: string | null;
+  dist_m: number | null;
+  count: number;
+  /** Sprint: places left. */
+  left: number | null;
+  me: { state: "won" | "reached" | "pending" | "done"; place: number | null; points: number; powerup: Powerup | null } | null;
+}
+
+export interface PowerView {
+  inv: Powerup[];
+  radar_until: string | null;
+  turbo_until: string | null;
+  decoy_until: string | null;
 }
 
 export interface TickView {
@@ -199,6 +241,9 @@ export interface TickView {
   /** Zone round only: am I inside, points lost to the zone this round, phase bonuses. */
   zone?: { inside: boolean; dist_m: number; pen: number; hits: number };
   ceremony?: CeremonyView;
+  /** 0007: current event and my power-ups. */
+  event?: EventView | null;
+  power?: PowerView;
   safety: { geofence: 0 | 1 | 2 | 3; forbidden: boolean; outside_m: number; uncertain: boolean };
   sos: { id: string; acked: boolean } | null;
   gather: { assembly: LatLng; distance_m: number; checked_in: boolean } | null;
@@ -218,7 +263,8 @@ export interface PlayerBootstrap {
 export type HostAction =
   | "start" | "next" | "extend" | "pause" | "resume" | "message" | "gather" | "end_gather"
   | "check_in" | "rename" | "kick" | "sit_out"
-  | "ceremony_start" | "ceremony_next" | "ceremony_back" | "vote_again" | "adjust_points" | "set_role" | "referee_award";
+  | "ceremony_start" | "ceremony_next" | "ceremony_back" | "vote_again" | "adjust_points" | "set_role" | "referee_award"
+  | "event_start" | "event_stop" | "mission_confirm" | "events_auto";
 
 /** Ceremony as chase._ceremony_view() returns it (0006). Nicknames only, never ids. */
 export interface CeremonyView {
@@ -245,6 +291,10 @@ export interface TagView {
   prey_near?: number;
   radar?: { pos: LatLng; age_s: number; stealth: boolean }[];
   hunter_near?: boolean;
+  /** 0007: Mørkelegging — no radar right now. */
+  blackout?: boolean;
+  /** 0007: radar power-up — every opponent for a few seconds. */
+  radar_live?: LatLng[];
 }
 
 export interface CatchResult {
@@ -261,6 +311,8 @@ export interface QrResult {
   value: number;
   first: boolean;
   already: boolean;
+  /** 0007: the scan confirmed a mission instead of claiming a post. */
+  mission?: boolean;
   newBadges: Badge[];
 }
 
@@ -289,6 +341,10 @@ export const api = {
     post<QrResult>(`/api/s/${sessionId}/qr`, body, 8000),
   again: (sessionId: string, body: { playerId: string; token: string; yes: boolean }) =>
     post<{ already: boolean }>(`/api/s/${sessionId}/again`, body, 8000),
+  powerup: (sessionId: string, body: { playerId: string; token: string; kind: Powerup }) =>
+    post<{ kind: Powerup; until: string | null; newBadges: Badge[] }>(`/api/s/${sessionId}/event`, { ...body, action: "powerup" }, 8000),
+  missionDone: (sessionId: string, body: { playerId: string; token: string }) =>
+    post<{ state: "pending" | "done" | null }>(`/api/s/${sessionId}/event`, { ...body, action: "mission" }, 8000),
   sos: (sessionId: string, body: { playerId: string; token: string; lat?: number; lng?: number }) =>
     post<{ alarmId: string; new: boolean }>(`/api/s/${sessionId}/sos`, body, 15000),
 

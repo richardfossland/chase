@@ -17,7 +17,7 @@ import { playBuzzer, playDing, unlockAudio } from "@/lib/client/sound";
 import { useChannel } from "@/lib/client/useChannel";
 import { no } from "@/lib/locale/no";
 import { bearing, haversine } from "@/lib/geo";
-import { addMeLayer, addPostsLayer, addRadarLayer, addSessionLayers, addZoneLayer, boundsOf, setMe, setPosts, setRadar, setZone } from "@/lib/map/layers";
+import { addEventLayer, addMeLayer, addPostsLayer, addRadarLayer, addSessionLayers, addZoneLayer, boundsOf, setEvent, setMe, setPosts, setRadar, setZone } from "@/lib/map/layers";
 import { loadMapLibre } from "@/lib/map/maplibre";
 import { kartverketStyle } from "@/lib/map/style";
 import { channels } from "@/lib/realtime";
@@ -25,6 +25,9 @@ import { formatClock, phaseLeftS, type PlanRound } from "@/lib/rules/game";
 import { catchQr, parseCatch } from "@/lib/rules/tag";
 import { SAFETY } from "@/lib/rules/safety";
 import { zoneAt, type ZoneNow, type ZoneState } from "@/lib/rules/zone";
+import { EVENTS, nextBadgeToast, type Powerup } from "@/lib/rules/events";
+import type { Badge } from "@/lib/rules/game";
+import { EventStrip, PowerBar } from "./EventCard";
 import { CeremonyScreen } from "@/lib/client/Ceremony";
 import { parseQr } from "@/lib/qr";
 
@@ -101,7 +104,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
   const [ended, setEnded] = useState(false);
   const [kicked, setKicked] = useState(false);
   const [now, setNow] = useState(() => Date.now());
-  const [toast, setToast] = useState<{ id: number; text: string } | null>(null);
+  const [toast, setToast] = useState<{ id: number; text: string; label?: string } | null>(null);
   const [sosLocal, setSosLocal] = useState(false);
   const [sosDismissed, setSosDismissed] = useState<string | null>(null);
   const [flash, setFlash] = useState<{ id: number; text: string; sub?: string; tone: "ok" | "gold" | "dim" } | null>(null);
@@ -111,6 +114,8 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
   const [catching, setCatching] = useState(false);
   const [showCode, setShowCode] = useState(false);
   const [votedLocal, setVotedLocal] = useState(false);
+  const [missionLocal, setMissionLocal] = useState<number | null>(null);   // «Ferdig» sent for this event no
+  const [puBusy, setPuBusy] = useState(false);
   const [offsetMs, setOffsetMs] = useState(0); // server − client clock (rule 6: server time is the truth)
 
   const fixRef = useRef<Fix | null>(null);
@@ -120,6 +125,17 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
   const prev = useRef<TickView | null>(null);
   const seenGolden = useRef<Set<string>>(new Set());
   const beeped = useRef<string>("");
+  // Badge toasts: at most one per 30 s (ADR-024); the rest wait here.
+  const badgeQueue = useRef<Badge[]>([]);
+  const badgeSeen = useRef<Set<Badge>>(new Set());
+  const lastBadgeAt = useRef<number | null>(null);
+  const queueBadges = useCallback((list: Badge[]) => {
+    for (const b of list) {
+      if (badgeSeen.current.has(b)) continue;
+      badgeSeen.current.add(b);
+      badgeQueue.current.push(b);
+    }
+  }, []);
 
   useEffect(() => {
     fixRef.current = gps.fix;
@@ -157,12 +173,30 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
       if (!view.claimed) cue("golden");
       setToast({ id: Date.now(), text: t.golden });
     }
-    if (view.new_badges?.length) {
-      setTimeout(() => cue("badge"), view.claimed ? 700 : 0);
-      setBadgeToast({ id: Date.now(), text: view.new_badges.map((b) => t.badges[b] ?? b).join(" · ") });
+    // Every badge the server stored since the last tick — also those from the
+    // teacher's mission confirmation or another request (0007).
+    if (!p) view.stats.badges.forEach((b) => badgeSeen.current.add(b));
+    else queueBadges(view.stats.badges.filter((b) => !p.stats.badges.includes(b)));
+    if (view.new_badges?.length) queueBadges(view.new_badges);
+    // Events (0007): a new one gets attention; my result gets a flash.
+    const ev = view.event ?? null;
+    const pev = p?.event ?? null;
+    if (ev && !ev.done && (!pev || pev.no !== ev.no)) {
+      cue("golden");
+      setToast({ id: Date.now(), text: no.events.kinds[ev.kind], label: no.events.title });
     }
-    // Smittejakt: my role flipped without me catching anyone → I was caught.
-    if (p && p.status === "live" && view.status === "live" && p.role === "prey" && view.role === "hunter") {
+    if (ev?.me && (!pev || pev.no !== ev.no || pev.me?.state !== ev.me.state) && ev.me.state !== "pending") {
+      cue("claim");
+      setFlash({
+        id: Date.now(),
+        text: `+${ev.me.points}`,
+        sub: ev.me.powerup ? no.events.gotPowerup(no.events.powerups[ev.me.powerup]) : no.events.kinds[ev.kind],
+        tone: "gold",
+      });
+    }
+    const storm = ev?.kind === "storm" || pev?.kind === "storm";
+    // Smittejakt: my role flipped without me catching anyone → I was caught (not a storm swap).
+    if (!storm && p && p.status === "live" && view.status === "live" && p.role === "prey" && view.role === "hunter") {
       cue("caught");
       setFlash({ id: Date.now(), text: t.caughtYou, sub: t.nowHunter, tone: "dim" });
     }
@@ -185,7 +219,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
       if (p.status === "live" && (view.status === "breather" || view.status === "gathering")) cue("roundEnd");
     }
 
-  }, []);
+  }, [queueBadges]);
 
   const tickNow = useCallback(async () => {
     const f = fixRef.current;
@@ -336,7 +370,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
           sub: r.last ? t.lastCaught : r.variant === "swap" ? t.nowPrey : undefined,
           tone: "ok",
         });
-        if (r.newBadges.length) setBadgeToast({ id: Date.now(), text: r.newBadges.map((b) => t.badges[b] ?? b).join(" · ") });
+        queueBadges(r.newBadges);
         void tickNow();
       } catch (e) {
         const c = e instanceof ApiError ? e.code : "";
@@ -345,7 +379,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
         setTimeout(() => setScanBusy(false), 1200);
       }
     },
-    [me.playerId, me.token, scanBusy, sessionId, tickNow],
+    [me.playerId, me.token, scanBusy, sessionId, tickNow, queueBadges],
   );
 
   const onScan = useCallback(
@@ -360,11 +394,11 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
         const r = await api.qr(sessionId, { playerId: me.playerId, token: me.token, code });
         setScanning(false);
         if (r.already) {
-          setFlash({ id: Date.now(), text: t.qrPost(r.n), sub: t.qrAlready, tone: "dim" });
+          setFlash({ id: Date.now(), text: t.qrPost(r.n), sub: r.mission ? no.events.kinds.mission : t.qrAlready, tone: "dim" });
         } else {
           cue("claim");
-          setFlash({ id: Date.now(), text: t.qrOk(r.value, r.first), sub: t.qrPost(r.n), tone: "ok" });
-          if (r.newBadges.length) setBadgeToast({ id: Date.now(), text: r.newBadges.map((b) => t.badges[b] ?? b).join(" · ") });
+          setFlash({ id: Date.now(), text: t.qrOk(r.value, r.first), sub: r.mission ? no.events.confirmed(r.value) : t.qrPost(r.n), tone: "ok" });
+          queueBadges(r.newBadges);
         }
         void tickNow();
       } catch (e) {
@@ -378,7 +412,53 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
         setTimeout(() => setScanBusy(false), 1200);   // don't re-scan the same card instantly
       }
     },
-    [me.playerId, me.token, scanBusy, sessionId, tickNow],
+    [me.playerId, me.token, scanBusy, sessionId, tickNow, queueBadges],
+  );
+
+  // Badge queue → one toast per badge_gap_s (the 1 s clock drives it).
+  useEffect(() => {
+    const { show, rest } = nextBadgeToast(badgeQueue.current, lastBadgeAt.current, now);
+    if (!show) return;
+    badgeQueue.current = rest;
+    lastBadgeAt.current = now;
+    cue("badge");
+    setBadgeToast({ id: now, text: t.badges[show] ?? show });
+  }, [now]);
+
+  const firePowerup = useCallback(
+    async (kind: Powerup) => {
+      if (puBusy) return;
+      setPuBusy(true);
+      unlockAudio();
+      try {
+        const r = await api.powerup(sessionId, { playerId: me.playerId, token: me.token, kind });
+        cue("claim");
+        setFlash({ id: Date.now(), text: no.events.powerups[kind], sub: no.events.powerupHelp[kind], tone: "gold" });
+        queueBadges(r.newBadges);
+        void tickNow();
+      } catch (e) {
+        const c = e instanceof ApiError ? e.code : "";
+        setFlash({ id: Date.now(), text: no.events.puErrors[c] ?? t.qrError, tone: "dim" });
+      } finally {
+        setPuBusy(false);
+      }
+    },
+    [me.playerId, me.token, puBusy, sessionId, tickNow, queueBadges],
+  );
+
+  const sendMissionDone = useCallback(
+    async (evNo: number) => {
+      setMissionLocal(evNo);
+      try {
+        await api.missionDone(sessionId, { playerId: me.playerId, token: me.token });
+        void tickNow();
+      } catch (e) {
+        setMissionLocal(null);
+        const c = e instanceof ApiError ? e.code : "";
+        setFlash({ id: Date.now(), text: no.events.errors[c] ?? t.qrError, tone: "dim" });
+      }
+    },
+    [me.playerId, me.token, sessionId, tickNow],
   );
 
   // Server says acked → local "sent" state ends; the green receipt closes itself after 10 s.
@@ -448,6 +528,8 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
   const isPrey = !!tag && role === "prey";
   const immuneLeft = tag?.immune_until ? phaseLeftS(tag.immune_until, offsetMs, now) : null;
   const zoneOut = status === "live" && !!zn && view?.zone?.inside === false;
+  const evView = view?.event ?? null;
+  const sprintTarget = evView && !evView.done && evView.kind === "sprint" && !evView.me ? evView.target : null;
   const zoneEdge = zn && zoneState && gps.fix
     ? { m: Math.max(0, Math.round(haversine([gps.fix.lng, gps.fix.lat], [zoneState.c.lng, zoneState.c.lat]) - zn.r)),
         deg: bearing([gps.fix.lng, gps.fix.lat], [zoneState.c.lng, zoneState.c.lat]) }
@@ -557,7 +639,8 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
               {t.yourCode} {tag.code}
             </button>
           )}
-          {isHunter && tag.radar?.length ? <span className="opacity-80">{t.radarAge(Math.min(...tag.radar.map((r) => r.age_s)))}</span> : null}
+          {isHunter && tag.blackout ? <span className="opacity-90">{no.events.blackout}</span>
+            : isHunter && tag.radar?.length ? <span className="opacity-80">{t.radarAge(Math.min(...tag.radar.map((r) => r.age_s)))}</span> : null}
         </div>
       )}
 
@@ -577,6 +660,25 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
         </div>
       )}
 
+      {evView && (status === "live" || status === "paused") && (
+        <EventStrip
+          ev={evView}
+          fix={gps.fix}
+          offsetMs={offsetMs}
+          now={now}
+          qr={!!round?.qr}
+          pendingLocal={missionLocal === evView.no}
+          onDone={() => void sendMissionDone(evView.no)}
+          onScan={() => {
+            unlockAudio();
+            setScanning(true);
+          }}
+        />
+      )}
+      {view?.power && (status === "live" || status === "paused") && (
+        <PowerBar power={view.power} round={round} role={role} offsetMs={offsetMs} now={now} busy={puBusy} onUse={(k) => void firePowerup(k)} />
+      )}
+
       <div
         className={`relative min-h-0 flex-1 ${
           zoneOut ? "ring-[10px] ring-inset ring-danger animate-pulse"
@@ -593,6 +695,9 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
           zoneLng={zoneState?.c.lng ?? null}
           zoneR={zn?.r ?? null}
           zoneNextR={zn?.warn ? (zn.next?.r ?? null) : null}
+          targetLat={sprintTarget?.lat ?? null}
+          targetLng={sprintTarget?.lng ?? null}
+          live={tag?.radar_live ?? NO_LIVE}
         />
         {sim && <SimPad sim={sim} />}
         {summary && (status === "breather" || status === "gathering") && (
@@ -660,7 +765,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
 
       {toast && (
         <div className="absolute inset-x-3 top-[max(0.75rem,env(safe-area-inset-top))] rounded-2xl border border-gold bg-ink-2 p-4 shadow-2xl" role="status">
-          <p className="text-xs font-bold uppercase text-gold">{t.message}</p>
+          <p className="text-xs font-bold uppercase text-gold">{toast.label ?? t.message}</p>
           <p className="mt-1 text-xl font-black">{toast.text}</p>
         </div>
       )}
@@ -762,6 +867,9 @@ function PlayerMap({
   zoneLng,
   zoneR,
   zoneNextR,
+  targetLat,
+  targetLng,
+  live,
 }: {
   boot: PlayerBootstrap;
   fix: Fix | null;
@@ -773,6 +881,10 @@ function PlayerMap({
   zoneLng: number | null;
   zoneR: number | null;
   zoneNextR: number | null;
+  /** Sprint target (0007) and the radar power-up's opponents. */
+  targetLat: number | null;
+  targetLng: number | null;
+  live: { lat: number; lng: number }[];
 }) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<MlMap | null>(null);
@@ -795,6 +907,7 @@ function PlayerMap({
         addZoneLayer(m);
         addPostsLayer(m);
         addRadarLayer(m);
+        addEventLayer(m);
         addMeLayer(m);
         setReady(true);
       });
@@ -825,12 +938,19 @@ function PlayerMap({
       ? { c: { lat: zoneLat, lng: zoneLng }, r: zoneR, nextR: zoneNextR } : null);
   }, [ready, zoneLat, zoneLng, zoneR, zoneNextR]);
 
+  useEffect(() => {
+    if (!ready || !map.current) return;
+    setEvent(map.current, targetLat !== null && targetLng !== null ? { lat: targetLat, lng: targetLng } : null, EVENTS.sprint_reach_m, live);
+  }, [ready, targetLat, targetLng, live]);
+
   return (
     <div className="absolute inset-0">
       <div ref={container} className="h-full w-full" />
     </div>
   );
 }
+
+const NO_LIVE: { lat: number; lng: number }[] = [];
 
 function SosButton({ onFire, disabled }: { onFire: () => void; disabled: boolean }) {
   const [holding, setHolding] = useState(false);
