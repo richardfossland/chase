@@ -318,3 +318,6 @@ Eierens valg 2026-11-10:
   - Sikkerhetsbanneret går alltid foran.
 - **Personvern:** de nye kolonnene er tellere og tidspunkter, ingen posisjoner. Sonesentrum er avledet av området.
 - **Sim:** `--plan posts+zone:120,swap+zone:120`. Botene løper mot sentrum når de er utenfor 80 % av neste radius, men «gjemmere» bryr seg ikke. `--assert` krever minst én sonebonus. Lokalt med 20 boter: 104 klaim, 16 fangster, 90 sonebonuser, 126 strafpoeng, 6 krympinger, 15 Sonemester, 0 feil, tick p95 22 ms.
+- **Deploy 2026-11-11:** migrasjon 0005 er i prod. Krokene kaller sonelaget, `_zone_radii`/`_zone_offsets` gir de samme vektorene som testene, og anon er nektet. Worker `f9986735` er bygget fra `afb2a2c` (rollback `ae601e48` = del 1).
+  - Prod-sim med 10 boter, postjakt + sone 120 s og sisten + sone 120 s: 33 klaim, 5 fangster, 39 sonebonuser, 121 strafpoeng, og spillelista gikk til samling.
+  - Tick p95 ble 3,5 s, med 7 nettverksbrudd på klientsiden. Det kom av lokal nettlinje: google.com brukte 35 s og TCP-oppkobling opptil 10 s i samme minutt, så det er ikke Chase. Kjør prod-simen på nytt på stabil linje før den felles utetesten.
