@@ -67,6 +67,34 @@ export const DEFAULT_PLAN: Plan = {
   qr_posts: 0,
 };
 
+/** Ready-made playlists (PLAN §2.1, owner's choice 2026-11-10: «Full gymtime» = variert). */
+export const TEMPLATES = {
+  first: {
+    rounds: [
+      { mode: "posts", duration_s: 240 },
+      { mode: "tag", duration_s: 300, variant: "convert" },
+      { mode: "posts", duration_s: 300, zone: true },
+      { mode: "tag", duration_s: 360, variant: "convert", zone: true },
+    ],
+    countdown_s: GAME.countdown_s,
+    breather_s: GAME.breather_s,
+    qr_posts: 0,
+  },
+  gym: {
+    rounds: [
+      { mode: "free", duration_s: 180 },
+      { mode: "posts", duration_s: 360 },
+      { mode: "tag", duration_s: 360, variant: "convert" },
+      { mode: "posts", duration_s: 360, zone: true },
+      { mode: "tag", duration_s: 360, variant: "swap", zone: true },
+    ],
+    countdown_s: GAME.countdown_s,
+    breather_s: GAME.breather_s,
+    qr_posts: 0,
+  },
+} satisfies Record<string, Plan>;
+export type TemplateId = keyof typeof TEMPLATES;
+
 /** Same rules as chase._norm_plan(); null = the server would say bad_plan. */
 export function normPlan(p: Partial<Plan> & { rounds?: unknown }): Plan | null {
   if (!Array.isArray(p.rounds) || p.rounds.length < 1 || p.rounds.length > GAME.max_rounds) return null;

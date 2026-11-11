@@ -25,6 +25,7 @@ import { formatClock, phaseLeftS, type PlanRound } from "@/lib/rules/game";
 import { catchQr, parseCatch } from "@/lib/rules/tag";
 import { SAFETY } from "@/lib/rules/safety";
 import { zoneAt, type ZoneNow, type ZoneState } from "@/lib/rules/zone";
+import { CeremonyScreen } from "@/lib/client/Ceremony";
 import { parseQr } from "@/lib/qr";
 
 const t = no.play;
@@ -109,6 +110,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
   const [scanBusy, setScanBusy] = useState(false);
   const [catching, setCatching] = useState(false);
   const [showCode, setShowCode] = useState(false);
+  const [votedLocal, setVotedLocal] = useState(false);
   const [offsetMs, setOffsetMs] = useState(0); // server − client clock (rule 6: server time is the truth)
 
   const fixRef = useRef<Fix | null>(null);
@@ -165,6 +167,12 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
       setFlash({ id: Date.now(), text: t.caughtYou, sub: t.nowHunter, tone: "dim" });
     }
     if (view.tag?.hunter_near && !p?.tag?.hunter_near) cue("danger");
+    // Ceremony: fanfare on every reveal, extra buzz when it is me.
+    if (view.ceremony && p?.ceremony && view.ceremony.step > p.ceremony.step && view.ceremony.step <= view.ceremony.total) {
+      const latest = view.ceremony.revealed[view.ceremony.revealed.length - 1];
+      cue("reveal");
+      if (latest?.entries.some((e) => e.me)) setTimeout(() => cue("badge"), 600);
+    }
     // Krympende sone: +5 for being inside at a shrink, alarm tone when I drop out.
     if (view.zone && p?.zone && view.status === "live") {
       if (view.zone.hits > p.zone.hits) {
@@ -208,7 +216,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
   }, [me.playerId, me.token, sessionId, react]);
 
   const status = view?.status ?? boot.status;
-  const fast = status === "live" || status === "gathering" || status === "countdown";
+  const fast = status === "live" || status === "gathering" || status === "countdown" || status === "ceremony";
 
   useEffect(() => {
     if (!ready || ended || kicked) return;
@@ -592,7 +600,20 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
         )}
       </div>
 
-      <footer className="flex items-center gap-3 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+      {status === "ceremony" && view?.ceremony && (
+        <div className="absolute inset-0 z-10 bg-ink text-txt">
+          <CeremonyScreen
+            view={view.ceremony}
+            voted={votedLocal || !!view.ceremony.voted}
+            onVote={(yes) => {
+              setVotedLocal(true);
+              void api.again(sessionId, { playerId: me.playerId, token: me.token, yes }).catch(() => setVotedLocal(false));
+            }}
+          />
+        </div>
+      )}
+
+      <footer className="relative z-[15] flex items-center gap-3 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         <SosButton onFire={sendSos} disabled={!!sosOpen} />
         {isHunter && status === "live" && (
           <button

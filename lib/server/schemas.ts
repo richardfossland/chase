@@ -64,6 +64,8 @@ export const tickBody = playerAuth.extend({
 export const qrBody = playerAuth.extend({ code: z.string().min(3).max(16) });
 export const catchBody = playerAuth.extend({ code: z.string().min(4).max(32) });
 
+export const againBody = playerAuth.extend({ yes: z.boolean() });
+
 export const sosBody = playerAuth.extend({ lat: lat.optional(), lng: lng.optional() });
 
 export const hostAuth = z.object({ hostToken: token });
@@ -72,6 +74,7 @@ export const hostActionBody = hostAuth.extend({
   action: z.enum([
     "start", "next", "extend", "pause", "resume", "message", "gather", "end_gather",
     "check_in", "rename", "kick", "sit_out",
+    "ceremony_start", "ceremony_next", "ceremony_back", "vote_again", "adjust_points", "set_role", "referee_award",
   ]),
   payload: z
     .object({
@@ -81,6 +84,11 @@ export const hostActionBody = hostAuth.extend({
       checked: z.boolean().optional(),
       on: z.boolean().optional(),
       seconds: z.number().int().optional(),
+      delta: z.number().int().optional(),
+      reason: z.string().max(80).optional(),
+      role: z.enum(["hunter", "prey", "referee", "player"]).optional(),
+      spread: z.boolean().optional(),
+      yes: z.boolean().optional(),
     })
     .optional(),
 });

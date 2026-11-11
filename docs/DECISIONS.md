@@ -321,3 +321,33 @@ Eierens valg 2026-11-10:
 - **Deploy 2026-11-11:** migrasjon 0005 er i prod. Krokene kaller sonelaget, `_zone_radii`/`_zone_offsets` gir de samme vektorene som testene, og anon er nektet. Worker `f9986735` er bygget fra `afb2a2c` (rollback `ae601e48` = del 1).
   - Prod-sim med 10 boter, postjakt + sone 120 s og sisten + sone 120 s: 33 klaim, 5 fangster, 39 sonebonuser, 121 strafpoeng, og spillelista gikk til samling.
   - Tick p95 ble 3,5 s, med 7 nettverksbrudd på klientsiden. Det kom av lokal nettlinje: google.com brukte 35 s og TCP-oppkobling opptil 10 s i samme minutt, så det er ikke Chase. Kjør prod-simen på nytt på stabil linje før den felles utetesten.
+
+## ADR-023 — Fase 3 del 3: seremoni, paller, overstyring, maler (2026-11-11)
+Eierens valg 2026-11-11: **læreren starter seremonien**, **læreren trykker «Neste»** for hver pall, og **alle 8 pallene + «Beste dommer»** er med.
+- **Flyt:** samling → «🏆 Start seremoni» (status `ceremony`) → én pall per «Neste» (lærermobilen spiller trommevirvel, elevmobilene fanfare) → «ditt beste»-kort og «vil spille igjen» → «Avslutt» sletter som før.
+  - Startes seremonien mens en runde pågår, lukkes runden først ved frysepunktet, så poengene teller.
+  - Seremonilaget ligger under varselstripa, og nødknappen er alltid synlig (regel 4).
+- **Pallene fryses ved start** i `sessions.podiums`. Der ligger bare spiller-id-er og tall, og kallenavn hentes ved visning.
+  - Pallene er utforsker, comeback, poster, overlevd, fangster, aktiv, distanse og poeng, i avsløringsrekkefølge med poeng sist. «Beste dommer» kommer først.
+  - Topp 3 per pall. Paller uten verdier hoppes over.
+  - **Spredningsregel** (maks 2 paller per elev, kan skrus av): plassene deles ut i viktighetsrekkefølge, poeng først. Hvis neste i køen ikke har noe å vise, blir pallen kortere eller faller bort.
+  - Ren funksjon `_podiums_from` = `lib/rules/podiums.ts`, testet mot samme vektor.
+- **«Ditt beste»:** kategorien med minst topp-andel, avrundet opp til 10 % og vist når den er ≤ 50 %. Ellers blir det alltid en positiv setning: aktive minutter, meter eller «takk for at du var med». Alle får et kort (sim: 20/20).
+- **«Vil spille igjen»** telles anonymt i `sessions.again_*` og går videre til `session_summaries`. `players.voted_again` hindrer bare dobbeltstemming.
+- **Overstyring** (PLAN § 5.2, § 6):
+  - ± poeng med årsak (maks 100, aldri under 0, logget i `events`). Sperret under seremonien fordi pallene er frosset.
+  - Jeger/bytte i Smittejakt, dommer og tilbake, og «🏅 Beste dommer» (maks 3).
+- **Smittejakt-fiks:**
+  - Den som er nøytral i en tag-runde, blir bytte med immunitet. Det gjelder elever som er tilbake fra «sitter over» og elever som kom sent.
+  - En runde uten jeger forfremmer et bytte, og hendelsen logges som `tag_promote`.
+  - «Sitter over» avslutter overlevelsesstrekket.
+  - Alt dette ligger i `_mode_upkeep`.
+- **Fartsflagg:** rapportert fart over 25 km/t i 10 s gir en `speed`-alarm (laveste nivå, uten posisjon, uten straff).
+- **Maler:**
+  - «🌱 Første gang»: postjakt 4 → smitte 5 → postjakt + sone 5 → smitte + sone 6, ca. 24 min spill.
+  - «🏟️ Full gymtime»: fri 3 → postjakt 6 → smitte 6 → postjakt + sone 6 → sisten + sone 6, ca. 32 min, så det blir plass til oppstart og seremoni i 45 min.
+- **`docs/PILOT.md`**: sjekkliste før og under timen, med reserveplan.
+- **Kroker:** `host_action` og `host_snapshot` pakkes inn med vernet omdøping (`_host_action_base`/`_host_snapshot_base`) slik at de tåler dobbel kjøring. `_end_session` er kopiert med `again_*`.
+- **Sim:** `--ceremony` kjører seremonien, og botene stemmer. Simmen speiler nå at signalklokka starter på nytt ved hver rundestart (låste mobiler i pustepausen); tidligere ble det en falsk «alarm kom aldri».
+  - Lokalt, 20 boter: 8 paller, 16 ulike elever på pall, 20/20 kort og 20 stemmer, tick p95 21 ms.
+  - Lokalt, 12 boter: alle krav oppfylt.

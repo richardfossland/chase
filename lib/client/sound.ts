@@ -127,3 +127,13 @@ export function playWhistle(): void {
 export function playBadge(): void {
   [1568, 2093, 2637].forEach((f, i) => tone(f, i * 0.06, 0.22, "sine", 0.12));
 }
+
+/** Ceremony drumroll (~1.6 s, speeding up) — synthesised, no files. */
+export function playDrumroll(): void {
+  let t = 0;
+  for (let i = 0; i < 26; i++) {
+    tone(96 + (i % 2) * 12, t, 0.07, "triangle", 0.1 + i * 0.006);
+    t += Math.max(0.035, 0.09 - i * 0.0025);
+  }
+  tone(196, t + 0.02, 0.5, "sawtooth", 0.08);   // the «ta-da» hit
+}

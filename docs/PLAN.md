@@ -270,8 +270,10 @@ Fysiske oppdrag gjøres der eleven er, aldri som en betingelse for å slippe str
 | Utforskerruter (20 × 20 m-ruter besøkt, en grov spor-liste) | `player_stats.cells` | **Tømmes ved øktslutt**, bare antallet (`explorer_n`) beholdes i 24 t |
 | Poster (punkt) og postklaim (hvem tok hvilken post når) | `posts`, `post_claims` | **Slettes ved øktslutt** |
 | Hendelseslogg | `events` | 24 t etter slutt, uten koordinater |
+| Paller og «ditt beste» (spiller-id-er og tall, ingen navn eller posisjoner) | `sessions.podiums`, `player_stats.best` | Som økta / 24 t etter slutt. Kallenavn hentes ved visning og forsvinner med `players`. |
+| «Har stemt»-flagg for «vil spille igjen» (bare mot dobbeltstemming, svaret lagres ikke på eleven) | `players.voted_again` | 24 t etter slutt |
 | Lærerens telefonnummer | `sessions` | Nullstilles ved øktslutt |
-| **Anonymt sammendrag** | `session_summaries` | Beholdes: antall spillere, varighet, moduser, total og median distanse og aktive minutter som histogram. **Ingen koordinater, navn eller område.** |
+| **Anonymt sammendrag** | `session_summaries` | Beholdes: antall spillere, varighet, moduser, total og median distanse og aktive minutter som histogram, og anonym telling av «vil spille igjen» (ja/nei, lærerens svar). **Ingen koordinater, navn eller område.** |
 
 **Tekniske tiltak:**
 

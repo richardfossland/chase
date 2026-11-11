@@ -5,9 +5,9 @@
 // (CLAUDE.md rule 9), so every cue must also be audible or visible.
 
 import { vibrate } from "@/lib/client/gps";
-import { playBadge, playBeep, playBlip, playClaim, playFanfare, playGo, playWhistle } from "@/lib/client/sound";
+import { playBadge, playBeep, playBlip, playClaim, playDrumroll, playFanfare, playGo, playWhistle } from "@/lib/client/sound";
 
-export type Cue = "claim" | "golden" | "lost" | "beep" | "go" | "roundEnd" | "badge" | "caught" | "danger";
+export type Cue = "claim" | "golden" | "lost" | "beep" | "go" | "roundEnd" | "badge" | "caught" | "danger" | "drum" | "reveal";
 
 const PLAN: Record<Cue, { sound: () => void; vibe?: number | number[] }> = {
   claim: { sound: playClaim, vibe: [60, 40, 120] },
@@ -19,6 +19,8 @@ const PLAN: Record<Cue, { sound: () => void; vibe?: number | number[] }> = {
   badge: { sound: playBadge, vibe: [30, 30, 30] },
   caught: { sound: playWhistle, vibe: [500, 100, 500] },
   danger: { sound: playBlip, vibe: [80, 60, 80] },
+  drum: { sound: playDrumroll },
+  reveal: { sound: playFanfare, vibe: [100, 50, 100] },
 };
 
 export function cue(c: Cue): void {

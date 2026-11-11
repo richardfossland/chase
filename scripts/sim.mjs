@@ -23,6 +23,7 @@
 //   --countdown S     countdown before each round (default 10)
 //   --qr N            physical QR cards in the session (default 0)
 //   --until-done      stop as soon as the playlist is done (cap: --minutes)
+//   --ceremony        with --until-done: run the ceremony (0006), bots vote «vil spille igjen»
 //   --end             end the session when done (with --create): roll call
 //                     first, then force if someone is missing
 //   --assert          exit 1 unless tick p95 < --p95 ms (default 50) and every
@@ -55,6 +56,7 @@ const http = sim.httpTransport(base);
 let pin = args.pin;
 let hostToken;
 let sessionId;
+let ceremonyResult = null;
 if (args.create) {
   const r = await http.post("/api/sessions", {
     boundary: square(59.9101, 10.7499, 150, 120),
@@ -123,6 +125,7 @@ while (Date.now() < deadline) {
   // Give the bots ~40 s to walk to the assembly point after the last round.
   if (args["until-done"] && swarm.stats.game.playlistDone) {
     await new Promise((r) => setTimeout(r, 40_000));
+    if (args.ceremony && hostToken) await runCeremony();
     break;
   }
 }
@@ -132,6 +135,7 @@ clearInterval(progress);
 await new Promise((r) => setTimeout(r, 1500));
 
 const summary = { bots: kinds.length, mix: count(kinds), rpc: !!args.rpc, ...sim.summarize(swarm.stats) };
+if (ceremonyResult) summary.ceremony = ceremonyResult;
 if (args.create && args.end) {
   // Teacher presses «Avslutt»: roll call guard first (PLAN §6), force only if needed.
   const e = await http.post(`/api/s/${sessionId}/end`, { hostToken });
@@ -164,6 +168,15 @@ if (args.assert) {
       else if (fails / tries > 0.1) problems.push(`${fails} av ${tries} fangstforsøk avvist (> 10 % tvist)`);
     }
   }
+  if (args.ceremony) {
+    const c = summary.ceremony;
+    if (!c || c.error) problems.push(`seremoni feilet: ${c?.error ?? "kjørte ikke"}`);
+    else {
+      if (c.podiums === 0) problems.push("ingen paller");
+      if (summary.game.bestCards < summary.bots - 2) problems.push(`bare ${summary.game.bestCards} av ${summary.bots} så «ditt beste»-kortet`);
+      if ((c.again?.yes ?? 0) + (c.again?.no ?? 0) !== summary.game.votes) problems.push(`stemmer ${JSON.stringify(c.again)} ≠ ${summary.game.votes} sendt`);
+    }
+  }
   if (/\+zone/.test(String(args.plan)) && summary.game.zoneHits === 0) problems.push("ingen fikk sonebonus");
   const errs = Object.entries(summary.errors).filter(([k]) => !k.includes("stale"));
   if (errs.length) problems.push(`feil: ${JSON.stringify(Object.fromEntries(errs))}`);
@@ -176,6 +189,31 @@ if (args.assert) {
 process.exit(0);
 
 // ───────────────────────── helpers ─────────────────────────
+
+// Teacher runs the ceremony (0006): start, reveal every podium, then the bots
+// see their «ditt beste»-kort and vote. Result goes into summary.ceremony.
+async function runCeremony() {
+  const act = (action, payload) => http.post(`/api/s/${sessionId}/host`, { hostToken, action, payload });
+  const st = await act("ceremony_start", { spread: true });
+  if (st.status !== 200) {
+    ceremonyResult = { error: `ceremony_start ${st.status} ${JSON.stringify(st.data)}` };
+    return;
+  }
+  let snap = (await http.post(`/api/s/${sessionId}/snapshot`, { hostToken })).data;
+  const total = snap.ceremony?.total ?? 0;
+  console.log(`🏆 Seremoni: ${total} paller`);
+  for (let i = 0; i <= total; i++) {
+    await act("ceremony_next");
+    snap = (await http.post(`/api/s/${sessionId}/snapshot`, { hostToken })).data;
+    const last = snap.ceremony?.revealed?.at(-1);
+    if (i < total && last) console.log(`   ${last.cat}: ${last.entries.map((e) => `${e.place}. ${e.nickname}`).join("  ")}`);
+  }
+  await act("vote_again", { yes: true });
+  await new Promise((r) => setTimeout(r, 8000));   // bots tick, see their card, vote
+  snap = (await http.post(`/api/s/${sessionId}/snapshot`, { hostToken })).data;
+  const onPodium = new Set((snap.ceremony?.revealed ?? []).flatMap((p) => p.entries.map((e) => e.nickname)));
+  ceremonyResult = { podiums: total, step: snap.ceremony?.step, onPodium: onPodium.size, again: snap.ceremony?.again };
+}
 
 async function loadSim() {
   const out = join(mkdtempSync(join(tmpdir(), "chase-sim-")), "sim.mjs");

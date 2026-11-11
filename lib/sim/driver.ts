@@ -61,6 +61,9 @@ export interface SimStats {
     /** Krympende sone: phase bonuses earned and points lost outside (sums over bots). */
     zoneHits: number;
     zonePen: number;
+    /** Ceremony (0006): bots that saw their «ditt beste»-kort, and their «vil spille igjen» votes. */
+    bestCards: number;
+    votes: number;
   };
 }
 
@@ -108,7 +111,7 @@ export function startSwarm(opts: SwarmOptions) {
     errors: {},
     latencies: [],
     alarms: [],
-    game: { claims: 0, golden: 0, lost: 0, qr: 0, duplicateClaims: 0, claimedIds: new Set(), statuses: [], playlistDone: false, rounds: 0, catches: 0, catchFails: {}, zoneHits: 0, zonePen: 0 },
+    game: { claims: 0, golden: 0, lost: 0, qr: 0, duplicateClaims: 0, claimedIds: new Set(), statuses: [], playlistDone: false, rounds: 0, catches: 0, catchFails: {}, zoneHits: 0, zonePen: 0, bestCards: 0, votes: 0 },
   };
   const players: SimPlayer[] = [];
   const timers: ReturnType<typeof setInterval>[] = [];
@@ -166,6 +169,14 @@ export function startSwarm(opts: SwarmOptions) {
         stats.game.zonePen += z0 && z1.pen >= z0.pen ? z1.pen - z0.pen : z1.pen;
       }
       p.view = r.data;
+      const cer = (r.data as { ceremony?: { best: unknown; voted: boolean | null } }).ceremony;
+      if (cer?.best && !voted.has(p.playerId)) {
+        voted.add(p.playerId);
+        stats.game.bestCards++;
+        const v = await opts.transport.post(`/api/s/${sessionId}/again`, { playerId: p.playerId, token: p.token, yes: p.nickname.length % 3 !== 0 });
+        if (v.status === 200) stats.game.votes++;
+        else err(`again_${v.status}`);
+      }
       p.bot.observe(r.data as never);
       const claimed = r.data.claimed as { post_id: string; kind: string } | null | undefined;
       if (claimed) {
@@ -184,6 +195,7 @@ export function startSwarm(opts: SwarmOptions) {
   // Smittejakt: a hunter bot that the server says is near prey looks for a prey
   // bot within 12 m (true positions, the "touch") and scans its code.
   const lastTry = new Map<string, number>();
+  const voted = new Set<string>();
   async function tryCatch(h: SimPlayer) {
     const v = h.view as { status?: string; role?: string; tag?: { prey_near?: number } } | null;
     if (!v || v.status !== "live" || v.role !== "hunter" || !v.tag?.prey_near) return;
@@ -217,8 +229,21 @@ export function startSwarm(opts: SwarmOptions) {
     const now = Date.now();
     const st = String(r.data.status);
     const g = stats.game;
-    if (g.statuses[g.statuses.length - 1] !== st) g.statuses.push(st);
-    g.playlistDone = r.data.playlist_done === true;
+    const prevSt = g.statuses[g.statuses.length - 1];
+    if (prevSt !== st) g.statuses.push(st);
+    // Signal loss is only judged in a live round, and the clock restarts at every
+    // round start (locked phones in the breather send nothing, CLAUDE.md rule 9).
+    // Mirror that: a pending signal check moves to liveStart + 60 s, and one that
+    // was not due before the round ended is dropped.
+    if (prevSt !== st) {
+      for (const c of stats.alarms) {
+        if (c.kind !== "signal" || c.seenAt !== null) continue;
+        if (st === "live") c.expectedAt = Math.max(c.expectedAt, now + SIGNAL_ALARM_S * 1000);
+        else if (prevSt === "live" && c.expectedAt > now) c.expectedAt = Infinity;
+      }
+      stats.alarms = stats.alarms.filter((c) => c.expectedAt !== Infinity);
+    }
+    g.playlistDone ||= r.data.playlist_done === true;   // sticky: the ceremony follows
     const round = r.data.round as { idx: number } | null;
     if (round) g.rounds = Math.max(g.rounds, round.idx + 1);
     const alarms = (r.data.alarms as Array<{ player_id: string; kind: AlarmKind; resolved: boolean; created_at: string }>) ?? [];
@@ -333,6 +358,8 @@ export function summarize(stats: SimStats) {
       catchFails: stats.game.catchFails,
       zoneHits: stats.game.zoneHits,
       zonePen: stats.game.zonePen,
+      bestCards: stats.game.bestCards,
+      votes: stats.game.votes,
       statuses: stats.game.statuses,
     },
     ticks: stats.ticks,

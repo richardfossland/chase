@@ -12,6 +12,7 @@ import { no } from "@/lib/locale/no";
 import { formatClock, phaseLeftS, planTotalS } from "@/lib/rules/game";
 import { SAFETY } from "@/lib/rules/safety";
 
+import { HostCeremony } from "./HostCeremony";
 import HostMap, { dotState, type HostMapHandle } from "./HostMap";
 import { useHostSession, type HostSession } from "./useHostSession";
 
@@ -28,7 +29,8 @@ type Sheet =
   | { kind: "message"; to: string | null }
   | { kind: "more" }
   | { kind: "players"; missingOnly?: boolean }
-  | { kind: "qr" };
+  | { kind: "qr" }
+  | { kind: "ceremony" };
 
 type Confirm = null | { message: string; label?: string; danger?: boolean; run: () => void };
 
@@ -95,6 +97,7 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
   const select = useCallback((id: string) => setSheet({ kind: "player", id }), []);
   const lobby = snap.status === "lobby";
   const gathering = snap.status === "gathering";
+  const ceremony = snap.status === "ceremony";
   const paused = snap.status === "paused";
   const joinUrl = origin ? `${origin}/j/${snap.pin}` : "";
   const playlistDone = snap.playlist_done;
@@ -187,11 +190,15 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
           </button>
         )}
 
+        {/* ceremony (0006): under the alarm strip, own controls */}
+        {ceremony && snap.ceremony && <HostCeremony view={snap.ceremony} act={hs.act} onEnd={endFlow} />}
+
         {/* bottom bar */}
+        {!ceremony && (
         <nav className="absolute inset-x-0 bottom-0 z-10 grid grid-cols-4 gap-2 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
           {gathering && playlistDone ? (
             <>
-              <BarButton icon="■" label={h.endSession} tone="gold" className="col-span-2" onClick={endFlow} />
+              <BarButton icon="🏆" label={no.ceremony.start} tone="gold" className="col-span-2" onClick={() => setSheet({ kind: "ceremony" })} />
               <BarButton icon="📣" label={h.message} onClick={() => setSheet({ kind: "message", to: null })} />
               <BarButton icon="⋯" label={h.more} onClick={() => setSheet({ kind: "more" })} />
             </>
@@ -229,6 +236,7 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
             </>
           )}
         </nav>
+        )}
       </div>
 
       {/* tablet / PC: always-visible list */}
@@ -243,6 +251,8 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
               p={byId.get(sheet.id)!}
               status={snap.status}
               hs={hs}
+              tagLive={(snap.status === "live" || snap.status === "paused") && snap.round?.mode === "tag"}
+              awarded={(snap.referee_awards ?? []).includes(sheet.id)}
               onMessage={() => setSheet({ kind: "message", to: sheet.id })}
               onShow={(lat, lng) => {
                 mapRef.current?.flyTo(lat, lng);
@@ -285,6 +295,13 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
               <p className="font-mono text-5xl font-black tracking-[0.15em] text-gold">{snap.pin}</p>
             </div>
           )}
+          {sheet.kind === "ceremony" && (
+            <CeremonyStart
+              onStart={async (spread) => {
+                if (await hs.act("ceremony_start", { spread })) setSheet(null);
+              }}
+            />
+          )}
           {sheet.kind === "more" && (
             <div className="grid gap-2">
               <SheetButton onClick={() => setSheet({ kind: "qr" })}>▦ {h.showQr}</SheetButton>
@@ -294,6 +311,7 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
                 </Link>
               )}
               <SheetButton onClick={() => setSheet({ kind: "players" })}>👥 {h.playersList} ({snap.players.length})</SheetButton>
+              {gathering && <SheetButton onClick={() => setSheet({ kind: "ceremony" })}>{no.ceremony.start}</SheetButton>}
               <SheetButton danger onClick={endFlow}>
                 ■ {h.endSession}
               </SheetButton>
@@ -489,6 +507,8 @@ function PlayerCard({
   p,
   status,
   hs,
+  tagLive,
+  awarded,
   onMessage,
   onShow,
   onKick,
@@ -496,6 +516,8 @@ function PlayerCard({
   p: HostPlayer;
   status: Snapshot["status"];
   hs: HostSession;
+  tagLive: boolean;
+  awarded: boolean;
   onMessage: () => void;
   onShow: (lat: number, lng: number) => void;
   onKick: (p: HostPlayer) => void;
@@ -504,6 +526,10 @@ function PlayerCard({
   const [name, setName] = useState(p.nickname);
   const [err, setErr] = useState<string | null>(null);
   const sitting = p.role === "sitting_out";
+  const [adjusting, setAdjusting] = useState(false);
+  const [delta, setDelta] = useState(5);
+  const [reason, setReason] = useState("");
+  const live = status !== "lobby" && status !== "ceremony" && status !== "ended";
 
   return (
     <div>
@@ -558,6 +584,50 @@ function PlayerCard({
           <button className="rounded-xl bg-gold px-4 font-black text-ink">{h.card.save}</button>
         </form>
       ) : null}
+      {adjusting && (
+        <form
+          className="mt-3 space-y-2 rounded-xl bg-ink p-3"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (!reason.trim()) return;
+            if (await hs.act("adjust_points", { player_id: p.id, delta, reason: reason.trim() })) {
+              setAdjusting(false);
+              setReason("");
+            }
+          }}
+          data-testid="adjust-form"
+        >
+          <div className="flex gap-1.5">
+            {[-10, -5, 5, 10].map((d) => (
+              <button
+                key={d}
+                type="button"
+                className={`flex-1 rounded-lg py-2 font-black tabular-nums ${delta === d ? "bg-gold text-ink" : "bg-ink-3"}`}
+                onClick={() => setDelta(d)}
+              >
+                {d > 0 ? `+${d}` : d}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {h.card.adjustQuick.map((q) => (
+              <button key={q} type="button" className="rounded-full border border-line px-2.5 py-1 text-xs font-bold" onClick={() => setReason(q)}>
+                {q}
+              </button>
+            ))}
+          </div>
+          <input
+            className="w-full rounded-xl border border-line bg-ink-2 px-3 py-2 font-bold outline-none focus:border-gold"
+            placeholder={h.card.adjustReason}
+            value={reason}
+            maxLength={80}
+            onChange={(e) => setReason(e.target.value)}
+          />
+          <button className="w-full rounded-xl bg-gold py-2.5 font-black text-ink disabled:opacity-40" disabled={!reason.trim()}>
+            {h.card.adjustSave(delta)}
+          </button>
+        </form>
+      )}
       {err && <p className="mt-2 text-sm font-semibold text-danger">{err}</p>}
 
       <div className="mt-4 grid grid-cols-2 gap-2">
@@ -572,6 +642,28 @@ function PlayerCard({
           {sitting ? `↩ ${h.card.sitIn}` : `🩹 ${h.card.sitOut}`}
         </SheetButton>
         <SheetButton onClick={() => setRenaming((r) => !r)}>✏️ {h.card.rename}</SheetButton>
+        {live && <SheetButton onClick={() => setAdjusting((a) => !a)}>{h.card.adjust}</SheetButton>}
+        {tagLive && p.role === "prey" && (
+          <SheetButton onClick={() => void hs.act("set_role", { player_id: p.id, role: "hunter" })}>{h.card.makeHunter}</SheetButton>
+        )}
+        {tagLive && p.role === "hunter" && (
+          <SheetButton onClick={() => void hs.act("set_role", { player_id: p.id, role: "prey" })}>{h.card.makePrey}</SheetButton>
+        )}
+        {status !== "ceremony" && (
+          <SheetButton onClick={() => void hs.act("set_role", { player_id: p.id, role: p.role === "referee" ? "player" : "referee" })}>
+            {p.role === "referee" ? h.card.backToPlay : h.card.makeReferee}
+          </SheetButton>
+        )}
+        {status !== "ceremony" && (p.role === "referee" || awarded) && (
+          <SheetButton
+            onClick={async () => {
+              setErr(null);
+              if (!(await hs.act("referee_award", { player_id: p.id, on: !awarded })) && !awarded) setErr(h.card.awardFull);
+            }}
+          >
+            {awarded ? h.card.unaward : h.card.award}
+          </SheetButton>
+        )}
         <SheetButton danger onClick={() => onKick(p)}>
           ✕ {h.card.kick}
         </SheetButton>
@@ -710,7 +802,7 @@ function RoundBar({
   }, [snap.server_now]);
 
   const r = snap.round;
-  if (!r || snap.status === "lobby") return null;
+  if (!r || snap.status === "lobby" || snap.status === "ceremony") return null;
   if (snap.playlist_done) {
     return <p className="pointer-events-auto rounded-xl bg-ok px-3 py-2 text-sm font-black text-ink">✔ {h.round.done}</p>;
   }
@@ -752,6 +844,24 @@ function RoundBar({
           {live ? h.round.next : h.round.startNow}
         </button>
       )}
+    </div>
+  );
+}
+
+/** «Start seremoni»: the spreading rule is on unless the teacher switches it off (PLAN §5.2). */
+function CeremonyStart({ onStart }: { onStart: (spread: boolean) => void }) {
+  const [spread, setSpread] = useState(true);
+  return (
+    <div className="space-y-3">
+      <h2 className="text-2xl font-black">{no.ceremony.start}</h2>
+      <p className="text-sm text-txt-dim">{no.ceremony.introBody}</p>
+      <label className="flex items-center gap-3 rounded-xl bg-ink px-3 py-3 font-bold">
+        <input type="checkbox" className="size-5 accent-[var(--color-gold)]" checked={spread} onChange={(e) => setSpread(e.target.checked)} />
+        {no.ceremony.spread}
+      </label>
+      <button className="w-full rounded-2xl bg-gold py-4 text-lg font-black text-ink" onClick={() => onStart(spread)} data-testid="ceremony-start">
+        {no.ceremony.start}
+      </button>
     </div>
   );
 }

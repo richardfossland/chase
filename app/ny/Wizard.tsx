@@ -20,7 +20,7 @@ import {
   type LngLat,
 } from "@/lib/geo";
 import { no } from "@/lib/locale/no";
-import { DEFAULT_PLAN, GAME, normPlan, planTotalS, type Plan, type RoundMode } from "@/lib/rules/game";
+import { DEFAULT_PLAN, GAME, TEMPLATES, normPlan, planTotalS, type Plan, type RoundMode, type TemplateId } from "@/lib/rules/game";
 import { loadMapLibre } from "@/lib/map/maplibre";
 import { DEFAULT_CENTER, kartverketStyle } from "@/lib/map/style";
 
@@ -705,6 +705,19 @@ function PlaylistEditor(props: { plan: Plan; onChange: (p: Plan) => void; chip: 
   return (
     <div>
       <p className="text-sm text-txt-dim">{p.lead}</p>
+      <p className="mt-3 text-sm font-semibold">{p.templates}</p>
+      <div className="mt-2 grid grid-cols-2 gap-1.5">
+        {(Object.keys(TEMPLATES) as TemplateId[]).map((id) => (
+          <button
+            key={id}
+            className={chip(JSON.stringify(plan.rounds) === JSON.stringify(TEMPLATES[id].rounds))}
+            onClick={() => onChange(structuredClone(TEMPLATES[id]))}
+            data-testid={`template-${id}`}
+          >
+            {p.template[id]}
+          </button>
+        ))}
+      </div>
       <ol className="mt-3 space-y-2">
         {plan.rounds.map((r, i) => (
           <li key={i} className="rounded-xl bg-ink p-3">

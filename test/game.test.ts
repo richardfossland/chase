@@ -4,6 +4,7 @@ import {
   BADGES,
   DEFAULT_PLAN,
   GAME,
+  TEMPLATES,
   claimRadiusM,
   formatClock,
   movePoints,
@@ -65,6 +66,12 @@ describe("normPlan", () => {
     expect(normPlan({ rounds: [{ mode: "posts", duration_s: 300, zone: true }] })?.rounds[0]).toEqual({ mode: "posts", duration_s: 300, zone: true });
     expect(normPlan({ rounds: [{ mode: "tag", duration_s: 300, variant: "swap", zone: true }] })?.rounds[0].zone).toBe(true);
     expect(normPlan({ rounds: [{ mode: "posts", duration_s: 300, zone: false }] })?.rounds[0]).toEqual({ mode: "posts", duration_s: 300 });
+  });
+  it("templates are valid and leave room for intro + ceremony in a 45 min lesson", () => {
+    for (const p of Object.values(TEMPLATES)) expect(normPlan(p)).toEqual(p);
+    expect(Math.round(planTotalS(TEMPLATES.first) / 60)).toBe(24);   // «Første gang (30 min)» incl. intro/ceremony
+    expect(Math.round(planTotalS(TEMPLATES.gym) / 60)).toBe(32);     // «Full gymtime (45 min)»
+    expect(TEMPLATES.gym.rounds.map((r) => r.mode)).toEqual(["free", "posts", "tag", "posts", "tag"]);
   });
   it("default plan is valid and ~21 min", () => {
     expect(normPlan(DEFAULT_PLAN)).toEqual(DEFAULT_PLAN);

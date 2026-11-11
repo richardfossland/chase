@@ -4,6 +4,7 @@
 // Tokens and positions travel only in POST bodies — never in URLs.
 
 import type { Badge, Plan, PlanRound, RoundMode } from "@/lib/rules/game";
+import type { BestCard, PodiumCat } from "@/lib/rules/podiums";
 import type { ZoneState } from "@/lib/rules/zone";
 
 export class ApiError extends Error {
@@ -176,6 +177,8 @@ export interface Snapshot {
   posts: PostView[] | null;
   qr_cards: { n: number; code: string; value: number }[] | null;
   geo: SessionGeo | null;
+  referee_awards: string[];
+  ceremony: CeremonyView | null;
 }
 
 export interface TickView {
@@ -195,6 +198,7 @@ export interface TickView {
   tag?: TagView;
   /** Zone round only: am I inside, points lost to the zone this round, phase bonuses. */
   zone?: { inside: boolean; dist_m: number; pen: number; hits: number };
+  ceremony?: CeremonyView;
   safety: { geofence: 0 | 1 | 2 | 3; forbidden: boolean; outside_m: number; uncertain: boolean };
   sos: { id: string; acked: boolean } | null;
   gather: { assembly: LatLng; distance_m: number; checked_in: boolean } | null;
@@ -213,7 +217,22 @@ export interface PlayerBootstrap {
 
 export type HostAction =
   | "start" | "next" | "extend" | "pause" | "resume" | "message" | "gather" | "end_gather"
-  | "check_in" | "rename" | "kick" | "sit_out";
+  | "check_in" | "rename" | "kick" | "sit_out"
+  | "ceremony_start" | "ceremony_next" | "ceremony_back" | "vote_again" | "adjust_points" | "set_role" | "referee_award";
+
+/** Ceremony as chase._ceremony_view() returns it (0006). Nicknames only, never ids. */
+export interface CeremonyView {
+  /** 0 = intro, k = k podiums revealed, total + 1 = «ditt beste»-kort. */
+  step: number;
+  total: number;
+  spread: boolean;
+  revealed: { cat: PodiumCat; entries: { place: number; nickname: string; value: number | null; me: boolean }[] }[];
+  best: BestCard | null;
+  on_podium: boolean | null;
+  voted: boolean | null;
+  /** Teacher only: the anonymous count. */
+  again: { yes: number; no: number; teacher: boolean | null } | null;
+}
 
 /** Smittejakt layer of the tick view (chase._mode_tick). Never other players' exact positions for prey. */
 export interface TagView {
@@ -268,6 +287,8 @@ export const api = {
     post<CatchResult>(`/api/s/${sessionId}/catch`, body, 8000),
   qr: (sessionId: string, body: { playerId: string; token: string; code: string }) =>
     post<QrResult>(`/api/s/${sessionId}/qr`, body, 8000),
+  again: (sessionId: string, body: { playerId: string; token: string; yes: boolean }) =>
+    post<{ already: boolean }>(`/api/s/${sessionId}/again`, body, 8000),
   sos: (sessionId: string, body: { playerId: string; token: string; lat?: number; lng?: number }) =>
     post<{ alarmId: string; new: boolean }>(`/api/s/${sessionId}/sos`, body, 15000),
 

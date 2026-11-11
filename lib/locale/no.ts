@@ -95,6 +95,8 @@ export const no = {
       add: "+ Legg til runde",
       remove: "Fjern runde",
       up: "Flytt opp",
+      templates: "Ferdige maler",
+      template: { first: "🌱 Første gang (30 min)", gym: "🏟️ Full gymtime (45 min)" } as Record<string, string>,
       zone: "⭕ + krympende sone",
       zoneHint: "Sonen krymper i tre steg. Utenfor gir −1 poeng hvert 3. sekund, inne ved krymping gir +5.",
       breather: "Pustepause mellom rundene",
@@ -207,6 +209,17 @@ export const no = {
       rename: "Gi nytt navn",
       save: "Lagre",
       sitOut: "Sitter over",
+      adjust: "± Poeng",
+      adjustReason: "Årsak (kreves, logges)",
+      adjustQuick: ["Hjalp en medelev", "God innsats", "Fair play", "Brøt reglene", "Juks"],
+      adjustSave: (d: number) => `Gi ${d > 0 ? "+" : ""}${d} p`,
+      makeHunter: "🦠 Gjør til jeger",
+      makePrey: "🏃 Gjør til bytte",
+      makeReferee: "🧑‍⚖️ Gjør til dommer",
+      backToPlay: "↩ Tilbake i spillet",
+      award: "🏅 Beste dommer",
+      unaward: "🏅 Fjern «Beste dommer»",
+      awardFull: "Maks 3 kan få «Beste dommer».",
       sitIn: "Med igjen",
       sendMessage: "Send beskjed",
       checkIn: "Hak av",
@@ -279,6 +292,70 @@ export const no = {
       timeout: "Serveren svarte ikke. Prøv igjen.",
       default: "Noe gikk galt. Prøv igjen.",
     },
+  },
+  // Ceremony + «ditt beste» (0006), shared by the teacher panel and the phones.
+  ceremony: {
+    title: "🏆 Seremoni",
+    intro: "🥁 Trommevirvel …",
+    introBody: "Pallene avsløres én og én. Følg med!",
+    waiting: "Seremonien starter snart – se mot læreren!",
+    of: (i: number, n: number) => `Pall ${i} av ${n}`,
+    cats: {
+      referee: "🧑‍⚖️ Beste dommer",
+      explorer: "🧭 Utforsker",
+      comeback: "🚀 Comeback",
+      posts: "📍 Flest poster",
+      survival_s: "🛡️ Overlevde lengst",
+      catches: "🎯 Flest fangster",
+      active_s: "⏱️ Mest aktiv",
+      distance_m: "🏃 Lengst løpt",
+      points: "🏆 Flest poeng",
+    } as Record<string, string>,
+    value: (cat: string, v: number | null): string => {
+      if (v === null) return "";
+      switch (cat) {
+        case "distance_m": return `${Math.round(v).toLocaleString("nb-NO")} m`;
+        case "active_s": return `${Math.round(v / 60)} min`;
+        case "survival_s": return `${Math.floor(v / 60)}:${String(Math.round(v) % 60).padStart(2, "0")}`;
+        case "posts": return v === 1 ? "1 post" : `${v} poster`;
+        case "catches": return v === 1 ? "1 fangst" : `${v} fangster`;
+        case "explorer": return `${v} ruter`;
+        case "comeback": return `+${v} p`;
+        default: return `${v} p`;
+      }
+    },
+    places: ["🥇", "🥈", "🥉"],
+    you: "Det er deg! 🎉",
+    bestTitle: "Ditt beste",
+    best: {
+      distance_m: (s: number) => `Du var blant de ${s} % som løp lengst!`,
+      active_s: (s: number) => `Du var blant de ${s} % som var mest i bevegelse!`,
+      points: (s: number) => `Du var blant de ${s} % med flest poeng!`,
+      posts: (s: number) => `Du var blant de ${s} % som tok flest poster!`,
+      catches: (s: number) => `Du var blant de ${s} % som fanget flest!`,
+      survival_s: (s: number) => `Du var blant de ${s} % som overlevde lengst!`,
+      explorer: (s: number) => `Du var blant de ${s} % som utforsket mest av området!`,
+    } as Record<string, (s: number) => string>,
+    plain: {
+      active_s: (v: number) => `Du var i bevegelse i ${Math.max(1, Math.round(v / 60))} minutter!`,
+      distance_m: (v: number) => `Du løp ${Math.round(v).toLocaleString("nb-NO")} meter!`,
+      joined: "Takk for at du var med – du gjorde timen bedre!",
+    },
+    onPodium: "Du sto på pallen i dag! 🏅",
+    again: "Vil du spille Chase igjen?",
+    yes: "👍 Ja!",
+    no: "👎 Nei",
+    thanks: "Takk for svaret!",
+    start: "🏆 Start seremoni",
+    spread: "Maks 2 paller per elev (spredning)",
+    drum: "🥁 Neste pall",
+    toCards: "Vis «ditt beste» ▶",
+    back: "◀ Tilbake",
+    cardsShown: "Alle ser nå sitt «ditt beste»-kort.",
+    againCount: (y: number, n: number) => `Vil spille igjen: ${y} ja · ${n} nei`,
+    teacherAgain: "Vil du bruke Chase igjen?",
+    end: "Avslutt økta",
+    none: "Ingen paller denne gangen – alle får sitt «ditt beste»-kort.",
   },
   play: {
     readyTitle: (name: string) => `Hei, ${name}!`,
