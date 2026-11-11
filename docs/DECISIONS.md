@@ -289,3 +289,6 @@ Eierens valg 2026-11-10:
   - Byttet har blå skjerm, «Vis koden min» med stor QR og fire sifre, varselring og skjoldnedtelling.
   - Begge får blink, lyd og vibrasjon ved fangst, og når rollen deres skifter.
 - **Sim:** jegerboter løper mot den ferskeste radarpingen og «tar» et bytte innenfor 12 m med koden til byttet. `--assert` feiler hvis mer enn 10 % av forsøkene avvises som tvist (`too_far` eller `no_fix`). Lokalt med 20 boter og spillelista smitte 150 s + sisten 150 s ble det 38 fangster med 0 tvister, og spillelista gikk til samling av seg selv. `immune` og `bad_code` (utdatert kode i botens visning) er forventet og telles ikke som tvist.
+- **Deploy 2026-11-11:** migrasjon 0004 er i prod, og Worker `ae601e48` er bygget fra `d93a652` (rollback `95dce286` = fase 2). Prod-sim med 10 boter, smitte 90 s + sisten 90 s: 11 fangster, 0 feil, tick p95 201 ms, og spillelista gikk til samling av seg selv.
+  - En tidligere kjøring samme dag ga 3 × 500 på tick ved overgangen til samling. Det skjedde mens nettlinja var dårlig (`tick_0_network`, og /api/health brukte opptil 1,3 s).
+  - Feilen kom ikke igjen, verken lokalt eller i prod med `wrangler tail`. Følg med på den i den felles utetesten.
