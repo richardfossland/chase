@@ -351,3 +351,5 @@ Eierens valg 2026-11-11: **læreren starter seremonien**, **læreren trykker «N
 - **Sim:** `--ceremony` kjører seremonien, og botene stemmer. Simmen speiler nå at signalklokka starter på nytt ved hver rundestart (låste mobiler i pustepausen); tidligere ble det en falsk «alarm kom aldri».
   - Lokalt, 20 boter: 8 paller, 16 ulike elever på pall, 20/20 kort og 20 stemmer, tick p95 21 ms.
   - Lokalt, 12 boter: alle krav oppfylt.
+- **Deploy 2026-11-11:** migrasjon 0006 er i prod. Wrapperne `host_action`/`host_snapshot`, `vote_again`, `_podiums_from` og `_tag_rebalance` kan bare kjøres av service_role, `kc()` gir 3/2/6.95, og cron `chase-purge-expired` er aktiv. Worker `0d91c315` er bygget fra `be354a7` (rollback `f9986735` = del 2).
+  - Prod-sim, 10 boter, poster+sone 90 s og smitte 90 s med `--ceremony`: 20 poster, 8 fangster, 21 sonebonuser, 0 feil, tick p95 185 ms. Seremonien ga 7 paller, alle 10 på pall, 10/10 kort og 10 stemmer (8 ja, 2 nei). Alle forventede alarmer nådde læreren innen 0,9 s. «Avslutt» stoppet på oppropet (5 ikke ved samlingspunktet) og ble tvunget, som forventet.
