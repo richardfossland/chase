@@ -58,6 +58,9 @@ export interface SimStats {
     rounds: number;
     catches: number;
     catchFails: Record<string, number>;
+    /** Krympende sone: phase bonuses earned and points lost outside (sums over bots). */
+    zoneHits: number;
+    zonePen: number;
   };
 }
 
@@ -105,7 +108,7 @@ export function startSwarm(opts: SwarmOptions) {
     errors: {},
     latencies: [],
     alarms: [],
-    game: { claims: 0, golden: 0, lost: 0, qr: 0, duplicateClaims: 0, claimedIds: new Set(), statuses: [], playlistDone: false, rounds: 0, catches: 0, catchFails: {} },
+    game: { claims: 0, golden: 0, lost: 0, qr: 0, duplicateClaims: 0, claimedIds: new Set(), statuses: [], playlistDone: false, rounds: 0, catches: 0, catchFails: {}, zoneHits: 0, zonePen: 0 },
   };
   const players: SimPlayer[] = [];
   const timers: ReturnType<typeof setInterval>[] = [];
@@ -155,6 +158,13 @@ export function startSwarm(opts: SwarmOptions) {
     if (r.status === 200) {
       stats.ticks++;
       p.lastTickAt = Date.now();
+      const z0 = (p.view as { zone?: { hits: number; pen: number } } | null)?.zone;
+      const z1 = (r.data as { zone?: { hits: number; pen: number } }).zone;
+      if (z1) {
+        // Per-round counters: a drop means a new round started.
+        stats.game.zoneHits += z0 && z1.hits >= z0.hits ? z1.hits - z0.hits : z1.hits;
+        stats.game.zonePen += z0 && z1.pen >= z0.pen ? z1.pen - z0.pen : z1.pen;
+      }
       p.view = r.data;
       p.bot.observe(r.data as never);
       const claimed = r.data.claimed as { post_id: string; kind: string } | null | undefined;
@@ -321,6 +331,8 @@ export function summarize(stats: SimStats) {
       playlistDone: stats.game.playlistDone,
       catches: stats.game.catches,
       catchFails: stats.game.catchFails,
+      zoneHits: stats.game.zoneHits,
+      zonePen: stats.game.zonePen,
       statuses: stats.game.statuses,
     },
     ticks: stats.ticks,

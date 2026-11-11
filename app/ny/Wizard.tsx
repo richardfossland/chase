@@ -751,6 +751,14 @@ function PlaylistEditor(props: { plan: Plan; onChange: (p: Plan) => void; chip: 
                 </button>
               ))}
             </div>
+            <button
+              className={`${chip(!!r.zone)} mt-2 w-full`}
+              aria-pressed={!!r.zone}
+              onClick={() => setRound(i, { zone: r.zone ? undefined : true })}
+              data-testid={`zone-${i}`}
+            >
+              {p.zone}
+            </button>
           </li>
         ))}
       </ol>
@@ -761,6 +769,8 @@ function PlaylistEditor(props: { plan: Plan; onChange: (p: Plan) => void; chip: 
       >
         {p.add}
       </button>
+
+      {plan.rounds.some((r) => r.zone) && <p className="mt-2 text-xs text-txt-dim">{p.zoneHint}</p>}
 
       <p className="mt-4 text-sm font-semibold">{p.breather}</p>
       <div className="mt-2 flex gap-1.5">

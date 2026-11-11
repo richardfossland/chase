@@ -25,7 +25,8 @@ describe("GAME twin of chase.kg()", () => {
     expect(Object.fromEntries(pairs)).toEqual(GAME);
   });
   it("badge ids match the SQL", () => {
-    const all = sql + readFileSync(new URL("../supabase/migrations/0004_tag.sql", import.meta.url), "utf8");
+    const all = sql + readFileSync(new URL("../supabase/migrations/0004_tag.sql", import.meta.url), "utf8")
+      + readFileSync(new URL("../supabase/migrations/0005_zone.sql", import.meta.url), "utf8");
     for (const b of BADGES) expect(all).toContain(`'${b}'`);
   });
 });
@@ -45,6 +46,7 @@ describe("normPlan", () => {
       { rounds: [] },
       { rounds: [{ mode: "flag", duration_s: 300 }] },
       { rounds: [{ mode: "tag", duration_s: 300, variant: "bogus" }] },
+      { rounds: [{ mode: "posts", duration_s: 300, zone: "yes" }] },
       { rounds: [{ mode: "posts", duration_s: 30 }] },
       { rounds: [{ mode: "posts", duration_s: 99999 }] },
       { rounds: [{ mode: "posts", duration_s: "360" }] },
@@ -58,6 +60,11 @@ describe("normPlan", () => {
   it("tag rounds carry a variant", () => {
     expect(normPlan({ rounds: [{ mode: "tag", duration_s: 300 }] })?.rounds[0]).toEqual({ mode: "tag", duration_s: 300, variant: "convert" });
     expect(normPlan({ rounds: [{ mode: "tag", duration_s: 300, variant: "swap" }] })?.rounds[0].variant).toBe("swap");
+  });
+  it("zone flag kept only when true (same as 0005)", () => {
+    expect(normPlan({ rounds: [{ mode: "posts", duration_s: 300, zone: true }] })?.rounds[0]).toEqual({ mode: "posts", duration_s: 300, zone: true });
+    expect(normPlan({ rounds: [{ mode: "tag", duration_s: 300, variant: "swap", zone: true }] })?.rounds[0].zone).toBe(true);
+    expect(normPlan({ rounds: [{ mode: "posts", duration_s: 300, zone: false }] })?.rounds[0]).toEqual({ mode: "posts", duration_s: 300 });
   });
   it("default plan is valid and ~21 min", () => {
     expect(normPlan(DEFAULT_PLAN)).toEqual(DEFAULT_PLAN);

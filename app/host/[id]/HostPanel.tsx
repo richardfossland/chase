@@ -17,8 +17,9 @@ import { useHostSession, type HostSession } from "./useHostSession";
 
 const h = no.host;
 
-function roundName(r: { mode: string; variant?: string | null }): string {
-  return r.mode === "tag" ? h.round.variants[r.variant ?? "convert"] : h.round.modes[r.mode];
+function roundName(r: { mode: string; variant?: string | null; zone?: unknown; zoned?: boolean }): string {
+  const base = r.mode === "tag" ? h.round.variants[r.variant ?? "convert"] : h.round.modes[r.mode];
+  return r.zoned || r.zone === true ? base + h.round.zoneTag : base;
 }
 
 type Sheet =
@@ -148,6 +149,8 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
             posts={snap.posts ?? []}
             sosPlayers={sosPlayers}
             status={snap.status}
+            zone={snap.round?.zone ?? null}
+            serverNow={snap.server_now}
             onSelect={select}
           />
         )}

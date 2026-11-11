@@ -67,11 +67,13 @@ if (args.create) {
     plan: {
       rounds: args.plan
         ? String(args.plan).split(",").map((x) => {
-            // posts:360 | free:180 | convert:300 | swap:300
-            const [mode, secs] = x.split(":");
+            // posts:360 | free:180 | convert:300 | swap:300, "+zone" adds the shrinking zone (posts+zone:300)
+            const [kind, secs] = x.split(":");
+            const [mode, layer] = kind.split("+");
+            const zone = layer === "zone" ? { zone: true } : {};
             return mode === "convert" || mode === "swap"
-              ? { mode: "tag", variant: mode, duration_s: Number(secs) }
-              : { mode, duration_s: Number(secs) };
+              ? { mode: "tag", variant: mode, duration_s: Number(secs), ...zone }
+              : { mode, duration_s: Number(secs), ...zone };
           })
         : [{ mode: "free", duration_s: Math.max(60, Math.round(minutes * 60)) }],
       countdown_s: Number(args.countdown ?? 10),
@@ -162,6 +164,7 @@ if (args.assert) {
       else if (fails / tries > 0.1) problems.push(`${fails} av ${tries} fangstforsøk avvist (> 10 % tvist)`);
     }
   }
+  if (/\+zone/.test(String(args.plan)) && summary.game.zoneHits === 0) problems.push("ingen fikk sonebonus");
   const errs = Object.entries(summary.errors).filter(([k]) => !k.includes("stale"));
   if (errs.length) problems.push(`feil: ${JSON.stringify(Object.fromEntries(errs))}`);
   if (problems.length) {

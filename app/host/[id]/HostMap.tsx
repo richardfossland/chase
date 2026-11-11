@@ -6,10 +6,11 @@ import type { Map as MlMap, Marker } from "maplibre-gl";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 
 import type { HostPlayer, PostView, SessionGeo, SessionStatus } from "@/lib/client/api";
-import { addPostsLayer, addSessionLayers, boundsOf, setPosts } from "@/lib/map/layers";
+import { addPostsLayer, addSessionLayers, addZoneLayer, boundsOf, setPosts, setZone } from "@/lib/map/layers";
 import { loadMapLibre } from "@/lib/map/maplibre";
 import { kartverketStyle } from "@/lib/map/style";
 import { SAFETY } from "@/lib/rules/safety";
+import { zoneAt, type ZoneState } from "@/lib/rules/zone";
 
 export interface HostMapHandle {
   flyTo: (lat: number, lng: number) => void;
@@ -36,9 +37,12 @@ const HostMap = forwardRef<
     posts: PostView[];
     sosPlayers: Set<string>;
     status: SessionStatus;
+    /** Live zone round (0005) + the server clock it runs on. */
+    zone: ZoneState | null;
+    serverNow: string;
     onSelect: (id: string) => void;
   }
->(function HostMap({ geo, players, posts, sosPlayers, status, onSelect }, ref) {
+>(function HostMap({ geo, players, posts, sosPlayers, status, zone, serverNow, onSelect }, ref) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<MlMap | null>(null);
   const lib = useRef<Awaited<ReturnType<typeof loadMapLibre>> | null>(null);
@@ -71,6 +75,7 @@ const HostMap = forwardRef<
       m.addControl(new ml.NavigationControl({ showCompass: false }), "bottom-right");
       m.on("load", () => {
         addSessionLayers(m, geo);
+        addZoneLayer(m);
         addPostsLayer(m);
         setReady(true);
       });
@@ -131,6 +136,24 @@ const HostMap = forwardRef<
   useEffect(() => {
     if (ready && map.current) setPosts(map.current, posts);
   }, [ready, posts]);
+
+  // Zone: a pure function of server time, redrawn each second (same circle as the phones).
+  useEffect(() => {
+    if (!ready || !map.current) return;
+    const m = map.current;
+    if (!zone) {
+      setZone(m, null);
+      return;
+    }
+    const offset = Date.parse(serverNow) - Date.now();
+    const draw = () => {
+      const zn = zoneAt(zone, Date.now() + offset);
+      setZone(m, { c: zone.c, r: zn.r, nextR: zn.warn ? (zn.next?.r ?? null) : null });
+    };
+    draw();
+    const iv = setInterval(draw, 1000);
+    return () => clearInterval(iv);
+  }, [ready, zone, serverNow]);
 
   return (
     <div className="absolute inset-0">

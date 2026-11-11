@@ -292,3 +292,29 @@ Eierens valg 2026-11-10:
 - **Deploy 2026-11-11:** migrasjon 0004 er i prod, og Worker `ae601e48` er bygget fra `d93a652` (rollback `95dce286` = fase 2). Prod-sim med 10 boter, smitte 90 s + sisten 90 s: 11 fangster, 0 feil, tick p95 201 ms, og spillelista gikk til samling av seg selv.
   - En tidligere kjøring samme dag ga 3 × 500 på tick ved overgangen til samling. Det skjedde mens nettlinja var dårlig (`tick_0_network`, og /api/health brukte opptil 1,3 s).
   - Feilen kom ikke igjen, verken lokalt eller i prod med `wrangler tail`. Følg med på den i den felles utetesten.
+
+## ADR-022 — Fase 3 del 2: krympende sone (2026-11-11)
+- **Et lag på hvilken som helst runde:** planrunder tar `"zone": true` (Postjakt + sone, Sisten + sone …). Veiviseren har en «⭕ + krympende sone»-knapp per runde.
+- **Ren funksjon av tid** (PLAN § 3.3):
+  - Ved rundestart lagrer `rounds.state.zone` sentrum, radiene `r[0..3]` og de absolutte fasetidene. Sonen er da `circle(c, r[#{at ≤ t}])`.
+  - `lib/rules/zone.ts` (`zoneAt`) og SQL (`_zone_k`/`_zone_r`) testes mot de samme vektorene. Det trengs ingen jobb og ingen klienttimer som fasit.
+  - Pause flytter fasetidene, samme mønster som `golden_at`. «+1 min» endrer ikke soneplanen, så siste fase blir bare lengre.
+- **Geometri:**
+  - Sentrum velges blant 20 kandidater så langt inne at den siste sirkelen får plass, med størst mulig avstand til forbudte soner.
+  - `r0` er avstanden til det fjerneste hjørnet, så fase 0 dekker hele området.
+  - Deretter kommer 3 sirkler med samme areal som 75/50/25 % av området, aldri under 20 m. Fase k starter ved D·k/4.
+- **Poeng:**
+  - Utenfor gir −1 per 3 s (`zone_out_since`/`zone_pen_stint`, samme teknikk som overlevelsespoengene), aldri under 0 for runden.
+  - Hvem som er inne, avgjøres slik: dist ≤ r + min(acc, 15 m), og et fix dårligere enn 30 m teller som inne (tvilen kommer eleven til gode).
+  - Den som er inne i den nye sirkelen ved hvert faseskifte, får +5. Inne ved alle tre skifter gir merket «Sonemester».
+  - Faseskiftet betales i `_mode_upkeep` under sesjonslåsen, og det tar igjen flere faser på én gang.
+- **Poster** i en sonerunde legges inne i neste sirkel. Åpne poster utenfor en ny sirkel fjernes, og upkeep fyller på.
+- **Kroker:** 0004s `_mode_*` er døpt om til `_tag_*`, og nye `_mode_*` kaller både tag og sone. `_norm_plan` og `_unfreeze` pakkes inn på samme måte. Omdøpingen er vernet, så migrasjonen tåler å kjøres to ganger (test-db og provisjoneringsskriptet, som kjører alle migrasjoner i rekkefølge). Ingen kopi av `tick()`.
+- **Klient:**
+  - Kartet toner alt utenfor sirkelen rødt og viser neste sirkel stiplet 20 s før. Dette laget ligger under forbudte soner og samlingspunktet (regel 4).
+  - Stripen viser «Sonen krymper om N s» med pip, og «Utenfor sonen!» med pil mot sentrum og avstand til kanten.
+  - Utenfor sonen får skjermen rød kant og lyd. Inne ved krymping kommer +5-blink.
+  - Lærerkartet tegner den samme sirkelen fra servertid.
+  - Sikkerhetsbanneret går alltid foran.
+- **Personvern:** de nye kolonnene er tellere og tidspunkter, ingen posisjoner. Sonesentrum er avledet av området.
+- **Sim:** `--plan posts+zone:120,swap+zone:120`. Botene løper mot sentrum når de er utenfor 80 % av neste radius, men «gjemmere» bryr seg ikke. `--assert` krever minst én sonebonus. Lokalt med 20 boter: 104 klaim, 16 fangster, 90 sonebonuser, 126 strafpoeng, 6 krympinger, 15 Sonemester, 0 feil, tick p95 22 ms.

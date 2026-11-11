@@ -4,6 +4,7 @@
 // Tokens and positions travel only in POST bodies — never in URLs.
 
 import type { Badge, Plan, PlanRound, RoundMode } from "@/lib/rules/game";
+import type { ZoneState } from "@/lib/rules/zone";
 
 export class ApiError extends Error {
   constructor(
@@ -120,6 +121,10 @@ export interface RoundView {
   frozen: boolean;
   qr: boolean;
   variant: "convert" | "swap" | null;
+  /** Krympende sone on this round (0005). */
+  zoned: boolean;
+  /** Live/paused zone round: centre, radii, phase times — lib/rules/zone.ts computes the circle. */
+  zone: ZoneState | null;
   next: PlanRound | null;
 }
 
@@ -188,6 +193,8 @@ export interface TickView {
   new_badges: Badge[];
   summary: RoundSummary | null;
   tag?: TagView;
+  /** Zone round only: am I inside, points lost to the zone this round, phase bonuses. */
+  zone?: { inside: boolean; dist_m: number; pen: number; hits: number };
   safety: { geofence: 0 | 1 | 2 | 3; forbidden: boolean; outside_m: number; uncertain: boolean };
   sos: { id: string; acked: boolean } | null;
   gather: { assembly: LatLng; distance_m: number; checked_in: boolean } | null;

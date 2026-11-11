@@ -27,7 +27,7 @@ export const createSessionBody = z.object({
   plan: z
     .object({
       rounds: z
-        .array(z.object({ mode: z.enum(["free", "posts", "tag"]), duration_s: z.number().int(), variant: z.enum(["convert", "swap"]).optional() }))
+        .array(z.object({ mode: z.enum(["free", "posts", "tag"]), duration_s: z.number().int(), variant: z.enum(["convert", "swap"]).optional(), zone: z.boolean().optional() }))
         .min(1)
         .max(10),
       countdown_s: z.number().int().optional(),

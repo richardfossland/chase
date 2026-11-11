@@ -1,4 +1,5 @@
 import type { GeoJSONSource, Map as MlMap } from "maplibre-gl";
+import type { Feature } from "geojson";
 
 import type { SessionGeo } from "@/lib/client/api";
 
@@ -145,4 +146,66 @@ export function setRadar(m: MlMap, pings: { pos: { lat: number; lng: number }; a
       geometry: { type: "Point", coordinates: [p.pos.lng, p.pos.lat] },
     })),
   });
+}
+
+/** A circle as a 64-gon ring (lng/lat), local flat-earth — fine at school-yard scale. */
+export function circleRing(c: { lat: number; lng: number }, rM: number, n = 64): [number, number][] {
+  const dLat = rM / 111320;
+  const dLng = rM / (111320 * Math.cos((c.lat * Math.PI) / 180));
+  const ring: [number, number][] = [];
+  for (let i = 0; i <= n; i++) {
+    const a = (i / n) * 2 * Math.PI;
+    ring.push([c.lng + dLng * Math.sin(a), c.lat + dLat * Math.cos(a)]);
+  }
+  return ring;
+}
+
+/** Krympende sone: everything outside the circle is tinted red, the next circle dashed. */
+export function addZoneLayer(m: MlMap) {
+  m.addSource("zone", { type: "geojson", data: EMPTY });
+  // Under the forbidden zones and the assembly point: safety stays on top (CLAUDE.md rule 4).
+  const before = m.getLayer("forbidden-fill") ? "forbidden-fill" : undefined;
+  m.addLayer({
+    id: "zone-outside",
+    type: "fill",
+    source: "zone",
+    filter: ["==", ["get", "kind"], "outside"],
+    paint: { "fill-color": "#ff3b30", "fill-opacity": 0.22 },
+  }, before);
+  m.addLayer({
+    id: "zone-line",
+    type: "line",
+    source: "zone",
+    filter: ["==", ["get", "kind"], "now"],
+    paint: { "line-color": "#ff3b30", "line-width": 4 },
+  }, before);
+  m.addLayer({
+    id: "zone-next",
+    type: "line",
+    source: "zone",
+    filter: ["==", ["get", "kind"], "next"],
+    paint: { "line-color": "#ffffff", "line-width": 3, "line-dasharray": [2, 2] },
+  }, before);
+}
+
+export function setZone(m: MlMap, z: { c: { lat: number; lng: number }; r: number; nextR: number | null } | null) {
+  const src = m.getSource<GeoJSONSource>("zone");
+  if (!src) return;
+  if (!z) {
+    src.setData(EMPTY);
+    return;
+  }
+  const ring = circleRing(z.c, z.r);
+  // World-ish box with the circle as a hole (reverse winding for the hole).
+  const box: [number, number][] = [
+    [z.c.lng - 1, z.c.lat - 1], [z.c.lng + 1, z.c.lat - 1], [z.c.lng + 1, z.c.lat + 1], [z.c.lng - 1, z.c.lat + 1], [z.c.lng - 1, z.c.lat - 1],
+  ];
+  const features: Feature[] = [
+    { type: "Feature", properties: { kind: "outside" }, geometry: { type: "Polygon", coordinates: [box, [...ring].reverse()] } },
+    { type: "Feature", properties: { kind: "now" }, geometry: { type: "LineString", coordinates: ring } },
+  ];
+  if (z.nextR !== null) {
+    features.push({ type: "Feature", properties: { kind: "next" }, geometry: { type: "LineString", coordinates: circleRing(z.c, z.nextR) } });
+  }
+  src.setData({ type: "FeatureCollection", features });
 }

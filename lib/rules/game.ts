@@ -1,5 +1,6 @@
 // TS twin of chase.kg() and the phase 2 game rules in
-// supabase/migrations/0003_playlist_posts_points.sql (CLAUDE.md rule 2).
+// supabase/migrations/0003_playlist_posts_points.sql (CLAUDE.md rule 2);
+// the plan's "zone" flag comes from 0005_zone.sql.
 // The server decides; the client uses these to explain and to draw (round
 // clock, claim ring, wizard totals). test/game.test.ts diffs GAME against the
 // SQL and runs the same vectors as test/sql/0003_playlist_posts_points.test.sql.
@@ -44,6 +45,8 @@ export interface PlanRound {
   duration_s: number;
   /** Smittejakt only: «smitte» (convert) or «sisten» (swap). */
   variant?: "convert" | "swap";
+  /** Krympende sone on top of the round (0005, lib/rules/zone.ts). */
+  zone?: boolean;
 }
 export interface Plan {
   rounds: PlanRound[];
@@ -72,11 +75,15 @@ export function normPlan(p: Partial<Plan> & { rounds?: unknown }): Plan | null {
     const d = r?.duration_s;
     if ((r?.mode !== "free" && r?.mode !== "posts" && r?.mode !== "tag") || typeof d !== "number" || !Number.isInteger(d)) return null;
     if (d < GAME.round_min_s || d > GAME.round_max_s) return null;
+    let out: PlanRound;
     if (r.mode === "tag") {
       const v = r.variant ?? "convert";
       if (v !== "convert" && v !== "swap") return null;
-      rounds.push({ mode: "tag", duration_s: d, variant: v });
-    } else rounds.push({ mode: r.mode, duration_s: d });
+      out = { mode: "tag", duration_s: d, variant: v };
+    } else out = { mode: r.mode, duration_s: d };
+    if (r.zone !== undefined && r.zone !== null && typeof r.zone !== "boolean") return null;
+    if (r.zone === true) out.zone = true;
+    rounds.push(out);
   }
   const cd = p.countdown_s ?? GAME.countdown_s;
   const br = p.breather_s ?? GAME.breather_s;
@@ -136,6 +143,6 @@ export function formatClock(s: number | null): string {
 
 /** Badge ids awarded by chase._award_badges() / claim_qr(). */
 export const BADGES = [
-  "first_post", "golden", "posts_5", "qr", "km_1", "active_10", "explorer_25", "first_catch", "catches_5", "survivor",
+  "first_post", "golden", "posts_5", "qr", "km_1", "active_10", "explorer_25", "first_catch", "catches_5", "survivor", "zone_master",
 ] as const;
 export type Badge = (typeof BADGES)[number];

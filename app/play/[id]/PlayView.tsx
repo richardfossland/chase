@@ -17,19 +17,21 @@ import { playBuzzer, playDing, unlockAudio } from "@/lib/client/sound";
 import { useChannel } from "@/lib/client/useChannel";
 import { no } from "@/lib/locale/no";
 import { bearing, haversine } from "@/lib/geo";
-import { addMeLayer, addPostsLayer, addRadarLayer, addSessionLayers, boundsOf, setMe, setPosts, setRadar } from "@/lib/map/layers";
+import { addMeLayer, addPostsLayer, addRadarLayer, addSessionLayers, addZoneLayer, boundsOf, setMe, setPosts, setRadar, setZone } from "@/lib/map/layers";
 import { loadMapLibre } from "@/lib/map/maplibre";
 import { kartverketStyle } from "@/lib/map/style";
 import { channels } from "@/lib/realtime";
 import { formatClock, phaseLeftS, type PlanRound } from "@/lib/rules/game";
 import { catchQr, parseCatch } from "@/lib/rules/tag";
 import { SAFETY } from "@/lib/rules/safety";
+import { zoneAt, type ZoneNow, type ZoneState } from "@/lib/rules/zone";
 import { parseQr } from "@/lib/qr";
 
 const t = no.play;
 
-function roundTitle(r: { mode: string; variant?: string | null }): string {
-  return r.mode === "tag" ? t.variants[r.variant ?? "convert"] : t.modes[r.mode];
+function roundTitle(r: { mode: string; variant?: string | null; zone?: unknown; zoned?: boolean }): string {
+  const base = r.mode === "tag" ? t.variants[r.variant ?? "convert"] : t.modes[r.mode];
+  return r.zoned || r.zone === true ? base + t.zoneTag : base;
 }
 const SIM_ALLOWED = process.env.NODE_ENV !== "production" || process.env.NEXT_PUBLIC_SIM_ENABLED === "1";
 const FAST_MS = 2000; // active round / gathering (PLAN §9.2)
@@ -163,6 +165,13 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
       setFlash({ id: Date.now(), text: t.caughtYou, sub: t.nowHunter, tone: "dim" });
     }
     if (view.tag?.hunter_near && !p?.tag?.hunter_near) cue("danger");
+    // Krympende sone: +5 for being inside at a shrink, alarm tone when I drop out.
+    if (view.zone && p?.zone && view.status === "live") {
+      if (view.zone.hits > p.zone.hits) {
+        cue("claim");
+        setFlash({ id: Date.now(), text: "+5", sub: t.zoneBonus, tone: "ok" });
+      } else if (!view.zone.inside && p.zone.inside) cue("danger");
+    }
     if (p && p.status !== view.status) {
       if (view.status === "live" && (p.status === "countdown" || p.status === "breather")) cue("go");
       if (p.status === "live" && (view.status === "breather" || view.status === "gathering")) cue("roundEnd");
@@ -289,6 +298,17 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
     beeped.current = key;
     cue("beep");
   }, [status, leftNow, view?.round?.idx]);
+
+  // Zone: one beep when the next circle is announced (20 s before), from server time.
+  const zoneState: ZoneState | null = view && (view.status === "live" || view.status === "paused") ? (view.round?.zone ?? null) : null;
+  const zn: ZoneNow | null = zoneState ? zoneAt(zoneState, now + offsetMs) : null;
+  const zoneWarnKey = zn?.warn && view?.status === "live" ? `${view.round?.idx}:${zn.phase}` : null;
+  const zoneWarned = useRef<string | null>(null);
+  useEffect(() => {
+    if (!zoneWarnKey || zoneWarned.current === zoneWarnKey) return;
+    zoneWarned.current = zoneWarnKey;
+    cue("beep");
+  }, [zoneWarnKey]);
 
   const onCatch = useCallback(
     async (text: string) => {
@@ -419,6 +439,11 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
   const isHunter = !!tag && role === "hunter";
   const isPrey = !!tag && role === "prey";
   const immuneLeft = tag?.immune_until ? phaseLeftS(tag.immune_until, offsetMs, now) : null;
+  const zoneOut = status === "live" && !!zn && view?.zone?.inside === false;
+  const zoneEdge = zn && zoneState && gps.fix
+    ? { m: Math.max(0, Math.round(haversine([gps.fix.lng, gps.fix.lat], [zoneState.c.lng, zoneState.c.lat]) - zn.r)),
+        deg: bearing([gps.fix.lng, gps.fix.lat], [zoneState.c.lng, zoneState.c.lat]) }
+    : null;
 
   // Banner: one main message, most urgent first (safety beats game).
   let tone: Tone = "neutral";
@@ -528,8 +553,39 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
         </div>
       )}
 
-      <div className={`relative min-h-0 flex-1 ${tag?.hunter_near && !immuneLeft ? "ring-[10px] ring-inset ring-hunter animate-pulse" : ""}`}>
-        <PlayerMap boot={boot} fix={gps.fix} posts={posts} activeId={view?.claim?.post_id ?? null} radar={isHunter ? (tag?.radar ?? []) : []} />
+      {zn && status === "live" && (zoneOut || zn.warn) && (
+        <div
+          className={`mx-4 mb-2 flex items-center gap-3 rounded-xl px-3 py-2 font-black ${zoneOut ? "bg-danger text-white" : "bg-black/40"}`}
+          role="status"
+          data-testid="zone-strip"
+        >
+          {zoneOut && zoneEdge && (
+            <span className="inline-block text-3xl leading-none" style={{ transform: `rotate(${zoneEdge.deg}deg)` }} aria-hidden>
+              ↑
+            </span>
+          )}
+          <span className="flex-1">{zoneOut ? t.zoneOut : t.zoneShrinkIn(zn.next?.inS ?? 0)}</span>
+          {zoneOut && zoneEdge && <span className="tabular-nums">{t.zoneTo(zoneEdge.m)}</span>}
+        </div>
+      )}
+
+      <div
+        className={`relative min-h-0 flex-1 ${
+          zoneOut ? "ring-[10px] ring-inset ring-danger animate-pulse"
+          : tag?.hunter_near && !immuneLeft ? "ring-[10px] ring-inset ring-hunter animate-pulse" : ""
+        }`}
+      >
+        <PlayerMap
+          boot={boot}
+          fix={gps.fix}
+          posts={posts}
+          activeId={view?.claim?.post_id ?? null}
+          radar={isHunter ? (tag?.radar ?? []) : []}
+          zoneLat={zoneState?.c.lat ?? null}
+          zoneLng={zoneState?.c.lng ?? null}
+          zoneR={zn?.r ?? null}
+          zoneNextR={zn?.warn ? (zn.next?.r ?? null) : null}
+        />
         {sim && <SimPad sim={sim} />}
         {summary && (status === "breather" || status === "gathering") && (
           <SummaryCard summary={summary} next={status === "breather" ? (round?.next ?? null) : null} />
@@ -681,12 +737,21 @@ function PlayerMap({
   posts,
   activeId,
   radar,
+  zoneLat,
+  zoneLng,
+  zoneR,
+  zoneNextR,
 }: {
   boot: PlayerBootstrap;
   fix: Fix | null;
   posts: PostView[];
   activeId: string | null;
   radar: NonNullable<TagView["radar"]>;
+  /** Primitives, so the map redraws only when the circle changes (the 1 s clock re-renders). */
+  zoneLat: number | null;
+  zoneLng: number | null;
+  zoneR: number | null;
+  zoneNextR: number | null;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<MlMap | null>(null);
@@ -706,6 +771,7 @@ function PlayerMap({
       });
       m.on("load", () => {
         addSessionLayers(m, boot.geo);
+        addZoneLayer(m);
         addPostsLayer(m);
         addRadarLayer(m);
         addMeLayer(m);
@@ -731,6 +797,12 @@ function PlayerMap({
   useEffect(() => {
     if (ready && map.current) setRadar(map.current, radar);
   }, [ready, radar]);
+
+  useEffect(() => {
+    if (!ready || !map.current) return;
+    setZone(map.current, zoneLat !== null && zoneLng !== null && zoneR !== null
+      ? { c: { lat: zoneLat, lng: zoneLng }, r: zoneR, nextR: zoneNextR } : null);
+  }, [ready, zoneLat, zoneLng, zoneR, zoneNextR]);
 
   return (
     <div className="absolute inset-0">

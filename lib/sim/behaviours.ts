@@ -7,6 +7,8 @@
 
 import { makeProjection, pointInRing, ringCenter, signedDistanceToRing, type LngLat } from "@/lib/geo";
 
+import { zoneAt, type ZoneState } from "@/lib/rules/zone";
+
 import { gauss, rng } from "./rng";
 
 export const BEHAVIOURS = ["runner", "hider", "wanderer", "forbidden", "dropout", "sos", "cheater", "jitter"] as const;
@@ -39,6 +41,8 @@ export interface BotView {
   tag?: { radar?: { pos: { lat: number; lng: number } }[]; hunter_near?: boolean } | null;
   posts?: { pos: { lat: number; lng: number } }[] | null;
   gather?: { checked_in: boolean } | null;
+  round?: { zone?: ZoneState | null } | null;
+  zone?: { inside: boolean } | null;
 }
 
 export interface BotOptions {
@@ -128,6 +132,16 @@ export function createBot(kind: Behaviour, geo: SimGeo, opts: BotOptions) {
     return best;
   }
 
+  // Zone target: the centre, while further out than 80 % of the (next) radius.
+  function zoneSeek(): XY | null {
+    const z = view.round?.zone;
+    if (!z) return null;
+    const zn = zoneAt(z, Date.now());
+    const r = zn.warn && zn.next ? zn.next.r : zn.r;
+    const c = proj.toXY([z.c.lng, z.c.lat]) as XY;
+    return Math.hypot(c[0] - pos[0], c[1] - pos[1]) > r * 0.8 ? c : null;
+  }
+
   function step(dt: number): BotStep {
     t += dt;
     const before: XY = [pos[0], pos[1]];
@@ -141,6 +155,9 @@ export function createBot(kind: Behaviour, geo: SimGeo, opts: BotOptions) {
       if (!view.gather?.checked_in) seek(a as XY, dt, 1.4);
     } else if (!special && view.status === "breather") {
       wander(dt, 0.5, true);
+    } else if (!special && kind !== "hider" && view.status === "live" && zoneSeek()) {
+      // Krympende sone: get inside the circle (the next one once it is announced). Hiders don't bother.
+      seek(zoneSeek()!, dt, baseSpeed + 0.5);
     } else if (!special && view.status === "live" && view.role === "hunter" && view.tag?.radar?.length) {
       // Smittejakt hunter: run to the freshest radar ping.
       const ping = view.tag.radar[0].pos;
