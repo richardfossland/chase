@@ -48,6 +48,10 @@ const STATUS: Record<string, number> = {
   none_left: 409,
   not_useful: 409,
   none_pending: 409,
+  no_teams: 409,
+  teams_locked: 409,
+  no_team: 409,
+  too_soon: 429,
 };
 
 /** HTTP status for an RPC error code (bad_* and unknown → 400). */

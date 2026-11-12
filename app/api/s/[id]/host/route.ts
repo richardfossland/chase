@@ -26,7 +26,7 @@ export const POST = guarded(async (req, ctx) => {
       const target = payload.player_id;
       if (body.action === "message") {
         await broadcast(target ? channels.player(id, target) : channels.all(id), events.message);
-      } else if (["kick", "rename", "sit_out", "check_in", "adjust_points", "set_role", "referee_award"].includes(body.action)) {
+      } else if (["kick", "rename", "sit_out", "check_in", "adjust_points", "set_role", "referee_award", "team_set"].includes(body.action)) {
         if (target) await broadcast(channels.player(id, target), events.state);
         await broadcast(channels.host(id), events.roster);
       } else {

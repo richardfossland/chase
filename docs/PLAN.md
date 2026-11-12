@@ -275,6 +275,9 @@ Fysiske oppdrag gjøres der eleven er, aldri som en betingelse for å slippe str
 | Hendelsesdeltakelse (hvem nådde sprintpunktet eller fullførte oppdraget, når, poeng og power-up) | `event_entries` | 24 t etter slutt, uten koordinater |
 | Lokkedue (falskt punkt 40 m fra eleven) | `player_live.decoy_pos` (UNLOGGED) | **Slettes ved øktslutt** |
 | Power-up-inventar og aktive effekter (tider) | `player_stats` | 24 t etter slutt |
+| Lagbeskjed (siste hurtigmelding: type, tid og avsenderens posisjon, vises bare for eget lag i 30 s) | `player_live.msg_*` (UNLOGGED) | **Slettes ved øktslutt** |
+| Lag (navn, farge, lagpoeng) og elevens lag | `teams`, `players.team_id` | Som økta (24 t etter slutt). Ingen persondata utover koblingen elev ↔ lag. |
+| Flagg- og haugposisjoner (punkter i området, ikke elevposisjoner) | `rounds.state` | Som økta |
 | Lærerens telefonnummer | `sessions` | Nullstilles ved øktslutt |
 | **Anonymt sammendrag** | `session_summaries` | Beholdes: antall spillere, varighet, moduser, total og median distanse og aktive minutter som histogram, og anonym telling av «vil spille igjen» (ja/nei, lærerens svar). **Ingen koordinater, navn eller område.** |
 

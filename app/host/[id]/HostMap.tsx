@@ -5,8 +5,9 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import type { Map as MlMap, Marker } from "maplibre-gl";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 
-import type { HostPlayer, PostView, SessionGeo, SessionStatus } from "@/lib/client/api";
-import { addEventLayer, addPostsLayer, addSessionLayers, addZoneLayer, boundsOf, setEvent, setPosts, setZone } from "@/lib/map/layers";
+import type { FlagView, HillView, HostPlayer, PostView, SessionGeo, SessionStatus, TeamScore } from "@/lib/client/api";
+import { addEventLayer, addPostsLayer, addSessionLayers, addTeamLayer, addZoneLayer, boundsOf, setEvent, setPosts, setTeam, setZone } from "@/lib/map/layers";
+import { TEAMS } from "@/lib/rules/teams";
 import { loadMapLibre } from "@/lib/map/maplibre";
 import { kartverketStyle } from "@/lib/map/style";
 import { EVENTS } from "@/lib/rules/events";
@@ -43,9 +44,14 @@ const HostMap = forwardRef<
     serverNow: string;
     /** Sprint target of the current event (0007). */
     eventTarget?: { lat: number; lng: number } | null;
+    /** 0009: teams (name tag colour — the dot keeps its safety colour, rule 4), flags, hill. */
+    teams?: TeamScore[];
+    teamOf?: Record<string, number>;
+    flags?: FlagView[] | null;
+    hill?: HillView | null;
     onSelect: (id: string) => void;
   }
->(function HostMap({ geo, players, posts, sosPlayers, status, zone, serverNow, eventTarget = null, onSelect }, ref) {
+>(function HostMap({ geo, players, posts, sosPlayers, status, zone, serverNow, eventTarget = null, teams, teamOf, flags = null, hill = null, onSelect }, ref) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<MlMap | null>(null);
   const lib = useRef<Awaited<ReturnType<typeof loadMapLibre>> | null>(null);
@@ -81,6 +87,7 @@ const HostMap = forwardRef<
         addZoneLayer(m);
         addPostsLayer(m);
         addEventLayer(m);
+        addTeamLayer(m);
         setReady(true);
       });
       map.current = m;
@@ -125,7 +132,11 @@ const HostMap = forwardRef<
       dot.style.borderColor = s.ring;
       dot.classList.toggle("animate-ping-slow", s.pulse);
       const still = p.still_s !== null && p.still_s > SAFETY.still_alert_s && status === "live";
-      entry.el.querySelector<HTMLElement>("[data-name]")!.textContent = `${p.nickname}${still ? " 💤" : ""}`;
+      const name = entry.el.querySelector<HTMLElement>("[data-name]")!;
+      name.textContent = `${p.nickname}${still ? " 💤" : ""}`;
+      const tc = teams?.find((t) => t.n === teamOf?.[p.id])?.color;
+      name.style.background = tc ?? "";
+      name.style.color = tc === "#f5b800" ? "#111827" : "";
       entry.el.setAttribute("aria-label", p.nickname);
     }
     for (const [id, entry] of markers.current) {
@@ -134,7 +145,22 @@ const HostMap = forwardRef<
         markers.current.delete(id);
       }
     }
-  }, [ready, players, sosPlayers, status]);
+  }, [ready, players, sosPlayers, status, teams, teamOf]);
+
+  // Flags / hill (0009), colour by owner / holder.
+  const teamKey = (flags?.length || hill) && teams?.length
+    ? JSON.stringify({ c: teams.map((t) => [t.n, t.color]), flags, hill: hill ? { pos: hill.pos, r: hill.r, holder: hill.holder } : null })
+    : null;
+  useEffect(() => {
+    if (!ready || !map.current) return;
+    if (!teamKey) {
+      setTeam(map.current, null);
+      return;
+    }
+    const d = JSON.parse(teamKey) as { c: [number, string][]; flags: FlagView[] | null; hill: { pos: { lat: number; lng: number }; r: number; holder: number | null } | null };
+    const colors = new Map(d.c);
+    setTeam(map.current, { colorOf: (n) => (n ? colors.get(n) : undefined) ?? "#9aa3b2", flags: d.flags, flagR: TEAMS.flag_r_m, hill: d.hill });
+  }, [ready, teamKey]);
 
   // Posts of the round: open in colour, taken in grey (teacher sees both).
   useEffect(() => {

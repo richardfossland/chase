@@ -17,7 +17,7 @@ import { playBuzzer, playDing, unlockAudio } from "@/lib/client/sound";
 import { useChannel } from "@/lib/client/useChannel";
 import { no } from "@/lib/locale/no";
 import { bearing, haversine } from "@/lib/geo";
-import { addEventLayer, addMeLayer, addPostsLayer, addRadarLayer, addSessionLayers, addZoneLayer, boundsOf, setEvent, setMe, setPosts, setRadar, setZone } from "@/lib/map/layers";
+import { addEventLayer, addMeLayer, addPostsLayer, addRadarLayer, addSessionLayers, addTeamLayer, addZoneLayer, boundsOf, setEvent, setMe, setPosts, setRadar, setTeam, setZone } from "@/lib/map/layers";
 import { loadMapLibre } from "@/lib/map/maplibre";
 import { kartverketStyle } from "@/lib/map/style";
 import { channels } from "@/lib/realtime";
@@ -28,14 +28,17 @@ import { zoneAt, type ZoneNow, type ZoneState } from "@/lib/rules/zone";
 import { EVENTS, nextBadgeToast, type Powerup } from "@/lib/rules/events";
 import type { Badge } from "@/lib/rules/game";
 import { EventStrip, PowerBar } from "./EventCard";
+import { TeamMsgBar, TeamStrip } from "./TeamCard";
+import { TEAMS, type TeamMsgKind } from "@/lib/rules/teams";
 import { CeremonyScreen } from "@/lib/client/Ceremony";
 import { parseQr } from "@/lib/qr";
 
 const t = no.play;
 
-function roundTitle(r: { mode: string; variant?: string | null; zone?: unknown; zoned?: boolean }): string {
+function roundTitle(r: { mode: string; variant?: string | null; zone?: unknown; zoned?: boolean; team?: boolean }): string {
   const base = r.mode === "tag" ? t.variants[r.variant ?? "convert"] : t.modes[r.mode];
-  return r.zoned || r.zone === true ? base + t.zoneTag : base;
+  const teamed = r.team === true && r.mode !== "flag" && r.mode !== "king" ? base + t.teamTag : base;
+  return r.zoned || r.zone === true ? teamed + t.zoneTag : teamed;
 }
 const SIM_ALLOWED = process.env.NODE_ENV !== "production" || process.env.NEXT_PUBLIC_SIM_ENABLED === "1";
 const FAST_MS = 2000; // active round / gathering (PLAN §9.2)
@@ -116,6 +119,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
   const [votedLocal, setVotedLocal] = useState(false);
   const [missionLocal, setMissionLocal] = useState<number | null>(null);   // «Ferdig» sent for this event no
   const [puBusy, setPuBusy] = useState(false);
+  const [msgBusy, setMsgBusy] = useState(false);
   const [offsetMs, setOffsetMs] = useState(0); // server − client clock (rule 6: server time is the truth)
 
   const fixRef = useRef<Fix | null>(null);
@@ -124,6 +128,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
   const danger = useRef(false);
   const prev = useRef<TickView | null>(null);
   const seenGolden = useRef<Set<string>>(new Set());
+  const seenTeamMsg = useRef<Set<string>>(new Set());
   const beeped = useRef<string>("");
   // Badge toasts: at most one per 30 s (ADR-024); the rest wait here.
   const badgeQueue = useRef<Badge[]>([]);
@@ -213,6 +218,33 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
         cue("claim");
         setFlash({ id: Date.now(), text: "+5", sub: t.zoneBonus, tone: "ok" });
       } else if (!view.zone.inside && p.zone.inside) cue("danger");
+    }
+    // Teams (0009): teammates' quick messages, flags won/lost, the hill moving.
+    const myTeam = view.team?.n;
+    for (const m of view.team?.msgs ?? []) {
+      const key = `${m.nickname}|${m.at}`;
+      if (seenTeamMsg.current.has(key)) continue;
+      seenTeamMsg.current.add(key);
+      if (m.me || !p) continue;
+      setToast({ id: Date.now(), text: no.teams.msgFrom(m.nickname, no.teams.msgs[m.kind] ?? m.kind), label: no.teams.msgTitle });
+      playDing();
+      vibrate(m.kind === "help" ? [200, 100, 200] : 150);
+    }
+    const pFlags = p?.round?.idx === view.round?.idx ? (p?.round?.flags ?? []) : [];
+    for (const f of view.round?.flags ?? []) {
+      const was = pFlags.find((x) => x.n === f.n)?.owner ?? null;
+      if (myTeam === undefined || !p || was === f.owner) continue;
+      if (f.owner === myTeam) {
+        cue("golden");
+        setFlash({ id: Date.now(), text: no.teams.flagWon, tone: "gold" });
+      } else if (was === myTeam) {
+        cue("lost");
+        setToast({ id: Date.now(), text: no.teams.flagLost, label: no.teams.msgTitle });
+      }
+    }
+    if (view.round?.hill && p?.round?.hill && p.round.idx === view.round.idx && view.round.hill.no > p.round.hill.no) {
+      cue("golden");
+      setToast({ id: Date.now(), text: no.teams.hillMoved, label: no.teams.msgTitle });
     }
     if (p && p.status !== view.status) {
       if (view.status === "live" && (p.status === "countdown" || p.status === "breather")) cue("go");
@@ -446,6 +478,26 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
     [me.playerId, me.token, puBusy, sessionId, tickNow, queueBadges],
   );
 
+  const sendTeamMsg = useCallback(
+    async (kind: TeamMsgKind) => {
+      if (msgBusy) return;
+      setMsgBusy(true);
+      unlockAudio();
+      try {
+        await api.teamMsg(sessionId, { playerId: me.playerId, token: me.token, kind });
+        cue("claim");
+        void tickNow();
+      } catch (e) {
+        const c = e instanceof ApiError ? e.code : "";
+        setFlash({ id: Date.now(), text: no.teams.msgErrors[c] ?? t.qrError, tone: "dim" });
+      } finally {
+        // One message per msg_gap_s (the server enforces it too).
+        setTimeout(() => setMsgBusy(false), TEAMS.msg_gap_s * 1000);
+      }
+    },
+    [me.playerId, me.token, msgBusy, sessionId, tickNow],
+  );
+
   const sendMissionDone = useCallback(
     async (evNo: number) => {
       setMissionLocal(evNo);
@@ -529,6 +581,18 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
   const immuneLeft = tag?.immune_until ? phaseLeftS(tag.immune_until, offsetMs, now) : null;
   const zoneOut = status === "live" && !!zn && view?.zone?.inside === false;
   const evView = view?.event ?? null;
+  const team = view?.team ?? null;
+  const teamLive = (status === "live" || status === "paused") && !!round?.team;
+  const teamMap = team && teamLive
+    ? JSON.stringify({
+        palette: team.palette,
+        flags: round?.flags ?? null,
+        hill: round?.hill ? { pos: round.hill.pos, r: round.hill.r, holder: round.hill.holder } : null,
+        mates: team.mates ?? [],
+        mateColor: team.color,
+        msgs: (team.msgs ?? []).filter((m) => !m.me).map((m) => ({ label: `${m.nickname}: ${no.teams.msgsPlain[m.kind] ?? ""}`, pos: m.pos })),
+      })
+    : null;
   const sprintTarget = evView && !evView.done && evView.kind === "sprint" && !evView.me ? evView.target : null;
   const zoneEdge = zn && zoneState && gps.fix
     ? { m: Math.max(0, Math.round(haversine([gps.fix.lng, gps.fix.lat], [zoneState.c.lng, zoneState.c.lat]) - zn.r)),
@@ -660,6 +724,11 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
         </div>
       )}
 
+      {team && status !== "ceremony" && (
+        <TeamStrip team={team} round={round} fix={gps.fix} offsetMs={offsetMs} now={now} live={teamLive} />
+      )}
+      {team && teamLive && status === "live" && <TeamMsgBar busy={msgBusy} onSend={(k) => void sendTeamMsg(k)} />}
+
       {evView && (status === "live" || status === "paused") && (
         <EventStrip
           ev={evView}
@@ -698,6 +767,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
           targetLat={sprintTarget?.lat ?? null}
           targetLng={sprintTarget?.lng ?? null}
           live={tag?.radar_live ?? NO_LIVE}
+          teamMap={teamMap}
         />
         {sim && <SimPad sim={sim} />}
         {summary && (status === "breather" || status === "gathering") && (
@@ -870,6 +940,7 @@ function PlayerMap({
   targetLat,
   targetLng,
   live,
+  teamMap,
 }: {
   boot: PlayerBootstrap;
   fix: Fix | null;
@@ -885,6 +956,8 @@ function PlayerMap({
   targetLat: number | null;
   targetLng: number | null;
   live: { lat: number; lng: number }[];
+  /** 0009: flags / hill / teammates / messages as a JSON string (redraw only on change). */
+  teamMap: string | null;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<MlMap | null>(null);
@@ -908,6 +981,7 @@ function PlayerMap({
         addPostsLayer(m);
         addRadarLayer(m);
         addEventLayer(m);
+        addTeamLayer(m);
         addMeLayer(m);
         setReady(true);
       });
@@ -942,6 +1016,16 @@ function PlayerMap({
     if (!ready || !map.current) return;
     setEvent(map.current, targetLat !== null && targetLng !== null ? { lat: targetLat, lng: targetLng } : null, EVENTS.sprint_reach_m, live);
   }, [ready, targetLat, targetLng, live]);
+
+  useEffect(() => {
+    if (!ready || !map.current) return;
+    if (!teamMap) {
+      setTeam(map.current, null);
+      return;
+    }
+    const d = JSON.parse(teamMap) as { palette: { n: number; color: string }[] } & Omit<Parameters<typeof setTeam>[1] & object, "colorOf">;
+    setTeam(map.current, { ...d, flagR: TEAMS.flag_r_m, colorOf: (n) => d.palette.find((x) => x.n === n)?.color ?? "#9aa3b2" });
+  }, [ready, teamMap]);
 
   return (
     <div className="absolute inset-0">

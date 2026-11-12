@@ -90,14 +90,22 @@ export const no = {
     playlist: {
       lead: "Rundene kjører av seg selv: nedtelling, runde, pustepause, neste runde. Etter siste runde går alle til samlingspunktet.",
       round: (n: number) => `Runde ${n}`,
-      modes: { posts: "📍 Postjakt", convert: "🦠 Smittejakt", swap: "🔁 Sisten", free: "🏃 Fri løping" } as Record<string, string>,
+      modes: { posts: "📍 Postjakt", convert: "🦠 Smittejakt", swap: "🔁 Sisten", free: "🏃 Fri løping", flag: "🚩 Flaggjakt", king: "👑 Konge på haugen" } as Record<string, string>,
       minutes: (n: number) => `${n} min`,
       add: "+ Legg til runde",
       remove: "Fjern runde",
       up: "Flytt opp",
       templates: "Ferdige maler",
-      template: { first: "🌱 Første gang (30 min)", gym: "🏟️ Full gymtime (45 min)" } as Record<string, string>,
+      template: { first: "🌱 Første gang (30 min)", gym: "🏟️ Full gymtime (45 min)", teams: "👥 Lagtime (45 min)" } as Record<string, string>,
       zone: "⭕ + krympende sone",
+      team: "👥 Som lag",
+      teams: "Antall lag",
+      teamsN: (n: number) => `${n} lag`,
+      teamsHint: "Lagene fordeles jevnt etter poeng så langt i økta. Du kan flytte elever i lærerpanelet. Smittejakt spilles alltid hver for seg.",
+      modeHint: {
+        flag: "Flaggjakt – flest fra laget ved et flagg i 10 s tar det. Flagg dere holder gir lagpoeng.",
+        king: "Konge på haugen – laget med flest i sirkelen får poeng hvert 10. s. Sirkelen flytter seg hvert 2,5 min.",
+      } as Record<string, string>,
       zoneHint: "Sonen krymper i tre steg. Utenfor gir −1 poeng hvert 3. sekund, inne ved krymping gir +5.",
       breather: "Pustepause mellom rundene",
       breatherNone: "Ingen",
@@ -148,9 +156,10 @@ export const no = {
     soundOff: "🔇 Trykk her for å slå på alarmlyd",
     round: {
       of: (i: number, n: number) => `Runde ${i}/${n}`,
-      modes: { posts: "Postjakt", free: "Fri løping", tag: "Smittejakt" } as Record<string, string>,
+      modes: { posts: "Postjakt", free: "Fri løping", tag: "Smittejakt", flag: "Flaggjakt", king: "Konge på haugen" } as Record<string, string>,
       variants: { convert: "Smittejakt", swap: "Sisten" } as Record<string, string>,
       zoneTag: " + sone",
+      teamTag: " · lag",
       counts: (h: number, p: number) => `${h} jegere · ${p} bytter`,
       next: "⏭ Neste",
       startNow: "⏭ Start nå",
@@ -310,6 +319,8 @@ export const no = {
       active_s: "⏱️ Mest aktiv",
       distance_m: "🏃 Lengst løpt",
       points: "🏆 Flest poeng",
+      teamplay: "🤝 Lagspiller",
+      team: "👥 Lagpall",
     } as Record<string, string>,
     value: (cat: string, v: number | null): string => {
       if (v === null) return "";
@@ -321,11 +332,13 @@ export const no = {
         case "catches": return v === 1 ? "1 fangst" : `${v} fangster`;
         case "explorer": return `${v} ruter`;
         case "comeback": return `+${v} p`;
+        case "teamplay": return v === 1 ? "1 lagbidrag" : `${v} lagbidrag`;
         default: return `${v} p`;
       }
     },
     places: ["🥇", "🥈", "🥉"],
     you: "Det er deg! 🎉",
+    yourTeam: "Det er laget ditt! 🎉",
     bestTitle: "Ditt beste",
     best: {
       distance_m: (s: number) => `Du var blant de ${s} % som løp lengst!`,
@@ -356,6 +369,48 @@ export const no = {
     teacherAgain: "Vil du bruke Chase igjen?",
     end: "Avslutt økta",
     none: "Ingen paller denne gangen – alle får sitt «ditt beste»-kort.",
+  },
+  // Fase 5 (0009): teams, Flaggjakt, Konge på haugen — phones and the teacher panel.
+  teams: {
+    label: "Lag",
+    team: (name: string) => `Lag ${name}`,
+    place: (rank: number, of: number) => `${rank}. av ${of}`,
+    points: (p: number) => `${p} lagpoeng`,
+    flagsMine: (mine: number, all: number) => `🚩 Dere holder ${mine} av ${all} flagg`,
+    flagNear: (m: number) => `Nærmeste flagg ${m} m`,
+    taking: (s: number) => `Dere tar flagget … ${s}`,
+    losing: (s: number) => `Flagget tas fra dere! ${s}`,
+    contested: "Flagget tas av et annet lag – bli flere!",
+    flagWon: "🚩 Flagget er deres!",
+    flagLost: "Et flagg ble tatt fra dere",
+    hillHold: "👑 Dere holder haugen!",
+    hillOther: (name: string) => `👑 Lag ${name} holder haugen`,
+    hillFree: "👑 Ingen holder haugen – løp!",
+    hillTo: (m: number) => `${m} m til haugen`,
+    hillIn: "Du er på haugen",
+    hillMoves: (s: number) => `Flytter seg om ${s} s`,
+    hillMoved: "👑 Haugen har flyttet seg!",
+    msgTitle: "👥 Laget",
+    msgs: { help: "🆘 Hjelp!", come: "📍 Kom hit", mine: "🚩 Jeg tar den", ok: "👍 OK" } as Record<string, string>,
+    /** On the map (map fonts have no emoji). */
+    msgsPlain: { help: "Hjelp!", come: "Kom hit", mine: "Jeg tar den", ok: "OK" } as Record<string, string>,
+    msgFrom: (nick: string, text: string) => `${nick}: ${text}`,
+    msgErrors: { too_soon: "Vent litt før neste beskjed.", not_now: "Beskjeder virker bare i lagrunder." } as Record<string, string>,
+    // Teacher panel.
+    host: {
+      title: "👥 Lag",
+      deal: "Fordel lag",
+      redeal: "Fordel på nytt",
+      dealHint: "Jevnt etter poeng så langt. Etter første lagrunde ligger lagene fast – flytt enkeltelever her.",
+      notDealt: "Lagene fordeles når første lagrunde starter, eller nå.",
+      locked: "Lagene er låst etter første lagrunde.",
+      move: "Flytt til lag",
+      members: (n: number) => `${n} spillere`,
+      scores: "Lagpoeng",
+      flags: (held: string) => `Flagg: ${held}`,
+      hill: (name: string | null) => (name ? `Haugen: lag ${name}` : "Haugen: ingen"),
+      errors: { teams_locked: "Lagene er låst etter første lagrunde.", no_teams: "Økta har ingen lagrunder." } as Record<string, string>,
+    },
   },
   events: {
     button: "Hendelse",
@@ -486,9 +541,12 @@ export const no = {
     // Phase 2: playlist, Postjakt, points, feedback.
     countdown: "Gjør deg klar!",
     roundOf: (i: number, n: number) => `Runde ${i} av ${n}`,
-    modes: { posts: "Postjakt", free: "Løp!", tag: "Smittejakt" } as Record<string, string>,
+    modes: { posts: "Postjakt", free: "Løp!", tag: "Smittejakt", flag: "Flaggjakt", king: "Konge på haugen" } as Record<string, string>,
     variants: { convert: "Smittejakt", swap: "Sisten" } as Record<string, string>,
+    teamTag: " · lag",
     modeHint: {
+      flag: "Stå flere fra laget ved et flagg i 10 s for å ta det. Flagg dere holder, gir lagpoeng.",
+      king: "Vær flest fra laget i sirkelen. Den flytter seg – følg med!",
       posts: "Løp til postene på kartet. Stå i ringen til den tar.",
       free: "Løp, utforsk området og samle meter.",
       tag: "Jegere fanger, byttene flykter. Fangst = lett berøring på skulder eller rygg.",

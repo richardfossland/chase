@@ -8,7 +8,9 @@ import { eventBody } from "@/lib/server/schemas";
 import { sha256Hex } from "@/lib/server/tokens";
 
 // Phase 4 (0007): use a power-up, or «Ferdig» on a mission (the teacher
-// confirms). The server decides whether it fits right now.
+// confirms). Phase 5 (0009): a quick team message. The server decides
+// whether it fits right now. No broadcast for team messages: teammates get
+// them with their next tick (positions never go over Realtime).
 export const POST = guarded(async (req, ctx) => {
   const { id } = await ctx.params;
   if (!isUuid(id)) return fail(404, "not_found");
@@ -20,6 +22,10 @@ export const POST = guarded(async (req, ctx) => {
   if (body.action === "powerup") {
     const r = await rpc("use_powerup", { ...auth, p_kind: body.kind });
     return respond(r, (x) => ({ kind: x.kind, until: x.until ?? null, newBadges: x.new_badges ?? [] }));
+  }
+  if (body.action === "team_msg") {
+    const r = await rpc("team_msg", { ...auth, p_kind: body.kind });
+    return respond(r, (x) => ({ kind: x.kind, at: x.at }));
   }
   const r = await rpc("mission_done", auth);
   // The teacher's list of «Ferdig» to confirm changed.

@@ -15,7 +15,8 @@ export const PODIUM = {
 
 export const STAT_CATS = ["points", "distance_m", "active_s", "catches", "survival_s", "posts", "explorer", "comeback"] as const;
 export type StatCat = (typeof STAT_CATS)[number];
-export type PodiumCat = StatCat | "referee";
+/** 0009: «Lagspiller» and «Lagpall» are added by chase._team_podiums() (lib/rules/teams.ts). */
+export type PodiumCat = StatCat | "referee" | "teamplay" | "team";
 
 /** Who gets placed first when the spreading rule kicks in (points matter most). */
 const ASSIGN: StatCat[] = ["points", "distance_m", "active_s", "catches", "survival_s", "posts", "explorer", "comeback"];

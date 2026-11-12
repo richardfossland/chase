@@ -21,6 +21,7 @@ import {
 } from "@/lib/geo";
 import { no } from "@/lib/locale/no";
 import { DEFAULT_PLAN, GAME, TEMPLATES, normPlan, planTotalS, type Plan, type RoundMode, type TemplateId } from "@/lib/rules/game";
+import { TEAMS, isTeamRound } from "@/lib/rules/teams";
 import { loadMapLibre } from "@/lib/map/maplibre";
 import { DEFAULT_CENTER, kartverketStyle } from "@/lib/map/style";
 
@@ -686,7 +687,8 @@ function DrawControls(props: {
 }
 
 const ROUND_MINUTES = [3, 4, 5, 6, 8, 10, 15];
-const ROUND_KINDS = ["posts", "convert", "swap", "free"] as const;
+const ROUND_KINDS = ["posts", "convert", "swap", "free", "flag", "king"] as const;
+const TEAM_COUNTS = [2, 3, 4] as const;
 const BREATHERS = [0, 30, 60, 90, 120];
 const EVENT_EVERY = [0, 60, 90, 120] as const;
 const QR_COUNTS = [0, 4, 6, 8, 12];
@@ -746,7 +748,14 @@ function PlaylistEditor(props: { plan: Plan; onChange: (p: Plan) => void; chip: 
                     key={k}
                     className={chip(on)}
                     onClick={() =>
-                      setRound(i, k === "convert" || k === "swap" ? { mode: "tag", variant: k } : { mode: k as RoundMode, variant: undefined })
+                      setRound(
+                        i,
+                        k === "convert" || k === "swap"
+                          ? { mode: "tag", variant: k, team: undefined }
+                          : k === "flag" || k === "king"
+                            ? { mode: k, variant: undefined, zone: undefined, team: undefined }
+                            : { mode: k as RoundMode, variant: undefined },
+                      )
                     }
                   >
                     {p.modes[k]}
@@ -765,14 +774,28 @@ function PlaylistEditor(props: { plan: Plan; onChange: (p: Plan) => void; chip: 
                 </button>
               ))}
             </div>
-            <button
-              className={`${chip(!!r.zone)} mt-2 w-full`}
-              aria-pressed={!!r.zone}
-              onClick={() => setRound(i, { zone: r.zone ? undefined : true })}
-              data-testid={`zone-${i}`}
-            >
-              {p.zone}
-            </button>
+            {r.mode !== "flag" && r.mode !== "king" && (
+              <div className="mt-2 flex gap-1.5">
+                <button
+                  className={`${chip(!!r.zone)} flex-1`}
+                  aria-pressed={!!r.zone}
+                  onClick={() => setRound(i, { zone: r.zone ? undefined : true })}
+                  data-testid={`zone-${i}`}
+                >
+                  {p.zone}
+                </button>
+                {(r.mode === "posts" || r.mode === "free") && (
+                  <button
+                    className={`${chip(!!r.team)} flex-1`}
+                    aria-pressed={!!r.team}
+                    onClick={() => setRound(i, { team: r.team ? undefined : true })}
+                    data-testid={`team-${i}`}
+                  >
+                    {p.team}
+                  </button>
+                )}
+              </div>
+            )}
           </li>
         ))}
       </ol>
@@ -785,6 +808,28 @@ function PlaylistEditor(props: { plan: Plan; onChange: (p: Plan) => void; chip: 
       </button>
 
       {plan.rounds.some((r) => r.zone) && <p className="mt-2 text-xs text-txt-dim">{p.zoneHint}</p>}
+
+      {/* Fase 5 (0009): number of teams when the playlist has a team round. */}
+      {plan.rounds.some((r) => isTeamRound(r)) && (
+        <>
+          <p className="mt-4 text-sm font-semibold">{p.teams}</p>
+          <div className="mt-2 flex gap-1.5">
+            {TEAM_COUNTS.map((n) => (
+              <button key={n} className={chip((plan.teams ?? TEAMS.teams_default) === n)} onClick={() => onChange({ ...plan, teams: n })} data-testid={`teams-${n}`}>
+                {p.teamsN(n)}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1 text-xs text-txt-dim">{p.teamsHint}</p>
+          {plan.rounds.map((r, i) =>
+            r.mode === "flag" || r.mode === "king" ? (
+              <p key={i} className="mt-1 text-xs text-txt-dim">
+                {p.round(i + 1)}: {p.modeHint[r.mode]}
+              </p>
+            ) : null,
+          )}
+        </>
+      )}
 
       <p className="mt-4 text-sm font-semibold">{p.breather}</p>
       <div className="mt-2 flex gap-1.5">

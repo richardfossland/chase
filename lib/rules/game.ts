@@ -6,6 +6,7 @@
 // SQL and runs the same vectors as test/sql/0003_playlist_posts_points.test.sql.
 
 import { EVENTS } from "./events";
+import { TEAMS } from "./teams";
 
 export const GAME = {
   countdown_s: 10,
@@ -41,7 +42,8 @@ export const GAME = {
   cell_m: 20,
 } as const;
 
-export type RoundMode = "free" | "posts" | "tag";
+/** 0009 (fase 5): flag = Flaggjakt, king = Konge på haugen — always team rounds. */
+export type RoundMode = "free" | "posts" | "tag" | "flag" | "king";
 export interface PlanRound {
   mode: RoundMode;
   duration_s: number;
@@ -49,6 +51,8 @@ export interface PlanRound {
   variant?: "convert" | "swap";
   /** Krympende sone on top of the round (0005, lib/rules/zone.ts). */
   zone?: boolean;
+  /** 0009: a Postjakt / free round played as teams (flag and king always are). */
+  team?: boolean;
 }
 export interface Plan {
   rounds: PlanRound[];
@@ -57,6 +61,8 @@ export interface Plan {
   qr_posts: number;
   /** Automatic events every this many seconds (0007, lib/rules/events.ts); absent = off. */
   event_every_s?: number;
+  /** 0009: number of teams (2–4); present exactly when the plan has a team round. */
+  teams?: number;
 }
 
 /** The wizard's default (decided 2026-11-10): 3 × 6 min Postjakt, 60 s breather. */
@@ -99,6 +105,20 @@ export const TEMPLATES = {
     qr_posts: 0,
     event_every_s: 90,
   },
+  /** 0009 (fase 5): lagtime, 4 lag. */
+  teams: {
+    rounds: [
+      { mode: "posts", duration_s: 360, team: true },
+      { mode: "flag", duration_s: 480 },
+      { mode: "tag", duration_s: 300, variant: "convert" },
+      { mode: "king", duration_s: 480 },
+    ],
+    countdown_s: GAME.countdown_s,
+    breather_s: GAME.breather_s,
+    qr_posts: 0,
+    event_every_s: 90,
+    teams: 4,
+  },
 } satisfies Record<string, Plan>;
 export type TemplateId = keyof typeof TEMPLATES;
 
@@ -106,18 +126,30 @@ export type TemplateId = keyof typeof TEMPLATES;
 export function normPlan(p: Partial<Plan> & { rounds?: unknown }): Plan | null {
   if (!Array.isArray(p.rounds) || p.rounds.length < 1 || p.rounds.length > GAME.max_rounds) return null;
   const rounds: PlanRound[] = [];
+  let nTeam = 0;
   for (const r of p.rounds as unknown as Array<Record<string, unknown>>) {
     const d = r?.duration_s;
-    if ((r?.mode !== "free" && r?.mode !== "posts" && r?.mode !== "tag") || typeof d !== "number" || !Number.isInteger(d)) return null;
+    const m = r?.mode;
+    if ((m !== "free" && m !== "posts" && m !== "tag" && m !== "flag" && m !== "king") || typeof d !== "number" || !Number.isInteger(d)) return null;
     if (d < GAME.round_min_s || d > GAME.round_max_s) return null;
     let out: PlanRound;
     if (r.mode === "tag") {
       const v = r.variant ?? "convert";
       if (v !== "convert" && v !== "swap") return null;
       out = { mode: "tag", duration_s: d, variant: v };
-    } else out = { mode: r.mode, duration_s: d };
+    } else out = { mode: m, duration_s: d };
     if (r.zone !== undefined && r.zone !== null && typeof r.zone !== "boolean") return null;
     if (r.zone === true) out.zone = true;
+    // 0009: teams. Flag/king: no zone (flags and hill must stay reachable); tag stays individual.
+    if (r.team !== undefined && r.team !== null && typeof r.team !== "boolean") return null;
+    if (m === "flag" || m === "king") {
+      if (out.zone) return null;
+      nTeam++;
+    } else if (r.team === true) {
+      if (m !== "free" && m !== "posts") return null;
+      out.team = true;
+      nTeam++;
+    }
     rounds.push(out);
   }
   const cd = p.countdown_s ?? GAME.countdown_s;
@@ -132,6 +164,11 @@ export function normPlan(p: Partial<Plan> & { rounds?: unknown }): Plan | null {
     if (typeof ev !== "number" || !Number.isInteger(ev) || (ev !== 0 && (ev < EVENTS.every_min_s || ev > EVENTS.every_max_s))) return null;
     if (ev > 0) out.event_every_s = ev;
   }
+  const tm = p.teams;
+  if (tm !== undefined && tm !== null) {
+    if (typeof tm !== "number" || !Number.isInteger(tm) || tm < TEAMS.teams_min || tm > TEAMS.teams_max) return null;
+  }
+  if (nTeam > 0) out.teams = tm ?? TEAMS.teams_default;
   return out;
 }
 
@@ -188,5 +225,7 @@ export const BADGES = [
   "first_post", "golden", "posts_5", "qr", "km_1", "active_10", "explorer_25", "first_catch", "catches_5", "survivor", "zone_master",
   // 0007 (fase 4)
   "m500", "active_5", "explorer_10", "catch_3", "survived_60", "sprint", "mission", "gathered", "powerup",
+  // 0009 (fase 5)
+  "flag", "hill",
 ] as const;
 export type Badge = (typeof BADGES)[number];

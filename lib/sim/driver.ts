@@ -76,6 +76,15 @@ export interface SimStats {
     powerupFails: Record<string, number>;
     missionsDone: number;
     missionsConfirmed: number;
+    /** Phase 5 (0009): team sizes when first dealt, final team points, flags taken, hill holds, quick messages. */
+    teamSizes: number[] | null;
+    teamPoints: Record<string, number>;
+    flagCaptures: number;
+    hillHolds: number;
+    capKeys: Set<string>;
+    msgsSent: number;
+    msgsSeen: number;
+    msgKeys: Set<string>;
   };
 }
 
@@ -124,7 +133,8 @@ export function startSwarm(opts: SwarmOptions) {
     latencies: [],
     alarms: [],
     game: { claims: 0, golden: 0, lost: 0, qr: 0, duplicateClaims: 0, claimedIds: new Set(), statuses: [], playlistDone: false, rounds: 0, catches: 0, catchFails: {}, zoneHits: 0, zonePen: 0, bestCards: 0, votes: 0,
-      events: {}, eventKeys: new Set(), sprintMax: 0, prizes: 0, powerupsGot: 0, powerupsUsed: 0, powerupFails: {}, missionsDone: 0, missionsConfirmed: 0 },
+      events: {}, eventKeys: new Set(), sprintMax: 0, prizes: 0, powerupsGot: 0, powerupsUsed: 0, powerupFails: {}, missionsDone: 0, missionsConfirmed: 0,
+      teamSizes: null, teamPoints: {}, flagCaptures: 0, hillHolds: 0, capKeys: new Set(), msgsSent: 0, msgsSeen: 0, msgKeys: new Set() },
   };
   const players: SimPlayer[] = [];
   const timers: ReturnType<typeof setInterval>[] = [];
@@ -202,6 +212,7 @@ export function startSwarm(opts: SwarmOptions) {
       if (r.data.lost) stats.game.lost++;
       void tryCatch(p);
       void tryEvent(p, prevView);
+      void tryTeam(p);
       // A signal-loss check is satisfied once the bot reports again.
       stats.alarms = stats.alarms.filter((a) => !(a.player === p.playerId && a.kind === "signal" && a.seenAt === null && a.expectedAt > Date.now()));
     } else err(`tick_${r.status}_${String(r.data.error ?? "")}`);
@@ -273,6 +284,25 @@ export function startSwarm(opts: SwarmOptions) {
     }
   }
 
+  // Teams (0009): now and then a quick message; count teammates' messages seen.
+  const lastMsg = new Map<string, number>();
+  async function tryTeam(p: SimPlayer) {
+    const v = p.view as { status?: string; round?: { team?: boolean } | null; team?: { msgs?: { nickname: string; at: string; me: boolean }[] } } | null;
+    for (const m of v?.team?.msgs ?? []) {
+      const k = `${p.playerId}|${m.nickname}|${m.at}`;
+      if (m.me || stats.game.msgKeys.has(k)) continue;
+      stats.game.msgKeys.add(k);
+      stats.game.msgsSeen++;
+    }
+    if (v?.status !== "live" || !v.round?.team || p.kind === "hider") return;
+    if (Date.now() - (lastMsg.get(p.playerId) ?? 0) < 45_000 || Math.random() > 0.05) return;
+    lastMsg.set(p.playerId, Date.now());
+    const kinds = ["come", "mine", "help", "ok"];
+    const r = await opts.transport.post(`/api/s/${sessionId}/event`, { playerId: p.playerId, token: p.token, action: "team_msg", kind: kinds[p.i % 4] });
+    if (r.status === 200) stats.game.msgsSent++;
+    else err(`team_msg_${r.status}_${String(r.data.error ?? "")}`);
+  }
+
   async function pollHost() {
     if (!opts.hostToken || stopped) return;
     const r = await opts.transport.post(`/api/s/${sessionId}/snapshot`, { hostToken: opts.hostToken });
@@ -312,8 +342,33 @@ export function startSwarm(opts: SwarmOptions) {
       const c = await opts.transport.post(`/api/s/${sessionId}/host`, { hostToken: opts.hostToken, action: "mission_confirm", payload: {} });
       if (c.status === 200) g.missionsConfirmed += Number(c.data.confirmed ?? 0);
     }
-    const round = r.data.round as { idx: number } | null;
+    const round = r.data.round as { idx: number; team?: boolean; flags?: { n: number; owner: number | null }[] | null; hill?: { no: number; holder: number | null } | null } | null;
     if (round) g.rounds = Math.max(g.rounds, round.idx + 1);
+    // Teams (0009): sizes at the first team round, live points, captures and hill holds.
+    const teams = (r.data.teams as { n: number; name: string; points: number; members: number }[] | undefined) ?? [];
+    if (teams.length) {
+      if (!g.teamSizes && round?.team && st === "live") {
+        g.teamSizes = teams.map((t) => t.members);
+        log(`👥 lag: ${teams.map((t) => `${t.name} ${t.members}`).join(" · ")}`);
+      }
+      for (const t of teams) g.teamPoints[t.name] = t.points;
+    }
+    for (const f of round?.flags ?? []) {
+      const k = `f:${round!.idx}:${f.n}:${f.owner}`;
+      if (f.owner !== null && !g.capKeys.has(k)) {
+        g.capKeys.add(k);
+        g.flagCaptures++;
+        log(`🚩 flagg ${f.n} → lag ${f.owner}`);
+      }
+    }
+    if (round?.hill && round.hill.holder !== null) {
+      const k = `h:${round.idx}:${round.hill.no}:${round.hill.holder}`;
+      if (!g.capKeys.has(k)) {
+        g.capKeys.add(k);
+        g.hillHolds++;
+        log(`👑 haug ${round.hill.no} → lag ${round.hill.holder}`);
+      }
+    }
     const alarms = (r.data.alarms as Array<{ player_id: string; kind: AlarmKind; resolved: boolean; created_at: string }>) ?? [];
     for (const c of stats.alarms) {
       if (c.seenAt !== null || c.expectedAt > now + 1000) continue;
@@ -436,6 +491,12 @@ export function summarize(stats: SimStats) {
       powerupFails: stats.game.powerupFails,
       missionsDone: stats.game.missionsDone,
       missionsConfirmed: stats.game.missionsConfirmed,
+      teamSizes: stats.game.teamSizes,
+      teamPoints: stats.game.teamPoints,
+      flagCaptures: stats.game.flagCaptures,
+      hillHolds: stats.game.hillHolds,
+      msgsSent: stats.game.msgsSent,
+      msgsSeen: stats.game.msgsSeen,
       statuses: stats.game.statuses,
     },
     ticks: stats.ticks,

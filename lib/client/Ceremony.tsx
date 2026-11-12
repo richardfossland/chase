@@ -30,13 +30,14 @@ export function PodiumCard({ podium, big = false }: { podium: CeremonyView["reve
               big && e.place === 1 ? "text-3xl" : "text-xl"
             } font-black`}
           >
-            <span>{c.places[e.place - 1]}</span>
+            <span>{c.places[e.place - 1] ?? `${e.place}.`}</span>
+            {e.color && <span className="inline-block h-5 w-5 flex-none rounded-full border-2 border-white/60" style={{ background: e.color }} aria-hidden />}
             <span className="min-w-0 flex-1 truncate">{e.nickname}</span>
             <span className="tabular-nums opacity-80">{c.value(podium.cat, e.value === null ? null : Number(e.value))}</span>
           </li>
         ))}
       </ol>
-      {podium.entries.some((e) => e.me) && <p className="mt-3 text-center text-2xl font-black text-gold">{c.you}</p>}
+      {podium.entries.some((e) => e.me) && <p className="mt-3 text-center text-2xl font-black text-gold">{podium.cat === "team" ? c.yourTeam : c.you}</p>}
     </div>
   );
 }

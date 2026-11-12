@@ -26,6 +26,9 @@
 //   --ceremony        with --until-done: run the ceremony (0006), bots vote «vil spille igjen»
 //   --events S        with --create: automatic events every S s (0007); bots run to targets,
 //                     use power-ups, press «Ferdig»; the teacher confirms missions
+//   --teams N         with --create: number of teams (0009); plan rounds flag:S, king:S and
+//                     posts+team:S / free+team:S are team rounds. --assert then checks team
+//                     sizes (≤ 1 apart), team points, flags taken, hill held, Lagpall
 //   --end             end the session when done (with --create): roll call
 //                     first, then force if someone is missing
 //   --assert          exit 1 unless tick p95 < --p95 ms (default 50) and every
@@ -71,10 +74,11 @@ if (args.create) {
     plan: {
       rounds: args.plan
         ? String(args.plan).split(",").map((x) => {
-            // posts:360 | free:180 | convert:300 | swap:300, "+zone" adds the shrinking zone (posts+zone:300)
+            // posts:360 | free:180 | convert:300 | swap:300 | flag:300 | king:300,
+            // "+zone" adds the shrinking zone (posts+zone:300), "+team" plays it as teams (posts+team:300)
             const [kind, secs] = x.split(":");
             const [mode, layer] = kind.split("+");
-            const zone = layer === "zone" ? { zone: true } : {};
+            const zone = layer === "zone" ? { zone: true } : layer === "team" ? { team: true } : {};
             return mode === "convert" || mode === "swap"
               ? { mode: "tag", variant: mode, duration_s: Number(secs), ...zone }
               : { mode, duration_s: Number(secs), ...zone };
@@ -84,6 +88,7 @@ if (args.create) {
       breather_s: Number(args.breather ?? 60),
       qr_posts: Number(args.qr ?? 0),
       ...(args.events ? { event_every_s: Number(args.events) } : {}),
+      ...(args.teams ? { teams: Number(args.teams) } : {}),
     },
   });
   if (r.status !== 200) fail(`create_session: ${r.status} ${JSON.stringify(r.data)}`);
@@ -188,6 +193,24 @@ if (args.assert) {
     if (n > 0 && summary.game.prizes === 0) problems.push("ingen fikk premie i hendelsene");
     if (summary.game.missionsDone > summary.game.missionsConfirmed) problems.push(`${summary.game.missionsDone - summary.game.missionsConfirmed} oppdrag ble aldri bekreftet`);
   }
+  const teamPlan = /flag|king|\+team/.test(String(args.plan ?? ""));
+  if (teamPlan && hostToken) {
+    const sz = summary.game.teamSizes;
+    if (!sz) problems.push("lagene ble aldri fordelt");
+    else {
+      if (args.teams && sz.length !== Number(args.teams)) problems.push(`${sz.length} lag, ventet ${args.teams}`);
+      if (Math.max(...sz) - Math.min(...sz) > 1) problems.push(`lagstørrelser ${sz.join("/")} (mer enn 1 i forskjell)`);
+    }
+    const pts = Object.values(summary.game.teamPoints);
+    if (!pts.length || pts.every((x) => x === 0)) problems.push("ingen lagpoeng");
+    if (/flag/.test(String(args.plan)) && summary.game.flagCaptures === 0) problems.push("ingen flagg tatt");
+    if (/king/.test(String(args.plan)) && summary.game.hillHolds === 0) problems.push("ingen holdt haugen");
+    if (summary.game.msgsSent > 0 && summary.game.msgsSeen === 0) problems.push("lagbeskjeder kom aldri fram");
+    if (args.ceremony && summary.ceremony && !summary.ceremony.error) {
+      if (!summary.ceremony.cats?.includes("team")) problems.push("ingen Lagpall i seremonien");
+      else if (summary.ceremony.teamEntries !== sz?.length) problems.push(`Lagpall viste ${summary.ceremony.teamEntries} lag`);
+    }
+  }
   const errs = Object.entries(summary.errors).filter(([k]) => !k.includes("stale"));
   if (errs.length) problems.push(`feil: ${JSON.stringify(Object.fromEntries(errs))}`);
   if (problems.length) {
@@ -211,18 +234,24 @@ async function runCeremony() {
   }
   let snap = (await http.post(`/api/s/${sessionId}/snapshot`, { hostToken })).data;
   const total = snap.ceremony?.total ?? 0;
+  const cats = [];
+  let teamEntries = 0;
   console.log(`🏆 Seremoni: ${total} paller`);
   for (let i = 0; i <= total; i++) {
     await act("ceremony_next");
     snap = (await http.post(`/api/s/${sessionId}/snapshot`, { hostToken })).data;
     const last = snap.ceremony?.revealed?.at(-1);
-    if (i < total && last) console.log(`   ${last.cat}: ${last.entries.map((e) => `${e.place}. ${e.nickname}`).join("  ")}`);
+    if (i < total && last) {
+      cats.push(last.cat);
+      if (last.cat === "team") teamEntries = last.entries.length;
+      console.log(`   ${last.cat}: ${last.entries.map((e) => `${e.place}. ${e.nickname}${e.value !== null ? ` (${e.value})` : ""}`).join("  ")}`);
+    }
   }
   await act("vote_again", { yes: true });
   await new Promise((r) => setTimeout(r, 8000));   // bots tick, see their card, vote
   snap = (await http.post(`/api/s/${sessionId}/snapshot`, { hostToken })).data;
   const onPodium = new Set((snap.ceremony?.revealed ?? []).flatMap((p) => p.entries.map((e) => e.nickname)));
-  ceremonyResult = { podiums: total, step: snap.ceremony?.step, onPodium: onPodium.size, again: snap.ceremony?.again };
+  ceremonyResult = { podiums: total, step: snap.ceremony?.step, onPodium: onPodium.size, again: snap.ceremony?.again, cats, teamEntries };
 }
 
 async function loadSim() {

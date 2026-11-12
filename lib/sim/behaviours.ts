@@ -41,10 +41,17 @@ export interface BotView {
   tag?: { radar?: { pos: { lat: number; lng: number } }[]; hunter_near?: boolean } | null;
   posts?: { pos: { lat: number; lng: number } }[] | null;
   gather?: { checked_in: boolean } | null;
-  round?: { zone?: ZoneState | null } | null;
+  round?: ({ zone?: ZoneState | null } & BotRoundTeam) | null;
   zone?: { inside: boolean } | null;
   /** 0007: sprint point / assembly point to run to while the event is open. */
   event?: { kind: string; done: boolean; target: { lat: number; lng: number } | null; me: unknown } | null;
+  /** 0009: my team; flags / hill of the round arrive in round. */
+  team?: { n: number } | null;
+}
+type LL = { lat: number; lng: number };
+export interface BotRoundTeam {
+  flags?: { pos: LL; owner: number | null }[] | null;
+  hill?: { pos: LL; r: number } | null;
 }
 
 export interface BotOptions {
@@ -134,6 +141,30 @@ export function createBot(kind: Behaviour, geo: SimGeo, opts: BotOptions) {
     return best;
   }
 
+  // Teams (0009): go for a flag my team does not hold (spread over the two
+  // nearest), or the hill — each bot to its own spot inside the ring.
+  const pick = Math.floor(r() * 1000);
+  const spotA = r() * Math.PI * 2;
+  function teamTarget(): XY | null {
+    const rd = view.round;
+    const mine = view.team?.n;
+    if (rd?.hill) {
+      const c = proj.toXY([rd.hill.pos.lng, rd.hill.pos.lat]) as XY;
+      const off = rd.hill.r * 0.45;
+      return [c[0] + Math.cos(spotA) * off, c[1] + Math.sin(spotA) * off];
+    }
+    if (rd?.flags?.length) {
+      const all = rd.flags.map((f) => ({ f, xy: proj.toXY([f.pos.lng, f.pos.lat]) as XY }));
+      const todo = all.filter((x) => x.f.owner !== mine);
+      const list = (todo.length ? todo : all).sort(
+        (a, b) => Math.hypot(a.xy[0] - pos[0], a.xy[1] - pos[1]) - Math.hypot(b.xy[0] - pos[0], b.xy[1] - pos[1]),
+      );
+      const c = list[pick % Math.min(2, list.length)].xy;
+      return [c[0] + Math.cos(spotA) * 5, c[1] + Math.sin(spotA) * 5];
+    }
+    return null;
+  }
+
   // Zone target: the centre, while further out than 80 % of the (next) radius.
   function zoneSeek(): XY | null {
     const z = view.round?.zone;
@@ -163,6 +194,8 @@ export function createBot(kind: Behaviour, geo: SimGeo, opts: BotOptions) {
     } else if (!special && kind !== "hider" && view.status === "live" && zoneSeek()) {
       // Krympende sone: get inside the circle (the next one once it is announced). Hiders don't bother.
       seek(zoneSeek()!, dt, baseSpeed + 0.5);
+    } else if (!special && view.status === "live" && teamTarget()) {
+      seek(teamTarget()!, dt, kind === "hider" ? 1.5 : baseSpeed);
     } else if (!special && view.status === "live" && view.role === "hunter" && view.tag?.radar?.length) {
       // Smittejakt hunter: run to the freshest radar ping.
       const ping = view.tag.radar[0].pos;

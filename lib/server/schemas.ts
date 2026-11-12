@@ -27,13 +27,14 @@ export const createSessionBody = z.object({
   plan: z
     .object({
       rounds: z
-        .array(z.object({ mode: z.enum(["free", "posts", "tag"]), duration_s: z.number().int(), variant: z.enum(["convert", "swap"]).optional(), zone: z.boolean().optional() }))
+        .array(z.object({ mode: z.enum(["free", "posts", "tag", "flag", "king"]), duration_s: z.number().int(), variant: z.enum(["convert", "swap"]).optional(), zone: z.boolean().optional(), team: z.boolean().optional() }))
         .min(1)
         .max(10),
       countdown_s: z.number().int().optional(),
       breather_s: z.number().int().optional(),
       qr_posts: z.number().int().optional(),
       event_every_s: z.number().int().optional(),
+      teams: z.number().int().optional(),
     })
     .optional(),
   settings: z.record(z.string(), z.unknown()).optional(),
@@ -69,6 +70,7 @@ export const againBody = playerAuth.extend({ yes: z.boolean() });
 export const eventBody = z.discriminatedUnion("action", [
   playerAuth.extend({ action: z.literal("powerup"), kind: z.enum(["shield", "radar", "decoy", "turbo"]) }),
   playerAuth.extend({ action: z.literal("mission") }),
+  playerAuth.extend({ action: z.literal("team_msg"), kind: z.enum(["help", "come", "mine", "ok"]) }),
 ]);
 
 export const sosBody = playerAuth.extend({ lat: lat.optional(), lng: lng.optional() });
@@ -81,6 +83,7 @@ export const hostActionBody = hostAuth.extend({
     "check_in", "rename", "kick", "sit_out",
     "ceremony_start", "ceremony_next", "ceremony_back", "vote_again", "adjust_points", "set_role", "referee_award",
     "event_start", "event_stop", "mission_confirm", "events_auto",
+    "teams_deal", "team_set",
   ]),
   payload: z
     .object({
@@ -96,6 +99,7 @@ export const hostActionBody = hostAuth.extend({
       spread: z.boolean().optional(),
       yes: z.boolean().optional(),
       kind: z.enum(["sprint", "mission", "gather", "golden", "storm", "blackout"]).optional(),
+      team: z.number().int().min(1).max(4).optional(),
     })
     .optional(),
 });

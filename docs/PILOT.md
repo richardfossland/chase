@@ -38,6 +38,13 @@
   - rollebytte-storm og mørkelegging (Smittejakt).
 - **Fysisk oppdrag:** elevene gjør øvelsen der de står og trykker «Ferdig». Du bekrefter i ⚡-arket, én og én eller «Bekreft alle». Med QR-poster kan de skanne en post i stedet.
 - **Power-ups** (skjold, radar, lokkedue, turbo) er premier i hendelsene og brukes med ett trykk på elevens mobil.
+- **👥 Lag** (fase 5): lagstripa under varslene viser lagpoengene. Trykk på den for lagarket.
+  - **Fordel lag** i lobbyen eller en pustepause. Lagene fordeles jevnt etter poeng så langt. Gjør du det ikke, skjer det når første lagrunde starter.
+  - Etter første lagrunde ligger lagene fast. Flytt enkeltelever på spillerkortet («Flytt til lag»). Nye elever havner på det minste laget.
+  - **Flaggjakt:** flest fra laget ved et flagg i 10 s tar det. Flagg laget holder, gir lagpoeng hvert 30. sekund.
+  - **Konge på haugen:** laget med flest i sirkelen får poeng hvert 10. sekund. Sirkelen flytter seg hvert 2,5 min.
+  - Elevene ser lagkameratene på kartet og har fire hurtigmeldinger: Hjelp!, Kom hit, Jeg tar den og OK. Det finnes ingen fritekst.
+  - Smittejakt spilles alltid hver for seg, også i en lagtime.
 - I pustepausen kan elevene låse mobilen. Be dem låse den opp igjen når du blåser i fløyta.
 - Trenger du mer tid, bruker du **+1 min**. **Neste** hopper over resten av runden. **⏸** pauser alle klokker.
 
@@ -46,6 +53,7 @@
 2. Trykk **🏆 Start seremoni**. Pallene avsløres én og én med trommevirvel når du trykker **Neste**, og elevenes mobiler følger med.
    - Spredningsregelen er på: ingen kan stå på mer enn 2 paller.
    - Del gjerne ut **🏅 Beste dommer** fra spillerkortet før seremonien.
+   - Med lag kommer **🤝 Lagspiller** rett før «Flest poeng», og **👥 Lagpall** med alle lagene til slutt.
 3. Til slutt får **alle** sitt **«ditt beste»-kort** og kan svare på **«vil spille igjen?»**. Bare tellingen lagres.
 4. Trykk **Avslutt økta**. Posisjoner og telefonnummeret ditt slettes med en gang, resten innen 24 timer.
 

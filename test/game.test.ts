@@ -28,7 +28,8 @@ describe("GAME twin of chase.kg()", () => {
   it("badge ids match the SQL", () => {
     const all = sql + readFileSync(new URL("../supabase/migrations/0004_tag.sql", import.meta.url), "utf8")
       + readFileSync(new URL("../supabase/migrations/0005_zone.sql", import.meta.url), "utf8")
-      + readFileSync(new URL("../supabase/migrations/0007_events_powerups.sql", import.meta.url), "utf8");
+      + readFileSync(new URL("../supabase/migrations/0007_events_powerups.sql", import.meta.url), "utf8")
+      + readFileSync(new URL("../supabase/migrations/0009_teams_flag_king.sql", import.meta.url), "utf8");
     for (const b of BADGES) expect(all).toContain(`'${b}'`);
   });
 });
@@ -46,7 +47,7 @@ describe("normPlan", () => {
   it("rejects what the server rejects", () => {
     const bad: unknown[] = [
       { rounds: [] },
-      { rounds: [{ mode: "flag", duration_s: 300 }] },
+      { rounds: [{ mode: "relay", duration_s: 300 }] },
       { rounds: [{ mode: "tag", duration_s: 300, variant: "bogus" }] },
       { rounds: [{ mode: "posts", duration_s: 300, zone: "yes" }] },
       { rounds: [{ mode: "posts", duration_s: 30 }] },
@@ -80,6 +81,8 @@ describe("normPlan", () => {
     for (const p of Object.values(TEMPLATES)) expect(normPlan(p)).toEqual(p);
     expect(Math.round(planTotalS(TEMPLATES.first) / 60)).toBe(24);   // «Første gang (30 min)» incl. intro/ceremony
     expect(Math.round(planTotalS(TEMPLATES.gym) / 60)).toBe(32);     // «Full gymtime (45 min)»
+    expect(Math.round(planTotalS(TEMPLATES.teams) / 60)).toBe(31);   // «Lagtime (45 min)», 0009
+    expect(normPlan(TEMPLATES.teams)).toEqual(TEMPLATES.teams);
     expect(TEMPLATES.gym.rounds.map((r) => r.mode)).toEqual(["free", "posts", "tag", "posts", "tag"]);
   });
   it("default plan is valid and ~21 min", () => {

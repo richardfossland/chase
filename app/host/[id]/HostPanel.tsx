@@ -14,14 +14,16 @@ import { SAFETY } from "@/lib/rules/safety";
 
 import { HostCeremony } from "./HostCeremony";
 import { EventChip, EventSheet } from "./HostEvents";
+import { TeamMoveRow, TeamsChip, TeamsSheet } from "./HostTeams";
 import HostMap, { dotState, type HostMapHandle } from "./HostMap";
 import { useHostSession, type HostSession } from "./useHostSession";
 
 const h = no.host;
 
-function roundName(r: { mode: string; variant?: string | null; zone?: unknown; zoned?: boolean }): string {
+function roundName(r: { mode: string; variant?: string | null; zone?: unknown; zoned?: boolean; team?: boolean }): string {
   const base = r.mode === "tag" ? h.round.variants[r.variant ?? "convert"] : h.round.modes[r.mode];
-  return r.zoned || r.zone === true ? base + h.round.zoneTag : base;
+  const teamed = r.team === true && r.mode !== "flag" && r.mode !== "king" ? base + h.round.teamTag : base;
+  return r.zoned || r.zone === true ? teamed + h.round.zoneTag : teamed;
 }
 
 type Sheet =
@@ -32,7 +34,8 @@ type Sheet =
   | { kind: "players"; missingOnly?: boolean }
   | { kind: "qr" }
   | { kind: "ceremony" }
-  | { kind: "events" };
+  | { kind: "events" }
+  | { kind: "teams" };
 
 type Confirm = null | { message: string; label?: string; danger?: boolean; run: () => void };
 
@@ -157,6 +160,10 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
             zone={snap.round?.zone ?? null}
             serverNow={snap.server_now}
             eventTarget={snap.event && !snap.event.done && snap.event.kind === "sprint" ? snap.event.target : null}
+            teams={snap.teams}
+            teamOf={snap.team_of}
+            flags={snap.round?.flags ?? null}
+            hill={snap.round?.hill ?? null}
             onSelect={select}
           />
         )}
@@ -177,6 +184,7 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
           <AlarmStrip alarms={snap.alarms} onAck={(ids) => ids.forEach((id) => void hs.ack(id))} onFocus={focusAlarm} />
           {/* Under the alarms: safety beats game (CLAUDE.md rule 4). */}
           {!ceremony && <EventChip snap={snap} onOpen={() => setSheet({ kind: "events" })} />}
+          <TeamsChip snap={snap} onOpen={() => setSheet({ kind: "teams" })} />
           {hs.error === "network" || hs.error === "timeout" ? (
             <p className="pointer-events-auto rounded-xl bg-warn px-3 py-2 text-sm font-bold text-ink">{h.errors.network}</p>
           ) : null}
@@ -319,6 +327,7 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
             />
           )}
           {sheet.kind === "events" && <EventSheet snap={snap} hs={hs} />}
+          {sheet.kind === "teams" && <TeamsSheet snap={snap} hs={hs} onSelect={select} />}
           {sheet.kind === "more" && (
             <div className="grid gap-2">
               <SheetButton onClick={() => setSheet({ kind: "qr" })}>▦ {h.showQr}</SheetButton>
@@ -328,6 +337,7 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
                 </Link>
               )}
               <SheetButton onClick={() => setSheet({ kind: "players" })}>👥 {h.playersList} ({snap.players.length})</SheetButton>
+              {(snap.plan?.teams ?? 0) >= 2 && <SheetButton onClick={() => setSheet({ kind: "teams" })}>{no.teams.host.title}</SheetButton>}
               {gathering && <SheetButton onClick={() => setSheet({ kind: "ceremony" })}>{no.ceremony.start}</SheetButton>}
               <SheetButton danger onClick={endFlow}>
                 ■ {h.endSession}
@@ -646,6 +656,12 @@ function PlayerCard({
         </form>
       )}
       {err && <p className="mt-2 text-sm font-semibold text-danger">{err}</p>}
+
+      {hs.snap && status !== "ceremony" && (
+        <div className="mt-4">
+          <TeamMoveRow p={p} snap={hs.snap} hs={hs} />
+        </div>
+      )}
 
       <div className="mt-4 grid grid-cols-2 gap-2">
         {p.pos && <SheetButton onClick={() => onShow(p.pos!.lat, p.pos!.lng)}>📍 {h.card.showOnMap}</SheetButton>}

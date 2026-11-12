@@ -260,3 +260,132 @@ export function setEvent(m: MlMap, target: { lat: number; lng: number } | null, 
   }
   src.setData({ type: "FeatureCollection", features });
 }
+
+// ───────────────────────── 0009 (fase 5): teams ─────────────────────────
+
+type Pt = { lat: number; lng: number };
+const NEUTRAL = "#9aa3b2";
+
+/**
+ * Team objectives + teammates: flags (owner colour, capture ring tinted by
+ * whoever is taking it), the hill (holder colour), teammates (my team colour,
+ * initials) and quick-message markers. Under the safety layers (rule 4).
+ */
+export function addTeamLayer(m: MlMap) {
+  m.addSource("team", { type: "geojson", data: EMPTY });
+  const before = m.getLayer("forbidden-fill") ? "forbidden-fill" : undefined;
+  m.addLayer({
+    id: "team-area",
+    type: "fill",
+    source: "team",
+    filter: ["==", ["get", "kind"], "area"],
+    paint: { "fill-color": ["get", "color"], "fill-opacity": ["case", ["to-boolean", ["get", "taking"]], 0.4, 0.22] },
+  }, before);
+  m.addLayer({
+    id: "team-area-line",
+    type: "line",
+    source: "team",
+    filter: ["all", ["==", ["get", "kind"], "area"], ["!", ["to-boolean", ["get", "taking"]]]],
+    paint: { "line-color": ["get", "line"], "line-width": 3 },
+  }, before);
+  // Someone is taking the flag: a dashed ring in the taker's colour.
+  m.addLayer({
+    id: "team-area-taking",
+    type: "line",
+    source: "team",
+    filter: ["all", ["==", ["get", "kind"], "area"], ["to-boolean", ["get", "taking"]]],
+    paint: { "line-color": ["get", "line"], "line-width": 5, "line-dasharray": [1.5, 1] },
+  }, before);
+  // Map fonts have no emoji: a coloured pin + a text label instead.
+  m.addLayer({
+    id: "team-flag",
+    type: "circle",
+    source: "team",
+    filter: ["==", ["get", "kind"], "flag"],
+    paint: { "circle-radius": 9, "circle-color": ["get", "color"], "circle-stroke-color": "#111827", "circle-stroke-width": 3 },
+  });
+  m.addLayer({
+    id: "team-flag-label",
+    type: "symbol",
+    source: "team",
+    filter: ["==", ["get", "kind"], "flag"],
+    layout: { "text-field": ["get", "label"], "text-size": 13, "text-offset": [0, -1.6], "text-allow-overlap": true },
+    paint: { "text-color": "#ffffff", "text-halo-color": "#111827", "text-halo-width": 2 },
+  });
+  m.addLayer({
+    id: "team-mate",
+    type: "circle",
+    source: "team",
+    filter: ["==", ["get", "kind"], "mate"],
+    paint: { "circle-radius": 7, "circle-color": ["get", "color"], "circle-stroke-color": "#ffffff", "circle-stroke-width": 2 },
+  });
+  m.addLayer({
+    id: "team-mate-label",
+    type: "symbol",
+    source: "team",
+    filter: ["any", ["==", ["get", "kind"], "mate"], ["==", ["get", "kind"], "msg"]],
+    layout: { "text-field": ["get", "label"], "text-size": 12, "text-offset": [0, 1.4], "text-allow-overlap": true },
+    paint: { "text-color": "#ffffff", "text-halo-color": "#111827", "text-halo-width": 2 },
+  });
+  m.addLayer({
+    id: "team-msg",
+    type: "circle",
+    source: "team",
+    filter: ["==", ["get", "kind"], "msg"],
+    paint: { "circle-radius": 14, "circle-color": "rgba(0,0,0,0)", "circle-stroke-color": ["get", "color"], "circle-stroke-width": 4 },
+  });
+}
+
+export interface TeamMapData {
+  colorOf: (n: number | null | undefined) => string;
+  flags?: { n: number; pos: Pt; owner: number | null; cap: number | null }[] | null;
+  flagR?: number;
+  hill?: { pos: Pt; r: number; holder: number | null } | null;
+  mates?: { nickname: string; pos: Pt }[];
+  mateColor?: string;
+  msgs?: { label: string; pos: Pt | null }[];
+}
+
+export function setTeam(m: MlMap, d: TeamMapData | null) {
+  const src = m.getSource<GeoJSONSource>("team");
+  if (!src) return;
+  if (!d) {
+    src.setData(EMPTY);
+    return;
+  }
+  const features: Feature[] = [];
+  for (const f of d.flags ?? []) {
+    const color = f.owner ? d.colorOf(f.owner) : NEUTRAL;
+    features.push(
+      {
+        type: "Feature",
+        properties: { kind: "area", color, line: f.cap ? d.colorOf(f.cap) : color, taking: !!f.cap },
+        geometry: { type: "Polygon", coordinates: [circleRing(f.pos, d.flagR ?? 15)] },
+      },
+      { type: "Feature", properties: { kind: "flag", label: `Flagg ${f.n}`, color }, geometry: { type: "Point", coordinates: [f.pos.lng, f.pos.lat] } },
+    );
+  }
+  if (d.hill) {
+    const color = d.hill.holder ? d.colorOf(d.hill.holder) : NEUTRAL;
+    features.push(
+      { type: "Feature", properties: { kind: "area", color, line: color, taking: false }, geometry: { type: "Polygon", coordinates: [circleRing(d.hill.pos, d.hill.r)] } },
+      { type: "Feature", properties: { kind: "flag", label: "Haugen", color }, geometry: { type: "Point", coordinates: [d.hill.pos.lng, d.hill.pos.lat] } },
+    );
+  }
+  for (const mt of d.mates ?? []) {
+    features.push({
+      type: "Feature",
+      properties: { kind: "mate", color: d.mateColor ?? NEUTRAL, label: mt.nickname.slice(0, 10) },
+      geometry: { type: "Point", coordinates: [mt.pos.lng, mt.pos.lat] },
+    });
+  }
+  for (const msg of d.msgs ?? []) {
+    if (!msg.pos) continue;
+    features.push({
+      type: "Feature",
+      properties: { kind: "msg", color: d.mateColor ?? NEUTRAL, label: msg.label },
+      geometry: { type: "Point", coordinates: [msg.pos.lng, msg.pos.lat] },
+    });
+  }
+  src.setData({ type: "FeatureCollection", features });
+}

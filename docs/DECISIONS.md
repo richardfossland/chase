@@ -399,3 +399,44 @@ Prod-sim etter deploy av fase 4 (Worker `0aa01b59`, migrasjon 0007) ga 500 rett 
     - Den eneste sjekken som feilet, var «ingen premie». Med runder på 120 s får bare storm (uten premie) plass etter 60 s, så det var riktig oppførsel.
   - Prod-sim 2 (Postjakt 240 s, hendelser hvert 60. s, 2 QR-poster): alle krav oppfylt. Oppdrag og sprint (3 vinnere), 12 premier, 3 power-ups brukt, 9/9 oppdrag bekreftet, p95 119 ms, 0 feil.
 - I prod-sim 1 tok ett enkelt tick 16 s (p99 617 ms), og det gjentok seg ikke i sim 2. Den trege alarmen på 58 s gjentok seg ikke heller (maks 1,9 s og 0,9 s). Følg med på dette i utetesten.
+
+## ADR-026 — Fase 5: lag, Flaggjakt, Konge på haugen og lagpall (2026-11-12)
+Eierens valg 2026-11-12:
+- **Flaggjakt** er «erobre poster», ikke klassisk CTF.
+- **Konge på haugen** gir poeng til laget med flertall i sonen, og sonen flytter seg.
+- Elevene ser **lagkameratene** og har **hurtigmeldinger**, men ingen fritekst.
+- Hele fasen leveres **samlet**.
+
+Migrasjon 0009 og tvillingen `lib/rules/teams.ts`:
+- **Lag:**
+  - `plan.teams` er 2–4 (standard 2 når spillelista har en lagrunde).
+  - En lagrunde er `flag`, `king`, eller en Postjakt/fri runde med `"team": true`. Smittejakt spilles alltid hver for seg, fordi lag gjør roller og synlighet uoversiktlig.
+  - `flag`/`king` kan ikke ha krympende sone, siden flaggene og haugen må kunne nås.
+  - Lagene fordeles **én gang**: når læreren trykker «Fordel lag», eller når første lagrunde starter. Fordelingen er en slangetrekning på poeng så langt i økta, så størrelsene skiller med høyst 1.
+  - Etter første lagrunde er lagene låst mot ny fordeling (`teams_locked`). Læreren kan fortsatt flytte enkeltelever, og nye elever havner på det minste laget ved første tick.
+- **Lagpoeng:** alt medlemmene tjener i lagrunder (rundepoeng legges inn ved rundeslutt, én gang per runde), pluss bonuser for flagg som holdes og haug som holdes. Mobilen viser bare eget lag, plassering og egne lagpoeng (PLAN §0, regel 5).
+- **Flaggjakt:**
+  - Antall flagg er lag + 1 (maks 5), spredt med «lengst-unna»-trekning.
+  - Et lag tar et flagg ved å ha flere spillere enn hvert av de andre lagene innenfor max(15 m, acc), med fix ≤ 25 m, i 10 s. Hver av dem får 10 p, merket «Flagg» og et lagbidrag.
+  - Et flagg som holdes, gir laget 5 p hvert 30. sekund.
+- **Konge på haugen:** haugen har 20 m radius og flytter seg hvert 150. sekund, minst 40 m. Hvert 10. sekund får laget med flest spillere i haugen 3 p, og hver av dem 1 p. Seks slike perioder gir ett lagbidrag og merket «Haug».
+- **Tilstand:** flagg og haug ligger i `rounds.state` med absolutte tider, som en ren funksjon av tid (regel 6). Pause flytter tidene.
+- **Hurtigmeldinger:** Hjelp!, Kom hit, Jeg tar den og OK, med avsenderens posisjon, bare til eget lag og bare i lagrunder.
+  - Maks én per 5 s.
+  - Meldingen ligger i `player_live` (UNLOGGED, slettes ved «Avslutt»).
+  - Den sendes **ikke** over Realtime (CLAUDE.md, posisjoner aldri i Realtime). Lagkameratene får den med neste tick.
+- **Seremoni:** «🤝 Lagspiller» (assists + poster i lagrunder + flagg tatt + minutter på haugen) kommer rett før «Flest poeng», og «👥 Lagpall» med alle lagene til slutt.
+  - Lagspiller følger ikke spredningsregelen.
+  - Ren funksjon `_team_podiums()` med samme testdata i SQL og TS.
+- **Sikkerhet først (regel 4):** lærerens elevprikker beholder sikkerhetsfargene. Lagfargen vises på navnelappen, siden Rød lett forveksles med alarm-rød. Lagstripa ligger under varselstripa.
+- **Låser (ADR-025):** all skriving til andre elevers rader (flaggtakere, haugholdere, fordeling, rundeslutt) låser `players`-radene først, i id-rekkefølge.
+- **Kartet:** kartfontene har ikke emoji. Flagg og haug tegnes derfor som fargede prikker med tekst («Flagg 1», «Haugen»).
+- En gammel 0003-test brukte `flag` som eksempel på en ukjent modus. Den bruker nå `relay`.
+- **Testet lokalt 2026-11-12:**
+  - DB-testene er grønne for alle 9 migrasjoner (kjørt to ganger), og 135 TS-tester er grønne.
+  - Sim med 40 boter og 4 lag (Postjakt som lag 120 s, Flaggjakt 180 s, Konge på haugen 180 s, hendelser hvert 60. s, seremoni): alle krav oppfylt.
+    - Lagene ble 10/10/10/10, 16 flagg ble tatt, og haugen ble holdt av 3 forskjellige lag.
+    - 217 lagbeskjeder ble sendt og 1 952 vist hos lagkamerater. Lagpoengene ble 1055/1040/930/849.
+    - 8 paller med Lagspiller før Poeng og Lagpall (4 lag) til slutt. 40/40 så «ditt beste».
+    - Tick p95 34 ms, 0 feil, alarmer maks 1,0 s.
+  - I nettleseren: veiviseren med Flaggjakt/Konge/«Som lag»/antall lag og malen «Lagtime». Lærerkartet med flagg i eierfarge og lagfarget navnelapp, lagstripe under varslene og «Flytt til lag». Elevmobilen med en sen elev som havnet på det minste laget, lagstripe («Dere tar flagget … 9»), lagkamerater og hjelpemelding.

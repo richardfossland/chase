@@ -7,6 +7,7 @@ import type { Badge, Plan, PlanRound, RoundMode } from "@/lib/rules/game";
 import type { EventKind, Powerup } from "@/lib/rules/events";
 import type { BestCard, PodiumCat } from "@/lib/rules/podiums";
 import type { ZoneState } from "@/lib/rules/zone";
+import type { TeamMsgKind } from "@/lib/rules/teams";
 
 export class ApiError extends Error {
   constructor(
@@ -128,6 +129,55 @@ export interface RoundView {
   /** Live/paused zone round: centre, radii, phase times — lib/rules/zone.ts computes the circle. */
   zone: ZoneState | null;
   next: PlanRound | null;
+  /** 0009: a team round (flag, king, or "team": true). */
+  team?: boolean;
+  /** Flaggjakt (live/paused): owner / who is taking it are team numbers. */
+  flags?: FlagView[] | null;
+  /** Konge på haugen (live/paused). */
+  hill?: HillView | null;
+}
+
+export interface FlagView {
+  n: number;
+  pos: LatLng;
+  owner: number | null;
+  cap: number | null;
+  cap_since: string | null;
+}
+
+export interface HillView {
+  no: number;
+  pos: LatLng;
+  r: number;
+  at: string;
+  next_at: string;
+  holder: number | null;
+  /** Players per team in the hill at the last count (index = team n − 1). */
+  counts: number[];
+  frozen_at: string | null;
+}
+
+export interface TeamInfo {
+  n: number;
+  name: string;
+  color: string;
+}
+
+export interface TeamScore extends TeamInfo {
+  id: string;
+  points: number;
+  members: number;
+}
+
+/** My team on the phone (chase._team_tick). Place + own score only (PLAN §0). */
+export interface TeamView extends TeamInfo {
+  points: number;
+  rank: number;
+  of: number;
+  palette: TeamInfo[];
+  /** Team rounds only. */
+  mates?: { nickname: string; pos: LatLng }[];
+  msgs?: { nickname: string; kind: TeamMsgKind; pos: LatLng | null; at: string; me: boolean }[];
 }
 
 export interface PostView {
@@ -186,6 +236,9 @@ export interface Snapshot {
   events_auto: boolean;
   events_every_s: number;
   mission_pending: { player_id: string; nickname: string }[];
+  /** 0009: teams with the live score, and player id → team number. */
+  teams: TeamScore[];
+  team_of: Record<string, number>;
 }
 
 /** One event as the server keeps it (rounds.state.ev, 0007). Server times. */
@@ -244,6 +297,8 @@ export interface TickView {
   /** 0007: current event and my power-ups. */
   event?: EventView | null;
   power?: PowerView;
+  /** 0009: my team (once dealt). */
+  team?: TeamView;
   safety: { geofence: 0 | 1 | 2 | 3; forbidden: boolean; outside_m: number; uncertain: boolean };
   sos: { id: string; acked: boolean } | null;
   gather: { assembly: LatLng; distance_m: number; checked_in: boolean } | null;
@@ -264,7 +319,8 @@ export type HostAction =
   | "start" | "next" | "extend" | "pause" | "resume" | "message" | "gather" | "end_gather"
   | "check_in" | "rename" | "kick" | "sit_out"
   | "ceremony_start" | "ceremony_next" | "ceremony_back" | "vote_again" | "adjust_points" | "set_role" | "referee_award"
-  | "event_start" | "event_stop" | "mission_confirm" | "events_auto";
+  | "event_start" | "event_stop" | "mission_confirm" | "events_auto"
+  | "teams_deal" | "team_set";
 
 /** Ceremony as chase._ceremony_view() returns it (0006). Nicknames only, never ids. */
 export interface CeremonyView {
@@ -272,7 +328,8 @@ export interface CeremonyView {
   step: number;
   total: number;
   spread: boolean;
-  revealed: { cat: PodiumCat; entries: { place: number; nickname: string; value: number | null; me: boolean }[] }[];
+  /** Team entries (Lagpall) carry the team colour; «me» = my team. */
+  revealed: { cat: PodiumCat; entries: { place: number; nickname: string; value: number | null; me: boolean; color?: string | null }[] }[];
   best: BestCard | null;
   on_podium: boolean | null;
   voted: boolean | null;
@@ -345,6 +402,8 @@ export const api = {
     post<{ kind: Powerup; until: string | null; newBadges: Badge[] }>(`/api/s/${sessionId}/event`, { ...body, action: "powerup" }, 8000),
   missionDone: (sessionId: string, body: { playerId: string; token: string }) =>
     post<{ state: "pending" | "done" | null }>(`/api/s/${sessionId}/event`, { ...body, action: "mission" }, 8000),
+  teamMsg: (sessionId: string, body: { playerId: string; token: string; kind: TeamMsgKind }) =>
+    post<{ kind: TeamMsgKind; at: string }>(`/api/s/${sessionId}/event`, { ...body, action: "team_msg" }, 8000),
   sos: (sessionId: string, body: { playerId: string; token: string; lat?: number; lng?: number }) =>
     post<{ alarmId: string; new: boolean }>(`/api/s/${sessionId}/sos`, body, 15000),
 
