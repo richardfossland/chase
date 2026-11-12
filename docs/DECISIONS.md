@@ -389,3 +389,10 @@ Migrasjon 0007 og tvillingen `lib/rules/events.ts`:
   - I nettleseren: ⚡ → sprint med to trykk (tre vinnere, så slutt), oppdrag → «Ferdig» → godkjent med +15 og merke, skjold (immun 15 s), og rollebytte-storm med tilbakebytte.
 - **Låser:** `_ev_invert` låser spillerradene før statistikken, i samme rekkefølge som `catch()`, så storm og fangst samtidig ikke gir vranglås.
 - **Ustabil test:** sone-testen fra 0005 sammenlignet r0, som er rundet til 0,1 m, med eksakt avstand. Den kunne feile når sentrum ble trukket uheldig, så den har nå 0,05 m margin. Migrasjonen er ikke endret.
+
+## ADR-025 — Låserekkefølge ved faseskifte (2026-11-12)
+Prod-sim etter deploy av fase 4 (Worker `0aa01b59`, migrasjon 0007) ga 500 rett etter rundestart, med Worker-loggen `40P01 deadlock detected`. Feilen ble gjenskapt i to kjøringer.
+- **Hvorfor:** en tick låser sine egne rader i rekkefølgen `players` → `player_live` → `player_stats`. Faseskiftet (`_advance` → `_begin_round`/`_finish_round` og modus-krokene) oppdaterte `player_stats` for alle og *så* `player_live`. Det er samme feilklasse som de uforklarte 500-feilene i ADR-021. `_ev_begin` i 0007 la til enda en slik oppdatering ved rundestart, så feilen ble hyppig.
+- **Løsning (0008):** `_advance` pakkes inn. Den som vinner sesjonslåsen og skal skifte fase, låser først alle spillerrader i økta i id-rekkefølge. Tickene holder sin egen `players`-rad før de rører `player_live`/`player_stats`, så sirkelen kan ikke oppstå.
+- **Status:** DB-testene er grønne. Den lokale simmen kunne ikke verifisere løsningen fordi maskinen gikk i dvale midt i kjøringene. Verifiseringen gjøres med prod-sim etter at 0008 er provisjonert.
+- I samme prod-sim kom én «utenfor»-alarm fram etter 58 s, mot under 1 s ellers. Årsaken er ikke undersøkt.
