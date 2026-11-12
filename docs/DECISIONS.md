@@ -394,5 +394,8 @@ Migrasjon 0007 og tvillingen `lib/rules/events.ts`:
 Prod-sim etter deploy av fase 4 (Worker `0aa01b59`, migrasjon 0007) ga 500 rett etter rundestart, med Worker-loggen `40P01 deadlock detected`. Feilen ble gjenskapt i to kjøringer.
 - **Hvorfor:** en tick låser sine egne rader i rekkefølgen `players` → `player_live` → `player_stats`. Faseskiftet (`_advance` → `_begin_round`/`_finish_round` og modus-krokene) oppdaterte `player_stats` for alle og *så* `player_live`. Det er samme feilklasse som de uforklarte 500-feilene i ADR-021. `_ev_begin` i 0007 la til enda en slik oppdatering ved rundestart, så feilen ble hyppig.
 - **Løsning (0008):** `_advance` pakkes inn. Den som vinner sesjonslåsen og skal skifte fase, låser først alle spillerrader i økta i id-rekkefølge. Tickene holder sin egen `players`-rad før de rører `player_live`/`player_stats`, så sirkelen kan ikke oppstå.
-- **Status:** DB-testene er grønne. Den lokale simmen kunne ikke verifisere løsningen fordi maskinen gikk i dvale midt i kjøringene. Verifiseringen gjøres med prod-sim etter at 0008 er provisjonert.
-- I samme prod-sim kom én «utenfor»-alarm fram etter 58 s, mot under 1 s ellers. Årsaken er ikke undersøkt.
+- **Status 2026-11-12:** 0008 er i prod (wrapper og rettigheter er verifisert). Det trengtes ingen ny Worker; `0aa01b59` (bygget fra `e8c7db9`) kjører fortsatt, med rollback `0d91c315` = fase 3.
+  - Prod-sim 1 (10 boter, Postjakt 120 s + Smitte 120 s + Sisten 120 s, hendelser hvert 60. s, seremoni): 0 feil, ingen vranglås i Worker-loggen, p95 134 ms, 8 paller, 10/10 kort.
+    - Den eneste sjekken som feilet, var «ingen premie». Med runder på 120 s får bare storm (uten premie) plass etter 60 s, så det var riktig oppførsel.
+  - Prod-sim 2 (Postjakt 240 s, hendelser hvert 60. s, 2 QR-poster): alle krav oppfylt. Oppdrag og sprint (3 vinnere), 12 premier, 3 power-ups brukt, 9/9 oppdrag bekreftet, p95 119 ms, 0 feil.
+- I prod-sim 1 tok ett enkelt tick 16 s (p99 617 ms), og det gjentok seg ikke i sim 2. Den trege alarmen på 58 s gjentok seg ikke heller (maks 1,9 s og 0,9 s). Følg med på dette i utetesten.
