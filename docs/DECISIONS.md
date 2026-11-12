@@ -440,3 +440,10 @@ Migrasjon 0009 og tvillingen `lib/rules/teams.ts`:
     - 8 paller med Lagspiller før Poeng og Lagpall (4 lag) til slutt. 40/40 så «ditt beste».
     - Tick p95 34 ms, 0 feil, alarmer maks 1,0 s.
   - I nettleseren: veiviseren med Flaggjakt/Konge/«Som lag»/antall lag og malen «Lagtime». Lærerkartet med flagg i eierfarge og lagfarget navnelapp, lagstripe under varslene og «Flytt til lag». Elevmobilen med en sen elev som havnet på det minste laget, lagstripe («Dere tar flagget … 9»), lagkamerater og hjelpemelding.
+- **I prod 2026-11-12:** 0009 er kjørt med provisjoneringsskriptet. 13 av 13 nye funksjoner finnes, `king` er med i modussjekken, `anon` er sperret og `service_role` har tilgang. Worker `cc66a5ff` er bygget fra `86be2a1` (rollback `0aa01b59`), og røyktesten ga 12×200 før og etter.
+  - Prod-sim (40 boter, 4 lag, samme spilleliste som lokalt, hendelser hvert 60. s, seremoni): alle krav oppfylt.
+    - Lagene ble 10/10/10/10, 13 flagg ble tatt og haugen fikk 5 eierskifter.
+    - 220 lagbeskjeder ble sendt og 1 972 vist. Hendelsene ga 35 premier.
+    - 8 paller med Lagpall til slutt, og 40/40 så «ditt beste».
+    - Tick p95 126 ms, 0 feil, alarmer maks 1,0 s.
+  - Worker-loggen viste bare `Ok`, ingen 500 og ingen vranglås.
