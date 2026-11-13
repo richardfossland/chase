@@ -487,3 +487,9 @@ Migrasjon 0010 og tvillingen `lib/rules/library.ts`:
     - Startpakken «Skogen» ga radius 150 og fem oppdrag, og økta ble lagret automatisk i biblioteket.
     - «Behold» med navn og deling med område ga en lenke. En ny lærer (ny nøkkel) åpnet `/d/<kode>`, laget en kopi og trykket «Start økt med dette». Økta ble laget uten endringer, med plan, lag, 5 oppdrag og område identiske med lenken.
     - Lærernøkkel A ble importert med små bokstaver og mellomrom på «enhet B», og biblioteket kom fram.
+- **I prod 2026-11-13:** fase 6 ble rebaset oppå rammeverksløftet (`d1c562c`: Next 16.4.6, Node 24, compat 2026-11-01). Check er grønn på det nye rammeverket. Pushet som `ded1ccd`.
+  - **Migrasjon:** provisjoneringsskriptet fikk `40P01` allerede på 0001, fordi en prod-sim med 40 boter tikket samtidig. 0001 ble rullet tilbake, og ingenting ble endret. Derfor ble bare 0010 kjørt, i én transaksjon og med `notify pgrst, 'reload schema'`. Den rører ingen tabeller tickene bruker, og simen tikket videre.
+  - **Sjekket etterpå:** 15 av 15 funksjoner finnes, `shares` og de nye kolonnene er på plass, `anon` er sperret, og cron-jobben finnes.
+  - **Worker:** `3c9e80eb` er bygget fra `ded1ccd` med Node 24 (rollback `8d3c735a` = rammeverksløftet). Røyktesten ga 12×200 før og etter, og `/bibliotek`, `/personvern`, `/personvern/dpia` og `/d/<ukjent>` svarer 200 («Lenken virker ikke lenger»).
+  - **Ende til ende i prod med to engangsnøkler:** lagre opplegg med eget oppdrag → del → forhåndsvisning på `/d/<kode>` → kopi til nøkkel B (`saved`, lag og oppdrag med, kopien telt) → trekk tilbake → lenken er død. Ugyldig nøkkel gir 400. Testlærerne og dataene deres ble slettet etterpå.
+  - **Neste gang:** provisjoneringsskriptet kjører alle migrasjonene på nytt og låser alle tabeller. Kjør det når ingen økter er live, eller kjør bare den nye migrasjonen.
