@@ -49,9 +49,11 @@ const HostMap = forwardRef<
     teamOf?: Record<string, number>;
     flags?: FlagView[] | null;
     hill?: HillView | null;
+    /** 0012 storskjerm: dots only — no names, not clickable. */
+    anonymous?: boolean;
     onSelect: (id: string) => void;
   }
->(function HostMap({ geo, players, posts, sosPlayers, status, zone, serverNow, eventTarget = null, teams, teamOf, flags = null, hill = null, onSelect }, ref) {
+>(function HostMap({ geo, players, posts, sosPlayers, status, zone, serverNow, eventTarget = null, teams, teamOf, flags = null, hill = null, anonymous = false, onSelect }, ref) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<MlMap | null>(null);
   const lib = useRef<Awaited<ReturnType<typeof loadMapLibre>> | null>(null);
@@ -117,10 +119,12 @@ const HostMap = forwardRef<
         el.innerHTML =
           '<span data-dot class="block size-5 rounded-full border-[3px] shadow-lg"></span>' +
           '<span data-name class="mt-0.5 rounded bg-black/70 px-1 text-[11px] font-bold leading-tight text-white"></span>';
-        el.addEventListener("click", (e) => {
-          e.stopPropagation();
-          selectRef.current(p.id);
-        });
+        if (!anonymous) {
+          el.addEventListener("click", (e) => {
+            e.stopPropagation();
+            selectRef.current(p.id);
+          });
+        } else el.style.cursor = "default";
         const marker = new ml.Marker({ element: el, anchor: "top" }).setLngLat([p.pos.lng, p.pos.lat]).addTo(m);
         entry = { marker, el };
         markers.current.set(p.id, entry);
@@ -133,7 +137,8 @@ const HostMap = forwardRef<
       dot.classList.toggle("animate-ping-slow", s.pulse);
       const still = p.still_s !== null && p.still_s > SAFETY.still_alert_s && status === "live";
       const name = entry.el.querySelector<HTMLElement>("[data-name]")!;
-      name.textContent = `${p.nickname}${still ? " 💤" : ""}`;
+      name.textContent = anonymous ? "" : `${p.nickname}${still ? " 💤" : ""}`;
+      name.style.display = anonymous ? "none" : "";
       const tc = teams?.find((t) => t.n === teamOf?.[p.id])?.color;
       name.style.background = tc ?? "";
       name.style.color = tc === "#f5b800" ? "#111827" : "";
@@ -145,7 +150,7 @@ const HostMap = forwardRef<
         markers.current.delete(id);
       }
     }
-  }, [ready, players, sosPlayers, status, teams, teamOf]);
+  }, [ready, players, sosPlayers, status, teams, teamOf, anonymous]);
 
   // Flags / hill (0009), colour by owner / holder.
   const teamKey = (flags?.length || hill) && teams?.length

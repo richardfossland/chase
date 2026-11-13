@@ -331,6 +331,9 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
           {sheet.kind === "more" && (
             <div className="grid gap-2">
               <SheetButton onClick={() => setSheet({ kind: "qr" })}>▦ {h.showQr}</SheetButton>
+              <a href={`/host/${hs.sessionId}/tavle`} target="_blank" rel="noopener" className="rounded-xl bg-ink px-3 py-3 text-left font-bold hover:bg-ink-3" data-testid="open-screen">
+                {no.screen.open}
+              </a>
               {qrCount > 0 && (
                 <Link href={`/host/${hs.sessionId}/poster`} className="rounded-xl bg-ink px-3 py-3 text-left font-bold hover:bg-ink-3">
                   {h.printQr(qrCount)}

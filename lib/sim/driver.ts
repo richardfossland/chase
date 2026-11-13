@@ -85,6 +85,10 @@ export interface SimStats {
     msgsSent: number;
     msgsSeen: number;
     msgKeys: Set<string>;
+    /** Phase 7 (0012): questions answered (right) and steps sent. */
+    quizAnswered: number;
+    quizRight: number;
+    steps: number;
   };
 }
 
@@ -134,7 +138,7 @@ export function startSwarm(opts: SwarmOptions) {
     alarms: [],
     game: { claims: 0, golden: 0, lost: 0, qr: 0, duplicateClaims: 0, claimedIds: new Set(), statuses: [], playlistDone: false, rounds: 0, catches: 0, catchFails: {}, zoneHits: 0, zonePen: 0, bestCards: 0, votes: 0,
       events: {}, eventKeys: new Set(), sprintMax: 0, prizes: 0, powerupsGot: 0, powerupsUsed: 0, powerupFails: {}, missionsDone: 0, missionsConfirmed: 0,
-      teamSizes: null, teamPoints: {}, flagCaptures: 0, hillHolds: 0, capKeys: new Set(), msgsSent: 0, msgsSeen: 0, msgKeys: new Set() },
+      teamSizes: null, teamPoints: {}, flagCaptures: 0, hillHolds: 0, capKeys: new Set(), msgsSent: 0, msgsSeen: 0, msgKeys: new Set(), quizAnswered: 0, quizRight: 0, steps: 0 },
   };
   const players: SimPlayer[] = [];
   const timers: ReturnType<typeof setInterval>[] = [];
@@ -178,6 +182,8 @@ export function startSwarm(opts: SwarmOptions) {
           acc: s.fix.acc,
           speed: s.fix.speed,
           ts: Date.now(),
+          // 0012: a moving bot reports ~2 steps per second it moved.
+          steps: s.fix.speed > 0.5 ? Math.round(s.fix.speed * (tickMs / 1000) * 1.3) : undefined,
         });
     stats.latencies.push(Date.now() - t0);
     if (stats.latencies.length > 200_000) stats.latencies.splice(0, 100_000);
@@ -213,6 +219,8 @@ export function startSwarm(opts: SwarmOptions) {
       void tryCatch(p);
       void tryEvent(p, prevView);
       void tryTeam(p);
+      void tryQuiz(p);
+      if (s.fix.speed > 0.5) stats.game.steps += Math.round(s.fix.speed * (tickMs / 1000) * 1.3);
       // A signal-loss check is satisfied once the bot reports again.
       stats.alarms = stats.alarms.filter((a) => !(a.player === p.playerId && a.kind === "signal" && a.seenAt === null && a.expectedAt > Date.now()));
     } else err(`tick_${r.status}_${String(r.data.error ?? "")}`);
@@ -301,6 +309,20 @@ export function startSwarm(opts: SwarmOptions) {
     const r = await opts.transport.post(`/api/s/${sessionId}/event`, { playerId: p.playerId, token: p.token, action: "team_msg", kind: kinds[p.i % 4] });
     if (r.status === 200) stats.game.msgsSent++;
     else err(`team_msg_${r.status}_${String(r.data.error ?? "")}`);
+  }
+
+  // Questions (0012): answer each open question once, a random choice after a moment.
+  const answered = new Set<string>();
+  async function tryQuiz(p: SimPlayer) {
+    const v = p.view as { quiz?: { no: number; a: string[] } } | null;
+    const q = v?.quiz;
+    if (!q || answered.has(`${p.playerId}:${q.no}`)) return;
+    answered.add(`${p.playerId}:${q.no}`);
+    const r = await opts.transport.post(`/api/s/${sessionId}/event`, { playerId: p.playerId, token: p.token, action: "quiz", choice: (p.i + q.no) % q.a.length });
+    if (r.status === 200) {
+      stats.game.quizAnswered++;
+      if (r.data.right) stats.game.quizRight++;
+    } else err(`quiz_${r.status}_${String(r.data.error ?? "")}`);
   }
 
   async function pollHost() {
@@ -497,6 +519,9 @@ export function summarize(stats: SimStats) {
       hillHolds: stats.game.hillHolds,
       msgsSent: stats.game.msgsSent,
       msgsSeen: stats.game.msgsSeen,
+      quizAnswered: stats.game.quizAnswered,
+      quizRight: stats.game.quizRight,
+      steps: stats.game.steps,
       statuses: stats.game.statuses,
     },
     ticks: stats.ticks,

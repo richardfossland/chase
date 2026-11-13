@@ -501,7 +501,7 @@ begin
     'chase.join_session(text,text,text,text,text)',
     'chase.resume_player(text,text,text)',
     'chase.player_bootstrap(uuid,text,uuid)',
-    'chase.tick(uuid,text,double precision,double precision,real,real,timestamptz,uuid)',
+    'chase.tick(uuid,text,double precision,double precision,real,real,timestamptz,uuid,integer)',
     'chase.raise_sos(uuid,text,double precision,double precision,uuid)',
     'chase.ack_alarm(uuid,uuid,text)',
     'chase.host_action(uuid,text,text,jsonb)',

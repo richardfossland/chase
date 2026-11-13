@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiError, api, type LibArea, type LibPlan, type Library } from "@/lib/client/api";
 import { AreaThumb } from "@/lib/client/AreaThumb";
+import { QuizEditor } from "@/lib/client/QuizEditor";
 import { planSummary } from "@/lib/client/planSummary";
 import { normMissions } from "@/lib/rules/library";
 import { STARTER_PACKS, type StarterPack } from "@/lib/starter";
@@ -113,6 +114,7 @@ export default function Wizard() {
   // 0010: the teacher's library (for «Gjenbruk forrige», picking, mission packs).
   const [library, setLibrary] = useState<Library | null>(null);
   const [startView, setStartView] = useState<"menu" | "library" | "starter">("menu");
+  const [quizValid, setQuizValid] = useState(true);
   const [pickArea, setPickArea] = useState<string | null>(null);
   const [pickPlan, setPickPlan] = useState<string | null>(null);
   const wanted = useRef<{ area: string | null; plan: string | null } | null>(null);
@@ -749,11 +751,38 @@ export default function Wizard() {
                 }
               }}
             />
+            <div className="mt-4">
+              <QuizEditor
+                items={plan.quiz}
+                packs={library?.quizzes ?? []}
+                onChange={(items, valid) => {
+                  setQuizValid(valid);
+                  setPlan((p) => {
+                    const { quiz: _q, ...rest } = p;
+                    void _q;
+                    return items ? { ...rest, quiz: items } : rest;
+                  });
+                }}
+                onSavePack={async (name, items) => {
+                  if (!teacherKey) return false;
+                  try {
+                    await api.library.save(teacherKey, "quiz", name, { items });
+                    setLibrary(await api.library.get(teacherKey));
+                    return true;
+                  } catch {
+                    return false;
+                  }
+                }}
+              />
+              {plan.quiz?.length && !plan.rounds.some((r) => r.mode === "posts") ? (
+                <p className="mt-1 text-xs font-bold text-warn">{no.quiz.needsPosts}</p>
+              ) : null}
+            </div>
             <div className="mt-4 flex justify-between gap-2">
               <button className={secondary} onClick={() => goTo("assembly")}>
                 {t.back}
               </button>
-              <button className={primary} disabled={!normPlan(plan)} onClick={() => goTo("safety")}>
+              <button className={primary} disabled={!normPlan(plan) || !quizValid} onClick={() => goTo("safety")}>
                 {t.playlist.next}
               </button>
             </div>

@@ -8,6 +8,7 @@
 import { EVENTS } from "./events";
 import { TEAMS } from "./teams";
 import { normMissions } from "./library";
+import { normQuiz, type QuizItem } from "./quiz";
 
 export const GAME = {
   countdown_s: 10,
@@ -66,6 +67,8 @@ export interface Plan {
   teams?: number;
   /** 0010: own mission texts (1–12) — a mission event draws one of these instead of the built-in six. */
   missions?: string[];
+  /** 0012: question pack — a question after each GPS post in a Postjakt round. */
+  quiz?: QuizItem[];
 }
 
 /** The wizard's default (decided 2026-11-10): 3 × 6 min Postjakt, 60 s breather. */
@@ -179,6 +182,13 @@ export function normPlan(p: Partial<Plan> & { rounds?: unknown }): Plan | null {
     if (!n) return null;
     out.missions = n;
   }
+  // 0012: questions at posts; empty list = absent.
+  const qz = p.quiz;
+  if (qz !== undefined && qz !== null && !(Array.isArray(qz) && qz.length === 0)) {
+    const n = normQuiz(qz);
+    if (!n) return null;
+    out.quiz = n;
+  }
   return out;
 }
 
@@ -237,5 +247,7 @@ export const BADGES = [
   "m500", "active_5", "explorer_10", "catch_3", "survived_60", "sprint", "mission", "gathered", "powerup",
   // 0009 (fase 5)
   "flag", "hill",
+  // 0012 (fase 7)
+  "quiz",
 ] as const;
 export type Badge = (typeof BADGES)[number];

@@ -8,6 +8,7 @@ import type { EventKind, Powerup } from "@/lib/rules/events";
 import type { BestCard, PodiumCat } from "@/lib/rules/podiums";
 import type { ZoneState } from "@/lib/rules/zone";
 import type { TeamMsgKind } from "@/lib/rules/teams";
+import type { QuizItem } from "@/lib/rules/quiz";
 
 export class ApiError extends Error {
   constructor(
@@ -285,7 +286,9 @@ export interface TickView {
   round_started_at: string | null;
   round: RoundView | null;
   role: string;
-  stats: { points: number; distance_m: number; active_s: number; posts: number; round_points: number; badges: Badge[] };
+  stats: { points: number; distance_m: number; active_s: number; posts: number; round_points: number; badges: Badge[]; steps?: number };
+  /** 0012: an open question after a post (never the right answer). */
+  quiz?: { no: number; q: string; a: string[]; until: string; right: number };
   posts: PostView[] | null;
   claim: { post_id: string; hits: number; need: number } | null;
   claimed: { post_id: string; value: number; kind: "normal" | "golden" } | null;
@@ -413,6 +416,8 @@ export interface Library {
   areas: LibArea[];
   plans: LibPlan[];
   packs: LibPack[];
+  /** 0012: question packs. */
+  quizzes: { id: string; name: string; items: QuizItem[] }[];
   shares: LibShare[];
 }
 export interface SharePreview {
@@ -423,7 +428,7 @@ export interface SharePreview {
   copies: number;
   created_at: string;
 }
-export type LibKind = "area" | "plan" | "pack";
+export type LibKind = "area" | "plan" | "pack" | "quiz";
 
 const lib = <T,>(body: Record<string, unknown>) => post<T>("/api/library", body);
 
@@ -455,7 +460,7 @@ export const api = {
 
   me: (sessionId: string, playerId: string, token: string) =>
     post<PlayerBootstrap>(`/api/s/${sessionId}/me`, { playerId, token }),
-  tick: (sessionId: string, body: { playerId: string; token: string; lat: number; lng: number; acc: number; speed?: number | null; ts?: number }) =>
+  tick: (sessionId: string, body: { playerId: string; token: string; lat: number; lng: number; acc: number; speed?: number | null; ts?: number; steps?: number }) =>
     post<TickView>(`/api/s/${sessionId}/tick`, body, 6000),
   catch: (sessionId: string, body: { playerId: string; token: string; code: string }) =>
     post<CatchResult>(`/api/s/${sessionId}/catch`, body, 8000),
@@ -467,6 +472,8 @@ export const api = {
     post<{ kind: Powerup; until: string | null; newBadges: Badge[] }>(`/api/s/${sessionId}/event`, { ...body, action: "powerup" }, 8000),
   missionDone: (sessionId: string, body: { playerId: string; token: string }) =>
     post<{ state: "pending" | "done" | null }>(`/api/s/${sessionId}/event`, { ...body, action: "mission" }, 8000),
+  quizAnswer: (sessionId: string, body: { playerId: string; token: string; choice: number }) =>
+    post<{ right: boolean; answer: string | null; points: number; newBadges: Badge[] }>(`/api/s/${sessionId}/event`, { ...body, action: "quiz" }, 8000),
   teamMsg: (sessionId: string, body: { playerId: string; token: string; kind: TeamMsgKind }) =>
     post<{ kind: TeamMsgKind; at: string }>(`/api/s/${sessionId}/event`, { ...body, action: "team_msg" }, 8000),
   sos: (sessionId: string, body: { playerId: string; token: string; lat?: number; lng?: number }) =>

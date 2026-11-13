@@ -321,6 +321,7 @@ export const no = {
       distance_m: "🏃 Lengst løpt",
       points: "🏆 Flest poeng",
       teamplay: "🤝 Lagspiller",
+      quiz: "🧠 Flest riktige",
       team: "👥 Lagpall",
     } as Record<string, string>,
     value: (cat: string, v: number | null): string => {
@@ -334,6 +335,7 @@ export const no = {
         case "explorer": return `${v} ruter`;
         case "comeback": return `+${v} p`;
         case "teamplay": return v === 1 ? "1 lagbidrag" : `${v} lagbidrag`;
+        case "quiz": return v === 1 ? "1 riktig" : `${v} riktige`;
         default: return `${v} p`;
       }
     },
@@ -370,6 +372,41 @@ export const no = {
     teacherAgain: "Vil du bruke Chase igjen?",
     end: "Avslutt økta",
     none: "Ingen paller denne gangen – alle får sitt «ditt beste»-kort.",
+  },
+  // Fase 7 (0012): questions at posts, step counter, big screen.
+  quiz: {
+    title: "🧠 Spørsmål",
+    lead: "Svar innen tiden. Riktig svar gir +10 – feil koster ingenting.",
+    right: "Riktig! +10",
+    wrong: (a: string) => `Riktig svar var: ${a}`,
+    late: "Tiden gikk ut",
+    left: (s: number) => `${s} s`,
+    errors: { not_now: "Spørsmålet er stengt." } as Record<string, string>,
+    // Wizard / library.
+    editor: "🧠 Faglig pakke (spørsmål ved poster)",
+    editorLead: "Etter hver post i Postjakt får eleven et spørsmål. Skriv ett spørsmål per avsnitt: spørsmålet først, så 2–4 svar. Merk det riktige med *.",
+    placeholder: "Hovedstaden i Norge?\nBergen\n*Oslo\nTromsø\n\nHva er 3 × 4?\n*12\n14",
+    count: (n: number) => (n === 1 ? "1 spørsmål" : `${n} spørsmål`),
+    errorsAt: (ns: number[]) => `Sjekk spørsmål ${ns.join(", ")}: 2–4 svar og nøyaktig ett riktig (*).`,
+    fromPack: "Hent",
+    savePack: "Lagre som spørsmålspakke",
+    packs: "🧠 Spørsmålspakker",
+    newPack: "＋ Ny spørsmålspakke",
+    needsPosts: "Spørsmål kommer bare i Postjakt-runder.",
+  },
+  steps: {
+    label: "Skritt",
+    on: "👣 Skritteller på",
+  },
+  screen: {
+    open: "📺 Vis på storskjerm",
+    title: "Chase – storskjerm",
+    hint: "Åpne på PC-en som er koblet til prosjektoren (samme nettleser som lærerpanelet), eller cast fanen fra Chrome.",
+    waiting: "Venter på at økta starter …",
+    join: (pin: string) => `Bli med: PIN ${pin}`,
+    players: (n: number) => `${n} spillere`,
+    teams: "Lagpoeng",
+    noToken: "Storskjermen må åpnes i samme nettleser som lærerpanelet.",
   },
   // Fase 6 (0010): library, lærernøkkel, share links, start packs, own missions.
   library: {
@@ -749,7 +786,10 @@ export const no = {
       sprint: "🏁 Sprinter",
       mission: "💪 Oppdrag",
       gathered: "🧲 Rakk samlingen",
+      quiz: "🧠 Første riktige svar",
       powerup: "✨ Første power-up",
+      flag: "🚩 Flaggtaker",
+      hill: "👑 Haugkonge",
     } as Record<string, string>,
     scan: "📷 Skann post",
     qrOk: (v: number, first: boolean) => (first ? `+${v} – du var først!` : `+${v}`),

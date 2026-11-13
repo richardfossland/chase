@@ -14,6 +14,8 @@ import { identity } from "@/lib/client/identity";
 import { planSummary } from "@/lib/client/planSummary";
 import { QRCode } from "@/lib/client/QRCode";
 import { QrScanner } from "@/lib/client/QrScanner";
+import { QuizEditor } from "@/lib/client/QuizEditor";
+import type { QuizItem } from "@/lib/rules/quiz";
 import { no } from "@/lib/locale/no";
 import { LIBRARY, normMissions, parseTeacherKey, teacherKeyQr } from "@/lib/rules/library";
 
@@ -127,6 +129,21 @@ export default function LibraryView() {
             />
           ))}
           <PackEditor isNew onSave={(name, items) => act(() => api.library.save(key!, "pack", name, { items }))} />
+        </Section>
+      )}
+
+      {libr && (
+        <Section title={no.quiz.packs}>
+          {(libr.quizzes ?? []).map((p) => (
+            <QuizPackRow
+              key={p.id}
+              name={p.name}
+              items={p.items}
+              onSave={(name, items) => rename("quiz", p.id, name, { items })}
+              onRemove={() => remove("quiz", p.id, p.name)}
+            />
+          ))}
+          <QuizPackRow isNew onSave={(name, items) => act(() => api.library.save(key!, "quiz", name, { items }))} />
         </Section>
       )}
 
@@ -509,5 +526,60 @@ function KeyPanel({ teacherKey, libraryCount, onSwitch }: { teacherKey: string; 
         />
       )}
     </section>
+  );
+}
+
+function QuizPackRow(props: { isNew?: boolean; name?: string; items?: QuizItem[]; onSave: (name: string, items: QuizItem[]) => Promise<boolean>; onRemove?: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState(props.name ?? "");
+  const [items, setItems] = useState<QuizItem[] | undefined>(props.items);
+  const [valid, setValid] = useState(true);
+  if (!open) {
+    return props.isNew ? (
+      <li>
+        <button className={`${btn} w-full border-dashed py-3`} onClick={() => setOpen(true)}>
+          {no.quiz.newPack}
+        </button>
+      </li>
+    ) : (
+      <li className="flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-ink-2 p-3">
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-extrabold">{props.name}</p>
+          <p className="truncate text-sm text-txt-dim">{no.quiz.count(props.items?.length ?? 0)} · {props.items?.[0]?.q}</p>
+        </div>
+        <button className={btn} onClick={() => setOpen(true)}>
+          {t.rename}
+        </button>
+        <button className={btn} onClick={props.onRemove}>
+          {t.remove}
+        </button>
+      </li>
+    );
+  }
+  return (
+    <li className="space-y-2 rounded-2xl border border-gold/50 bg-ink-2 p-3">
+      <input className={input} placeholder={t.packName} value={name} maxLength={LIBRARY.name_max} onChange={(e) => setName(e.target.value)} />
+      <QuizEditor compact items={items} onChange={(it, ok) => { setItems(it); setValid(ok); }} />
+      <div className="flex gap-2">
+        <button
+          className={gold}
+          disabled={!items?.length || !valid || !name.trim()}
+          onClick={async () => {
+            if (items && (await props.onSave(name, items))) {
+              setOpen(false);
+              if (props.isNew) {
+                setName("");
+                setItems(undefined);
+              }
+            }
+          }}
+        >
+          {t.save}
+        </button>
+        <button className={btn} onClick={() => setOpen(false)}>
+          {no.common.cancel}
+        </button>
+      </div>
+    </li>
   );
 }

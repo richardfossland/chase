@@ -38,6 +38,7 @@ export const createSessionBody = z.object({
       event_every_s: z.number().int().optional(),
       teams: z.number().int().optional(),
       missions: z.array(z.string().max(200)).max(20).optional(),
+      quiz: z.array(z.object({ q: z.string().max(400), a: z.array(z.string().max(200)).max(6), c: z.number().int() })).max(40).optional(),
     })
     .optional(),
   settings: z.record(z.string(), z.unknown()).optional(),
@@ -64,6 +65,8 @@ export const tickBody = playerAuth.extend({
   // Informational only: an absurd value (sim teleport, broken sensor) must not drop the fix.
   speed: z.number().nullish().transform((v) => (v == null || !Number.isFinite(v) || v < 0 || v > 200 ? null : v)),
   ts: z.number().int().positive().optional(), // client epoch ms, ordering only
+  // 0012: new steps since the last tick (opt-in step counter); the server caps them.
+  steps: z.number().int().min(0).max(500).optional(),
 });
 
 export const qrBody = playerAuth.extend({ code: z.string().min(3).max(16) });
@@ -74,6 +77,7 @@ export const eventBody = z.discriminatedUnion("action", [
   playerAuth.extend({ action: z.literal("powerup"), kind: z.enum(["shield", "radar", "decoy", "turbo"]) }),
   playerAuth.extend({ action: z.literal("mission") }),
   playerAuth.extend({ action: z.literal("team_msg"), kind: z.enum(["help", "come", "mine", "ok"]) }),
+  playerAuth.extend({ action: z.literal("quiz"), choice: z.number().int().min(0).max(3) }),
 ]);
 
 export const sosBody = playerAuth.extend({ lat: lat.optional(), lng: lng.optional() });
@@ -112,7 +116,7 @@ export const ackBody = hostAuth.extend({ alarmId: uuid });
 export const endBody = hostAuth.extend({ force: z.boolean().optional() });
 
 // Library + share links (0010). Shapes only; the RPCs validate content.
-const libKind = z.enum(["area", "plan", "pack"]);
+const libKind = z.enum(["area", "plan", "pack", "quiz"]);
 const shareCode = z.string().regex(/^[A-Za-z0-9]{8}$/);
 export const libraryBody = z.discriminatedUnion("action", [
   z.object({ action: z.literal("get"), teacherKey }),

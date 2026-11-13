@@ -26,6 +26,7 @@
 //   --ceremony        with --until-done: run the ceremony (0006), bots vote «vil spille igjen»
 //   --events S        with --create: automatic events every S s (0007); bots run to targets,
 //                     use power-ups, press «Ferdig»; the teacher confirms missions
+//   --quiz            with --create: a 4-question pack (0012); bots answer every question
 //   --teams N         with --create: number of teams (0009); plan rounds flag:S, king:S and
 //                     posts+team:S / free+team:S are team rounds. --assert then checks team
 //                     sizes (≤ 1 apart), team points, flags taken, hill held, Lagpall
@@ -89,6 +90,12 @@ if (args.create) {
       qr_posts: Number(args.qr ?? 0),
       ...(args.events ? { event_every_s: Number(args.events) } : {}),
       ...(args.teams ? { teams: Number(args.teams) } : {}),
+      ...(args.quiz ? { quiz: [
+        { q: "Hovedstaden i Norge?", a: ["Bergen", "Oslo", "Tromsø"], c: 1 },
+        { q: "Hva er 3 × 4?", a: ["12", "14"], c: 0 },
+        { q: "Hvor mange bein har en edderkopp?", a: ["6", "8", "10", "12"], c: 1 },
+        { q: "Hva heter Norges lengste elv?", a: ["Glomma", "Lågen"], c: 0 },
+      ] } : {}),
     },
   });
   if (r.status !== 200) fail(`create_session: ${r.status} ${JSON.stringify(r.data)}`);
@@ -192,6 +199,10 @@ if (args.assert) {
     if (summary.game.sprintMax > 3) problems.push(`${summary.game.sprintMax} vinnere i én sprint (maks 3)`);
     if (n > 0 && summary.game.prizes === 0) problems.push("ingen fikk premie i hendelsene");
     if (summary.game.missionsDone > summary.game.missionsConfirmed) problems.push(`${summary.game.missionsDone - summary.game.missionsConfirmed} oppdrag ble aldri bekreftet`);
+  }
+  if (args.quiz && hostToken && /posts/.test(String(args.plan ?? ""))) {
+    if (summary.game.quizAnswered === 0) problems.push("ingen svarte på spørsmål");
+    else if (summary.game.quizRight === 0) problems.push("ingen riktige svar (fasit/valg ser feil ut)");
   }
   const teamPlan = /flag|king|\+team/.test(String(args.plan ?? ""));
   if (teamPlan && hostToken) {

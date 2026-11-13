@@ -20,6 +20,16 @@
 - **Lærernøkkelen** er biblioteket ditt. «Vis nøkkel og QR» på én enhet, og «Bruk en nøkkel fra en annen enhet» på den andre (skriv eller skann).
 - **Personvern:** malene for databehandleravtale og DPIA ligger under «Personvern og maler» nederst på forsiden. QR-postene kan lagres som PDF fra utskriftsdialogen.
 
+## Faglig pakke og storskjerm (fase 7)
+- **Spørsmål ved poster:** i spillelistesteget skriver du ett spørsmål per avsnitt: spørsmålet først, så 2–4 svar. Merk det riktige med `*`. Du kan også hente en spørsmålspakke fra biblioteket.
+  - Etter hver post i Postjakt får eleven et spørsmål med 60 s svartid.
+  - Riktig svar gir +10, og feil koster ingenting. Eleven ser fasiten etter at hen har svart.
+  - Seremonien får pallen «🧠 Flest riktige».
+- **Storskjerm:** ⋯ → «📺 Vis på storskjerm» åpner en egen fane.
+  - Den viser rundeklokke, et kart uten elevnavn, lagpoeng, flagg og haug, hendelser, og seremonien i stort format. I lobbyen viser den PIN og QR.
+  - Åpne den på PC-en ved prosjektoren i samme nettleser som lærerpanelet, eller cast fanen.
+- **Skritteller:** mobilen spør om tilgang til bevegelse når eleven trykker «Jeg er klar». Sier eleven nei, er telleren bare av.
+
 ## I timen (start)
 1. **Lag økta** på chase.sundaysuite.app: tegn området og velg samlingspunkt. Velg malen *Full gymtime*, eller *Første gang* hvis klassen ikke har spilt før. Legg inn mobilnummeret ditt.
 2. **Vis QR-koden.** Elevene skanner, velger kallenavn og trykker **«Jeg er klar»** for å slå på lyd, GPS og skjerm-på.

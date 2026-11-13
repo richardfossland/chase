@@ -29,6 +29,8 @@ import { EVENTS, nextBadgeToast, type Powerup } from "@/lib/rules/events";
 import type { Badge } from "@/lib/rules/game";
 import { EventStrip, PowerBar } from "./EventCard";
 import { TeamMsgBar, TeamStrip } from "./TeamCard";
+import { QuizCard } from "./QuizCard";
+import { requestMotion, useStepCounter } from "@/lib/client/steps";
 import { TEAMS, type TeamMsgKind } from "@/lib/rules/teams";
 import { CeremonyScreen } from "@/lib/client/Ceremony";
 import { parseQr } from "@/lib/qr";
@@ -120,6 +122,11 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
   const [missionLocal, setMissionLocal] = useState<number | null>(null);   // «Ferdig» sent for this event no
   const [puBusy, setPuBusy] = useState(false);
   const [msgBusy, setMsgBusy] = useState(false);
+  // 0012: step counter (opt-in on «Jeg er klar») and the question after a post.
+  const [stepsOn, setStepsOn] = useState(false);
+  const takeSteps = useStepCounter(stepsOn);
+  const [quizBusy, setQuizBusy] = useState(false);
+  const [quizDone, setQuizDone] = useState<number | null>(null);
   const [offsetMs, setOffsetMs] = useState(0); // server − client clock (rule 6: server time is the truth)
 
   const fixRef = useRef<Fix | null>(null);
@@ -266,6 +273,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
         acc: f.acc,
         speed: f.speed,
         ts: Date.now(), // send time: orders requests; the same fix may be re-sent while standing still
+        steps: takeSteps() || undefined,
       });
       setOffsetMs(Date.parse(v.server_now) - Date.now());
       setView(v);
@@ -279,7 +287,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
     } finally {
       inflight.current = false;
     }
-  }, [me.playerId, me.token, sessionId, react]);
+  }, [me.playerId, me.token, sessionId, react, takeSteps]);
 
   const status = view?.status ?? boot.status;
   const fast = status === "live" || status === "gathering" || status === "countdown" || status === "ceremony";
@@ -554,6 +562,8 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
           unlockAudio();
           gps.start();
           setReady(true);
+          // iOS asks for motion access only from a tap; a «no» just leaves the counter off.
+          void requestMotion().then(setStepsOn);
         }}
       />
     );
@@ -690,6 +700,11 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
               <p>{t.meters(view.stats.distance_m)}</p>
               <p>{t.minutes(view.stats.active_s)} {t.active.toLowerCase()}</p>
               {view.stats.posts > 0 && <p>{t.postsN(view.stats.posts)}</p>}
+              {stepsOn && (view.stats.steps ?? 0) > 0 && (
+                <p>
+                  {view.stats.steps} {no.steps.label.toLowerCase()}
+                </p>
+              )}
             </div>
           </dl>
         )}
@@ -859,6 +874,32 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
           <p className="text-7xl font-black">{flash.text}</p>
           {flash.sub && <p className="mt-2 text-2xl font-black">{flash.sub}</p>}
         </div>
+      )}
+
+      {view?.quiz && (status === "live" || status === "paused") && quizDone !== view.quiz.no && (
+        <QuizCard
+          quiz={view.quiz}
+          offsetMs={offsetMs}
+          now={now}
+          busy={quizBusy}
+          onAnswer={async (i) => {
+            const no_ = view.quiz!.no;
+            setQuizBusy(true);
+            try {
+              const r = await api.quizAnswer(sessionId, { playerId: me.playerId, token: me.token, choice: i });
+              cue(r.right ? "claim" : "lost");
+              setFlash({ id: Date.now(), text: r.right ? no.quiz.right : "✗", sub: r.right ? undefined : no.quiz.wrong(r.answer ?? ""), tone: r.right ? "gold" : "dim" });
+              queueBadges(r.newBadges);
+            } catch (e) {
+              const c = e instanceof ApiError ? e.code : "";
+              setFlash({ id: Date.now(), text: no.quiz.errors[c] ?? t.qrError, tone: "dim" });
+            } finally {
+              setQuizDone(no_);
+              setQuizBusy(false);
+              void tickNow();
+            }
+          }}
+        />
       )}
 
       {scanning && <QrScanner onCode={onScan} onClose={() => setScanning(false)} busy={scanBusy} />}

@@ -279,6 +279,8 @@ Fysiske oppdrag gjøres der eleven er, aldri som en betingelse for å slippe str
 | Lag (navn, farge, lagpoeng) og elevens lag | `teams`, `players.team_id` | Som økta (24 t etter slutt). Ingen persondata utover koblingen elev ↔ lag. |
 | Flagg- og haugposisjoner (punkter i området, ikke elevposisjoner) | `rounds.state` | Som økta |
 | Lærerens telefonnummer | `sessions` | Nullstilles ved øktslutt |
+| Spørsmål ved poster: hvilket spørsmål eleven har åpent, antall stilt og antall riktige (ikke hvilke svar) | `player_stats.quiz_*` | 24 t etter slutt. Hendelsesloggen har spørsmålsnummer og riktig/feil, uten koordinater. |
+| Skritt (sum fra mobilens skritteller, valgfri) | `player_live.steps` (UNLOGGED) | **Slettes ved øktslutt** |
 | **Lærerbibliotek** (lagrede og sist brukte områder, opplegg, oppdragspakker), knyttet til en anonym lærernøkkel (bare hash lagres). Ingen elevdata. | `teachers`, `areas`, `plans`, `challenge_packs` | Til læreren sletter det, eller **13 måneder uten bruk** (`purge_expired`). Bare de 5 siste «sist brukt» per type beholdes. |
 | Delelenker (kopi av et opplegg og ev. et område, ingen info om læreren) | `shares` | Til læreren trekker lenken tilbake (raden slettes), eller med biblioteket |
 | **Anonymt sammendrag** | `session_summaries` | Beholdes: antall spillere, varighet, moduser, total og median distanse og aktive minutter som histogram, og anonym telling av «vil spille igjen» (ja/nei, lærerens svar). **Ingen koordinater, navn eller område.** |

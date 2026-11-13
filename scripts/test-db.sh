@@ -27,7 +27,9 @@ docker run -d --name "$CONTAINER" -e POSTGRES_PASSWORD="$PW" -p "$PORT:5432" "$I
 
 # -h 127.0.0.1: the image's temporary init server listens on the unix socket
 # only, so TCP succeeds just once the real server is up.
-PSQL() { docker exec -i -e PGPASSWORD="$PW" "$CONTAINER" psql -h 127.0.0.1 -q -v ON_ERROR_STOP=1 -U postgres -d postgres "$@"; }
+# chase.upkeep_every_ms=0 (0011): tests tick many times inside one transaction
+# (constant now()), so the 1 s upkeep throttle is off; 0011's own test turns it on.
+PSQL() { docker exec -i -e PGPASSWORD="$PW" -e PGOPTIONS='-c chase.upkeep_every_ms=0' "$CONTAINER" psql -h 127.0.0.1 -q -v ON_ERROR_STOP=1 -U postgres -d postgres "$@"; }
 # Migrations: hide "already exists, skipping" notices; tests keep their NOTICEs.
 PSQL_QUIET() { docker exec -i -e PGPASSWORD="$PW" -e PGOPTIONS='-c client_min_messages=warning' "$CONTAINER" psql -h 127.0.0.1 -q -v ON_ERROR_STOP=1 -U postgres -d postgres "$@"; }
 

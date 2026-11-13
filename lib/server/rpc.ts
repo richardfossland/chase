@@ -54,6 +54,8 @@ const STATUS: Record<string, number> = {
   too_soon: 429,
   bad_name: 400,
   bad_pack: 400,
+  bad_quiz: 400,
+  bad_choice: 400,
 };
 
 /** HTTP status for an RPC error code (bad_* and unknown → 400). */

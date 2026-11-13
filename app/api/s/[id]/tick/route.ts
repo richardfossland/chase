@@ -26,6 +26,7 @@ export const POST = guarded(async (req, ctx) => {
     p_speed: body.speed,
     p_client_ts: body.ts ? new Date(body.ts).toISOString() : null,
     p_session: id,
+    p_steps: body.steps ?? null,
   });
   // Safety first: push the host a refetch hint the moment an alarm is new or escalated.
   if (r.ok && r.alert_host) defer(() => broadcast(channels.host(id), events.alarm), "tick-alarm");

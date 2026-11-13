@@ -493,3 +493,48 @@ Migrasjon 0010 og tvillingen `lib/rules/library.ts`:
   - **Worker:** `3c9e80eb` er bygget fra `ded1ccd` med Node 24 (rollback `8d3c735a` = rammeverksløftet). Røyktesten ga 12×200 før og etter, og `/bibliotek`, `/personvern`, `/personvern/dpia` og `/d/<ukjent>` svarer 200 («Lenken virker ikke lenger»).
   - **Ende til ende i prod med to engangsnøkler:** lagre opplegg med eget oppdrag → del → forhåndsvisning på `/d/<kode>` → kopi til nøkkel B (`saved`, lag og oppdrag med, kopien telt) → trekk tilbake → lenken er død. Ugyldig nøkkel gir 400. Testlærerne og dataene deres ble slettet etterpå.
   - **Neste gang:** provisjoneringsskriptet kjører alle migrasjonene på nytt og låser alle tabeller. Kjør det når ingen økter er live, eller kjør bare den nye migrasjonen.
+
+## ADR-028 — Mindre arbeid per tick (2026-11-13)
+- **Funn:** prod-simer med 40 boter i lagrunder ga 30–300 s ventetid og 522 fra Supabase. Det gjaldt også i lobbyen, så det var ikke spillogikken.
+  - Det delte Supabase-prosjektet kjører på **Nano**: 0,5 GB RAM, ca. 830 MB swap i bruk og load 7. Hele Sunday-familien deler maskinen.
+  - Eieren valgte (2026-11-13) å optimalisere koden først, ikke å oppgradere.
+- **Målt lokalt** (`pg_stat_user_functions`, 40 boter, lag-Postjakt + Flaggjakt): 5,8 ms per tick.
+  - Vedlikeholdet (`_mode_upkeep`) kjørte på 77 % av alle tick, med ca. 1,8 ms hver gang.
+  - Lagvisningen (`_team_tick`) kostet 1,1 ms per tick.
+- **0011:**
+  - Vedlikeholdet kjører høyst én gang i sekundet per økt. Tidspunktet ligger i UNLOGGED `session_clock`, så det gir ingen WAL. Alle vedlikeholdsreglene er allerede funksjoner av tid med minst 5 s oppløsning.
+  - Lagvisningen bygges én gang per vedlikehold inn i samme rad, og tickene leser den (høyst 5 s gammel). Er den eldre, bygges den på stedet uten å lagres, så tickene ikke slåss om raden.
+  - Intervallet styres av `chase.upkeep_every_ms` (standard 1000). SQL-testene kjører med 0 fordi de tikker mange ganger i én transaksjon. 0011s egen test slår strupingen på.
+- **Etter:** 4,2 ms per tick (−28 %). Vedlikeholdet kjører 234 ganger i stedet for 4 824, og lagvisningen koster 0,55 ms. Lokal p95 gikk fra 65 til 45 ms.
+- **Fortsatt en risiko:** en full klasse på Nano-maskinen som deles med de andre appene. Kontroll-sim i prod etter deploy. Kommer ventetiden tilbake, er Micro/Small-oppgradering (eiers beslutning) neste steg.
+
+## ADR-029 — Fase 7: faglige pakker, storskjerm og skritteller (2026-11-13)
+Eierens valg 2026-11-13:
+- **Spørsmål ved poster.**
+- **Storskjerm** med kart, lagpoeng og seremoni.
+- **Skritteller** er med. Fase 8 venter til etter testrunden.
+
+Migrasjon 0012 og tvillingen `lib/rules/quiz.ts`:
+- **Spørsmålspakker:**
+  - `plan.quiz` har 1–30 spørsmål `{q, a: 2–4 svar, c}`, trimmet, og svarene må være ulike.
+  - Pakken kan legges på **hvilken som helst Postjakt uten kodeendring** («Ferdig når»). Pakkene lagres i biblioteket (`challenge_packs.kind = 'quiz'`) og følger med delelenker.
+  - Læreren skriver i et enkelt tekstformat: ett spørsmål per avsnitt, og det riktige svaret merkes `*`.
+- **Flyten:** når eleven tar en GPS-post i Postjakt, og ikke har et åpent spørsmål, gir serveren neste spørsmål (`_quiz_pick`). Hver elev starter på sin egen forskyvning, så naboer sjelden får samme spørsmål.
+  - Eleven har 60 s. Riktig gir +10, merket «quiz» og pallen «🧠 Flest riktige» (før Lagspiller/Poeng). Feil gir ingen straff (regel 5).
+  - **Fasiten forlater aldri serveren før eleven har svart.** Tick sender bare spørsmål, svar og frist, og `plan` går bare til læreren. Svaret logges som spørsmålsnummer og riktig/feil.
+  - QR-poster utløser ikke spørsmål (de har eget oppdragsspor).
+- **Skritteller:**
+  - Klientdetektoren (`lib/client/steps.ts`) teller topper i akselerasjonen: over g + 1,5, ned under g + 0,5, minst 0,25 s mellom. Den er testet med syntetisk gange.
+  - iOS-tillatelsen spørres om når eleven trykker «Jeg er klar».
+  - Serveren kutter til 4 skritt/s siden forrige rapport (`_steps_accept`) og summerer i `player_live` (UNLOGGED, slettes ved «Avslutt»).
+  - `tick()` er pakket inn med en ny siste parameter `p_steps`. Navnebyttet tåler at 0002–0004 kjøres på nytt (testet: én `tick`, ingen overlast).
+- **Storskjerm** `/host/[id]/tavle` (⋯ → «Vis på storskjerm»):
+  - Lobby: PIN og QR.
+  - Spill: stor klokke, runde, kart uten navn (prikker, ikke klikkbare), lagpoeng, flagg og haug, og hendelse med eget oppdrag.
+  - Seremoni: pallene i stort format.
+  - Bruker lærerens token fra samme nettleser og er bare til visning.
+- **Fikset i samme slengen:** merkenavnene for «Flagg» og «Haug» (fase 5) manglet på mobilen. En ny test sjekker at alle merker har navn.
+- **Testet lokalt:**
+  - DB-testene er grønne for alle 12 migrasjoner (kjørt to ganger), og TS-testene er grønne.
+  - Full sim med 40 boter og 4 lag (lag-Postjakt + Flaggjakt + Konge, spørsmål, skritt, hendelser hvert 60. s, seremoni): alle krav oppfylt. 135 spørsmål besvart (= poster), 54 riktige, 9 paller med «Flest riktige», tick p95 61 ms, 0 feil.
+  - I nettleseren: spørsmålskortet etter en post, et feil svar (ingen poengtap, registrert som feil), og storskjermen med kart uten navn og lagpoeng.

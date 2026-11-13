@@ -29,7 +29,8 @@ describe("GAME twin of chase.kg()", () => {
     const all = sql + readFileSync(new URL("../supabase/migrations/0004_tag.sql", import.meta.url), "utf8")
       + readFileSync(new URL("../supabase/migrations/0005_zone.sql", import.meta.url), "utf8")
       + readFileSync(new URL("../supabase/migrations/0007_events_powerups.sql", import.meta.url), "utf8")
-      + readFileSync(new URL("../supabase/migrations/0009_teams_flag_king.sql", import.meta.url), "utf8");
+      + readFileSync(new URL("../supabase/migrations/0009_teams_flag_king.sql", import.meta.url), "utf8")
+      + readFileSync(new URL("../supabase/migrations/0012_quiz_steps.sql", import.meta.url), "utf8");
     for (const b of BADGES) expect(all).toContain(`'${b}'`);
   });
 });

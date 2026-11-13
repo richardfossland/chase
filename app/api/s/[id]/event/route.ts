@@ -23,6 +23,10 @@ export const POST = guarded(async (req, ctx) => {
     const r = await rpc("use_powerup", { ...auth, p_kind: body.kind });
     return respond(r, (x) => ({ kind: x.kind, until: x.until ?? null, newBadges: x.new_badges ?? [] }));
   }
+  if (body.action === "quiz") {
+    const r = await rpc("quiz_answer", { ...auth, p_choice: body.choice });
+    return respond(r, (x) => ({ right: x.right === true, answer: x.answer ?? null, points: x.points ?? 0, newBadges: x.new_badges ?? [] }));
+  }
   if (body.action === "team_msg") {
     const r = await rpc("team_msg", { ...auth, p_kind: body.kind });
     return respond(r, (x) => ({ kind: x.kind, at: x.at }));

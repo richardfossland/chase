@@ -76,6 +76,15 @@ export default async function SharePage({ params }: { params: Promise<{ code: st
         </section>
       ) : null}
 
+      {share.plan.quiz?.length ? (
+        <section className="mt-4 rounded-2xl border border-line bg-ink-2 p-4">
+          <h2 className="font-black">{no.quiz.editor}</h2>
+          <p className="mt-1 text-sm text-txt-dim">
+            {no.quiz.count(share.plan.quiz.length)} · {share.plan.quiz[0].q}
+          </p>
+        </section>
+      ) : null}
+
       <section className="mt-4 flex items-center gap-4 rounded-2xl border border-line bg-ink-2 p-4">
         {share.area ? (
           <>
