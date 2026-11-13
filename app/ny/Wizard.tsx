@@ -7,7 +7,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { ApiError, api } from "@/lib/client/api";
+import { ApiError, api, type LibArea, type LibPlan, type Library } from "@/lib/client/api";
+import { AreaThumb } from "@/lib/client/AreaThumb";
+import { planSummary } from "@/lib/client/planSummary";
+import { normMissions } from "@/lib/rules/library";
+import { STARTER_PACKS, type StarterPack } from "@/lib/starter";
 import { identity } from "@/lib/client/identity";
 import {
   circleRing,
@@ -27,7 +31,7 @@ import { DEFAULT_CENTER, kartverketStyle } from "@/lib/map/style";
 
 const t = no.wizard;
 
-type Step = "intro" | "area" | "forbidden" | "assembly" | "playlist" | "safety";
+type Step = "intro" | "start" | "area" | "forbidden" | "assembly" | "playlist" | "safety";
 type AreaMode = "circle" | "draw";
 type DrawTarget = "area" | "forbidden" | null;
 
@@ -106,15 +110,27 @@ export default function Wizard() {
   const [phone, setPhone] = useState("");
   const [plan, setPlan] = useState<Plan>(DEFAULT_PLAN);
   const [checks, setChecks] = useState<boolean[]>(t.safety.checks.map(() => false));
+  // 0010: the teacher's library (for «Gjenbruk forrige», picking, mission packs).
+  const [library, setLibrary] = useState<Library | null>(null);
+  const [startView, setStartView] = useState<"menu" | "library" | "starter">("menu");
+  const [pickArea, setPickArea] = useState<string | null>(null);
+  const [pickPlan, setPickPlan] = useState<string | null>(null);
+  const wanted = useRef<{ area: string | null; plan: string | null } | null>(null);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
-  // First visit: introduce + show the lærernøkkel once.
+  // First visit: introduce + show the lærernøkkel once. Then the start menu
+  // (0010) — or straight to the area when /ny?area=…&plan=… came from the library.
   useEffect(() => {
     const { key } = identity.ensureTeacherKey();
+    const q = new URLSearchParams(window.location.search);
+    const area = q.get("area");
+    const plan = q.get("plan");
+    if (area || plan) wanted.current = { area, plan };
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reading localStorage after mount
     setTeacherKey(key);
-    if (!identity.hasSeenIntro()) setStep("intro");
+    setStep(!identity.hasSeenIntro() ? "intro" : wanted.current ? "area" : "start");
+    api.library.get(key).then(setLibrary).catch(() => setLibrary(null));
   }, []);
 
   // ── derived area ──
@@ -336,8 +352,42 @@ export default function Wizard() {
   function goTo(next: Step) {
     if (next === "assembly" && !assembly && areaRing) setAssembly(defaultAssembly(areaRing, forbidden));
     setStep(next);
-    if (next !== "intro") setTimeout(fitArea, 0);
+    if (next !== "intro" && next !== "start") setTimeout(fitArea, 0);
   }
+
+  // ── 0010: library / start packs ──
+  function applyArea(a: LibArea) {
+    const ring = a.boundary.coordinates[0].map((p) => [p[0], p[1]] as LngLat);
+    setAreaMode("draw");
+    setDrawnArea(ring.slice(0, -1));
+    setForbidden((a.forbidden?.coordinates ?? []).map((poly) => poly[0].slice(0, -1).map((p) => [p[0], p[1]] as LngLat)));
+    setAssembly([a.assembly.lng, a.assembly.lat]);
+    map.current?.jumpTo({ center: [a.assembly.lng, a.assembly.lat] });
+  }
+  function applyPlan(p: LibPlan) {
+    setPlan(structuredClone(p.plan));
+  }
+  function applyStarter(pack: StarterPack) {
+    setPlan(structuredClone(pack.plan));
+    setAreaMode("circle");
+    setRadius(pack.radius_m);
+    goTo("area");
+  }
+  const lastArea = library?.areas.reduce<LibArea | null>((b, a) => (!b || a.last_used_at > b.last_used_at ? a : b), null) ?? null;
+  const lastPlan = library?.plans.reduce<LibPlan | null>((b, a) => (!b || a.last_used_at > b.last_used_at ? a : b), null) ?? null;
+
+  // /ny?area=…&plan=… (from the library or a share copy): apply once it has loaded.
+  useEffect(() => {
+    if (!library || !wanted.current) return;
+    const w = wanted.current;
+    wanted.current = null;
+    const a = library.areas.find((x) => x.id === w.area);
+    const p = library.plans.find((x) => x.id === w.plan);
+     
+    if (a) applyArea(a);
+    if (p) applyPlan(p);
+     
+  }, [library]);
   const idx = STEPS.indexOf(step);
 
   async function create() {
@@ -378,7 +428,7 @@ export default function Wizard() {
       </div>
 
       {/* top: progress */}
-      {step !== "intro" && (
+      {step !== "intro" && step !== "start" && (
         <div className="pointer-events-none absolute inset-x-0 top-0 p-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
           <div className="pointer-events-auto mr-14 flex max-w-md items-center gap-3 rounded-2xl border border-line bg-ink-2/95 px-3 py-2 backdrop-blur">
             <Link href="/" className="text-sm text-txt-dim" aria-label={no.common.home}>
@@ -410,11 +460,119 @@ export default function Wizard() {
               className={`${primary} mt-4 w-full`}
               onClick={() => {
                 identity.markIntroSeen();
-                goTo("area");
+                goTo(wanted.current ? "area" : "start");
               }}
             >
               {t.intro.start}
             </button>
+          </div>
+        )}
+
+        {step === "start" && (
+          <div className={sheet} data-testid="start-step">
+            {startView === "menu" && (
+              <>
+                <h1 className="text-2xl font-black">{no.start.title}</h1>
+                <div className="mt-3 grid gap-2">
+                  {lastArea && lastPlan && (
+                    <button
+                      className={`${primary} text-left`}
+                      onClick={() => {
+                        applyArea(lastArea);
+                        applyPlan(lastPlan);
+                        goTo("safety");
+                      }}
+                      data-testid="start-reuse"
+                    >
+                      {no.start.reuse}
+                      <span className="block truncate text-sm font-bold opacity-80">{no.start.reuseHint(lastArea.name, planSummary(lastPlan.plan).modes)}</span>
+                    </button>
+                  )}
+                  {library && (library.areas.length > 0 || library.plans.length > 0) && (
+                    <button className={`${secondary} text-left`} onClick={() => setStartView("library")} data-testid="start-library">
+                      {no.start.fromLibrary}
+                    </button>
+                  )}
+                  <button className={`${secondary} text-left`} onClick={() => setStartView("starter")} data-testid="start-starter">
+                    {no.start.starter}
+                  </button>
+                  <button className={`${secondary} text-left`} onClick={() => goTo("area")} data-testid="start-fresh">
+                    {no.start.fresh}
+                  </button>
+                </div>
+                <Link href="/bibliotek" className="mt-3 block text-sm text-txt-dim underline underline-offset-4">
+                  {no.library.title}
+                </Link>
+              </>
+            )}
+            {startView === "starter" && (
+              <>
+                <p className="font-extrabold">{no.start.starter}</p>
+                <p className="mt-1 text-sm text-txt-dim">{no.start.starterLead}</p>
+                <div className="mt-3 grid gap-2">
+                  {STARTER_PACKS.map((pk) => (
+                    <button key={pk.id} className={`${secondary} text-left`} onClick={() => applyStarter(pk)} data-testid={`starter-${pk.id}`}>
+                      <span className="font-extrabold">
+                        {pk.emoji} {pk.name}
+                      </span>
+                      <span className="block text-sm font-normal text-txt-dim">{pk.lead}</span>
+                      <span className="block text-xs font-bold text-gold">
+                        {no.start.radius(pk.radius_m)} · {planSummary(pk.plan).modes}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <button className={`${secondary} mt-3`} onClick={() => setStartView("menu")}>
+                  {no.start.back}
+                </button>
+              </>
+            )}
+            {startView === "library" && library && (
+              <>
+                <p className="font-extrabold">{no.start.pickArea}</p>
+                <div className="mt-2 grid gap-1.5">
+                  <button className={`${chip(pickArea === null)} text-left`} onClick={() => setPickArea(null)}>
+                    {no.start.noArea}
+                  </button>
+                  {library.areas.map((a) => (
+                    <button key={a.id} className={`${chip(pickArea === a.id)} flex items-center gap-3 text-left`} onClick={() => setPickArea(a.id)}>
+                      <AreaThumb area={a} size={36} />
+                      <span className="truncate">{a.name}</span>
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-3 font-extrabold">{no.start.pickPlan}</p>
+                <div className="mt-2 grid gap-1.5">
+                  <button className={`${chip(pickPlan === null)} text-left`} onClick={() => setPickPlan(null)}>
+                    {no.start.noPlan}
+                  </button>
+                  {library.plans.map((p) => (
+                    <button key={p.id} className={`${chip(pickPlan === p.id)} text-left`} onClick={() => setPickPlan(p.id)}>
+                      <span className="block truncate">{p.name}</span>
+                      <span className="block truncate text-xs font-bold opacity-75">{planSummary(p.plan).modes}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-4 flex justify-between">
+                  <button className={secondary} onClick={() => setStartView("menu")}>
+                    {no.start.back}
+                  </button>
+                  <button
+                    className={primary}
+                    onClick={() => {
+                      const a = library.areas.find((x) => x.id === pickArea);
+                      const p = library.plans.find((x) => x.id === pickPlan);
+                      if (a) applyArea(a);
+                      if (p) applyPlan(p);
+                      goTo("area");
+                    }}
+                    data-testid="start-library-go"
+                  >
+                    {no.start.go}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         )}
 
@@ -576,6 +734,21 @@ export default function Wizard() {
         {step === "playlist" && (
           <div className={sheet}>
             <PlaylistEditor plan={plan} onChange={setPlan} chip={chip} />
+            <MissionsEditor
+              plan={plan}
+              onChange={setPlan}
+              packs={library?.packs ?? []}
+              onSavePack={async (name, items) => {
+                if (!teacherKey) return false;
+                try {
+                  await api.library.save(teacherKey, "pack", name, { items });
+                  setLibrary(await api.library.get(teacherKey));
+                  return true;
+                } catch {
+                  return false;
+                }
+              }}
+            />
             <div className="mt-4 flex justify-between gap-2">
               <button className={secondary} onClick={() => goTo("assembly")}>
                 {t.back}
@@ -864,6 +1037,91 @@ function PlaylistEditor(props: { plan: Plan; onChange: (p: Plan) => void; chip: 
       </div>
       <p className="mt-1 text-xs text-txt-dim">{no.events.wizard.help}</p>
       <p className="mt-4 text-sm font-bold">{p.total(Math.round(planTotalS(plan) / 60))}</p>
+    </div>
+  );
+}
+
+/** 0010: own mission texts for this plan, from a pack or typed; saved as a pack on request. */
+function MissionsEditor(props: {
+  plan: Plan;
+  onChange: (p: Plan) => void;
+  packs: { id: string; name: string; items: string[] }[];
+  onSavePack: (name: string, items: string[]) => Promise<boolean>;
+}) {
+  const m = no.missions;
+  const [text, setText] = useState((props.plan.missions ?? []).join("\n"));
+  const [saved, setSaved] = useState(false);
+  const [naming, setNaming] = useState<string | null>(null);
+  // A new plan from outside (library, start pack) replaces the text.
+  const planMissions = (props.plan.missions ?? []).join("\n");
+  const lastPlan = useRef(planMissions);
+  useEffect(() => {
+    if (planMissions !== lastPlan.current && planMissions !== text.split("\n").filter((l) => l.trim()).join("\n")) {
+       
+      setText(planMissions);
+    }
+    lastPlan.current = planMissions;
+  }, [planMissions, text]);
+  const lines = text.split("\n").filter((l) => l.trim());
+  const items = lines.length ? normMissions(lines) : [];
+  const set = (v: string) => {
+    setText(v);
+    setSaved(false);
+    const ls = v.split("\n").filter((l) => l.trim());
+    const { missions: _old, ...rest } = props.plan;
+    void _old;
+    props.onChange(ls.length ? { ...rest, missions: ls } : rest);
+  };
+  const btn = "rounded-lg border border-line px-2.5 py-1.5 text-xs font-bold transition hover:bg-ink-3 disabled:opacity-40";
+  return (
+    <div className="mt-4" data-testid="missions-editor">
+      <p className="text-sm font-semibold">{m.title}</p>
+      <p className="text-xs text-txt-dim">{m.lead}</p>
+      <textarea
+        className="mt-2 min-h-24 w-full rounded-xl border border-line bg-ink px-3 py-2 text-sm font-bold outline-none focus:border-gold"
+        placeholder={m.field}
+        value={text}
+        onChange={(e) => set(e.target.value)}
+      />
+      {items === null && <p className="text-xs font-bold text-warn">{m.invalid}</p>}
+      <div className="mt-1 flex flex-wrap gap-1.5">
+        {props.packs.map((p) => (
+          <button key={p.id} className={btn} onClick={() => set(p.items.join("\n"))}>
+            {m.fromPack}: {p.name}
+          </button>
+        ))}
+        {items && items.length > 0 && naming === null && (
+          <button className={btn} onClick={() => setNaming("")}>
+            {saved ? m.saved : m.savePack}
+          </button>
+        )}
+      </div>
+      {naming !== null && (
+        <form
+          className="mt-2 flex gap-1.5"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (items && naming.trim() && (await props.onSavePack(naming, items))) {
+              setSaved(true);
+              setNaming(null);
+            }
+          }}
+        >
+          <input
+            className="flex-1 rounded-lg border border-line bg-ink px-2 py-1.5 text-sm font-bold outline-none focus:border-gold"
+            placeholder={no.library.packName}
+            value={naming}
+            onChange={(e) => setNaming(e.target.value)}
+            autoFocus
+          />
+          <button className={btn} disabled={!naming.trim()}>
+            {no.library.save}
+          </button>
+          <button type="button" className={btn} onClick={() => setNaming(null)}>
+            {no.common.cancel}
+          </button>
+        </form>
+      )}
     </div>
   );
 }

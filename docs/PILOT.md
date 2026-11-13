@@ -11,6 +11,15 @@
   - Posisjonen brukes bare mens økta pågår og slettes når læreren avslutter.
 - [ ] Vil du bruke **fysiske QR-poster**, skriver du dem ut fra lærerpanelet og tar med teip.
 
+## Bibliotek og deling (fase 6)
+- Alt du lager, lagres automatisk i **📚 Biblioteket** (forsiden → Bibliotek) som «sist brukt». Trykk **Behold** og gi det et navn for å ta vare på det.
+- **Ny økt** starter med et valg: «Gjenbruk forrige», «Fra biblioteket», **Startpakker** (Skolegården, Skogen, Park i sentrum, Leir) eller «Ny fra bunnen».
+  - En startpakke legger en sirkel rundt der du står, med en spilleliste og egne oppdrag som passer stedet. Juster området og tegn forbudte soner selv.
+- **Egne oppdrag** (spillelistesteget): ett per linje. Er lista tom, brukes de seks innebygde. Lagre lista som en oppdragspakke for å bruke den igjen.
+- **Del** et opplegg (med eller uten område). Du får en lenke `/d/KODE` som virker til du trekker den tilbake. En annen lærer kan lage en kopi og starte med én gang.
+- **Lærernøkkelen** er biblioteket ditt. «Vis nøkkel og QR» på én enhet, og «Bruk en nøkkel fra en annen enhet» på den andre (skriv eller skann).
+- **Personvern:** malene for databehandleravtale og DPIA ligger under «Personvern og maler» nederst på forsiden. QR-postene kan lagres som PDF fra utskriftsdialogen.
+
 ## I timen (start)
 1. **Lag økta** på chase.sundaysuite.app: tegn området og velg samlingspunkt. Velg malen *Full gymtime*, eller *Første gang* hvis klassen ikke har spilt før. Legg inn mobilnummeret ditt.
 2. **Vis QR-koden.** Elevene skanner, velger kallenavn og trykker **«Jeg er klar»** for å slå på lyd, GPS og skjerm-på.

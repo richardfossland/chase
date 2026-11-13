@@ -62,6 +62,11 @@ export const identity = {
     set(TEACHER_KEY, key);
     return { key, created: true };
   },
+  /** Import on another device (0010): this key's library becomes mine here. */
+  setTeacherKey(key: string) {
+    set(TEACHER_KEY, key);
+    set(SEEN_INTRO, "1");
+  },
   hasSeenIntro: () => get(SEEN_INTRO) === "1",
   markIntroSeen: () => set(SEEN_INTRO, "1"),
 

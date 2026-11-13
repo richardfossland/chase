@@ -53,6 +53,7 @@ export function EventStrip({
   else if (me?.state === "done") line = e.confirmed(me.points);
   else if (me?.state === "pending" || pendingLocal) line = e.pending;
   else if (over) line = null;   // «Hendelsen er over» on the right says it
+  else if (ev.kind === "mission" && ev.mission_text) line = ev.mission_text;
   else if (ev.kind === "mission" && ev.mission !== null) line = e.missions[ev.mission];
   else line = e.phoneDesc[ev.kind] ?? null;
 

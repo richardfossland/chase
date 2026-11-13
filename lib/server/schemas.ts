@@ -17,8 +17,10 @@ export const point = z.object({ type: z.literal("Point"), coordinates: position 
 export const token = z.string().regex(/^[A-Za-z0-9_-]{20,128}$/);
 export const uuid = z.uuid();
 
+export const teacherKey = z.string().regex(/^[A-Z0-9-]{16,40}$/);
+
 export const createSessionBody = z.object({
-  teacherKey: z.string().regex(/^[A-Z0-9-]{16,40}$/).optional(),
+  teacherKey: teacherKey.optional(),
   boundary: polygon,
   assembly: point,
   forbidden: multiPolygon.nullish(),
@@ -35,6 +37,7 @@ export const createSessionBody = z.object({
       qr_posts: z.number().int().optional(),
       event_every_s: z.number().int().optional(),
       teams: z.number().int().optional(),
+      missions: z.array(z.string().max(200)).max(20).optional(),
     })
     .optional(),
   settings: z.record(z.string(), z.unknown()).optional(),
@@ -107,3 +110,22 @@ export const hostActionBody = hostAuth.extend({
 export const snapshotBody = hostAuth.extend({ geo: z.boolean().optional() });
 export const ackBody = hostAuth.extend({ alarmId: uuid });
 export const endBody = hostAuth.extend({ force: z.boolean().optional() });
+
+// Library + share links (0010). Shapes only; the RPCs validate content.
+const libKind = z.enum(["area", "plan", "pack"]);
+const shareCode = z.string().regex(/^[A-Za-z0-9]{8}$/);
+export const libraryBody = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("get"), teacherKey }),
+  z.object({
+    action: z.literal("save"),
+    teacherKey,
+    kind: libKind,
+    id: uuid.nullish(),
+    name: z.string().max(200),
+    data: z.record(z.string(), z.unknown()).nullish(),
+  }),
+  z.object({ action: z.literal("delete"), teacherKey, kind: libKind, id: uuid }),
+  z.object({ action: z.literal("share"), teacherKey, planId: uuid, areaId: uuid.nullish(), name: z.string().max(200).nullish() }),
+  z.object({ action: z.literal("revoke"), teacherKey, code: shareCode }),
+  z.object({ action: z.literal("copy"), teacherKey, code: shareCode }),
+]);

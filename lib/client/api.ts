@@ -252,6 +252,8 @@ export interface EventBase {
   target: LatLng | null;
   /** Mission: index into no.events.missions. */
   mission: number | null;
+  /** 0010: the teacher's own mission text (wins over the built-in index). */
+  mission_text?: string | null;
 }
 
 export interface HostEventView extends EventBase {
@@ -373,7 +375,70 @@ export interface QrResult {
   newBadges: Badge[];
 }
 
+// ---- Library + share links (0010) ----
+
+export interface AreaGeo {
+  boundary: GeoJsonPolygon;
+  forbidden: GeoJsonMultiPolygon | null;
+  assembly: LatLng;
+  area_m2: number;
+}
+export interface LibArea extends AreaGeo {
+  id: string;
+  name: string;
+  kind: "recent" | "saved";
+  last_used_at: string;
+}
+export interface LibPlan {
+  id: string;
+  name: string;
+  kind: "recent" | "saved";
+  last_used_at: string;
+  plan: Plan;
+}
+export interface LibPack {
+  id: string;
+  name: string;
+  items: string[];
+}
+export interface LibShare {
+  code: string;
+  name: string;
+  has_area: boolean;
+  copies: number;
+  created_at: string;
+}
+export interface Library {
+  known: boolean;
+  areas: LibArea[];
+  plans: LibPlan[];
+  packs: LibPack[];
+  shares: LibShare[];
+}
+export interface SharePreview {
+  code: string;
+  name: string;
+  plan: Plan;
+  area: AreaGeo | null;
+  copies: number;
+  created_at: string;
+}
+export type LibKind = "area" | "plan" | "pack";
+
+const lib = <T,>(body: Record<string, unknown>) => post<T>("/api/library", body);
+
 export const api = {
+  library: {
+    get: (teacherKey: string) => lib<Library>({ action: "get", teacherKey }),
+    save: (teacherKey: string, kind: LibKind, name: string, data: unknown | null, id?: string | null) =>
+      lib<{ id: string }>({ action: "save", teacherKey, kind, name, data, id: id ?? null }),
+    remove: (teacherKey: string, kind: LibKind, id: string) => lib<Record<string, never>>({ action: "delete", teacherKey, kind, id }),
+    share: (teacherKey: string, planId: string, areaId: string | null, name?: string) =>
+      lib<{ code: string }>({ action: "share", teacherKey, planId, areaId, name: name ?? null }),
+    revoke: (teacherKey: string, code: string) => lib<Record<string, never>>({ action: "revoke", teacherKey, code }),
+    copy: (teacherKey: string, code: string) => lib<{ planId: string; areaId: string | null }>({ action: "copy", teacherKey, code }),
+  },
+
   createSession: (body: {
     teacherKey?: string;
     boundary: GeoJsonPolygon;

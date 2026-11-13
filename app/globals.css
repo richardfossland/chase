@@ -69,3 +69,16 @@ body {
   75% { opacity: 1; }
   100% { opacity: 0; }
 }
+
+/* Fase 6 (0010): A4 print / «lagre som PDF» for QR posts and the privacy templates. */
+@media print {
+  @page {
+    size: A4;
+    margin: 10mm;
+  }
+  html,
+  body {
+    background: #fff !important;
+    color: #14171e;
+  }
+}

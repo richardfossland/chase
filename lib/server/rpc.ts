@@ -52,6 +52,8 @@ const STATUS: Record<string, number> = {
   teams_locked: 409,
   no_team: 409,
   too_soon: 429,
+  bad_name: 400,
+  bad_pack: 400,
 };
 
 /** HTTP status for an RPC error code (bad_* and unknown → 400). */

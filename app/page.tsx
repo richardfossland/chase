@@ -44,10 +44,21 @@ export default function Home() {
         >
           {no.landing.join}
         </Link>
+        <Link
+          href="/bibliotek"
+          className="rounded-xl border border-line px-6 py-3 text-lg font-extrabold text-txt transition hover:bg-ink-3 active:scale-[0.98]"
+        >
+          {no.landing.library}
+        </Link>
         <p className="text-sm text-txt-dim">{no.landing.phaseNote}</p>
       </div>
 
-      <footer className="mt-16 text-xs text-txt-dim">Chase · en del av Sunday Suite</footer>
+      <footer className="mt-16 flex gap-4 text-xs text-txt-dim">
+        <span>Chase · en del av Sunday Suite</span>
+        <Link href="/personvern" className="underline">
+          {no.legal.title}
+        </Link>
+      </footer>
     </main>
   );
 }

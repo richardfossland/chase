@@ -7,6 +7,7 @@
 
 import { EVENTS } from "./events";
 import { TEAMS } from "./teams";
+import { normMissions } from "./library";
 
 export const GAME = {
   countdown_s: 10,
@@ -63,6 +64,8 @@ export interface Plan {
   event_every_s?: number;
   /** 0009: number of teams (2–4); present exactly when the plan has a team round. */
   teams?: number;
+  /** 0010: own mission texts (1–12) — a mission event draws one of these instead of the built-in six. */
+  missions?: string[];
 }
 
 /** The wizard's default (decided 2026-11-10): 3 × 6 min Postjakt, 60 s breather. */
@@ -169,6 +172,13 @@ export function normPlan(p: Partial<Plan> & { rounds?: unknown }): Plan | null {
     if (typeof tm !== "number" || !Number.isInteger(tm) || tm < TEAMS.teams_min || tm > TEAMS.teams_max) return null;
   }
   if (nTeam > 0) out.teams = tm ?? TEAMS.teams_default;
+  // 0010: own missions; empty list = absent.
+  const ms = p.missions;
+  if (ms !== undefined && ms !== null && !(Array.isArray(ms) && ms.length === 0)) {
+    const n = normMissions(ms);
+    if (!n) return null;
+    out.missions = n;
+  }
   return out;
 }
 

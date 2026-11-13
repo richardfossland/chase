@@ -447,3 +447,43 @@ Migrasjon 0009 og tvillingen `lib/rules/teams.ts`:
     - 8 paller med Lagpall til slutt, og 40/40 så «ditt beste».
     - Tick p95 126 ms, 0 feil, alarmer maks 1,0 s.
   - Worker-loggen viste bare `Ok`, ingen 500 og ingen vranglås.
+
+## ADR-027 — Fase 6: bibliotek, delelenker og egne oppdrag (2026-11-12)
+Eierens valg 2026-11-12:
+- **Biblioteket fylles automatisk.** Hver økt lagres som «sist brukt», og læreren gir navn til det hen vil beholde.
+- **Delelenker** deler opplegget og eventuelt området, og virker til læreren trekker dem tilbake.
+- **Startpakker** inneholder opplegg, egne oppdrag og et forslag til område.
+- Hele fasen leveres **samlet**.
+
+Migrasjon 0010 og tvillingen `lib/rules/library.ts`:
+- **Bibliotek per lærernøkkel** (bare SHA-256-hash på serveren):
+  - Områder, opplegg og oppdragspakker.
+  - `create_session` er pakket inn og lagrer området og planen som `recent`. Er de identiske med noe som finnes, oppdateres bare `last_used_at`. De 5 nyeste `recent` beholdes per type.
+  - «Behold» med navn gjør en rad til `saved`, og den ryddes aldri automatisk. Grensen er 50 lagrede per type.
+  - `library_get`, `library_save` (ny eller endre; uten data = gi navn og behold) og `library_delete` gjelder bare egne rader.
+- **Delelenker:**
+  - `shares` er en **kopi** av planen, og eventuelt området, tatt da lenken ble laget. Endringer i biblioteket etterpå påvirker ikke lenken.
+  - Koden er 8 tegn uten tvetydige tegn. «Trekk tilbake» sletter raden.
+  - `share_get` returnerer et trygt DTO uten noe om læreren og leses på serveren for `/d/[kode]` (ingen offentlig RLS).
+  - «Lag kopi» (`share_copy`) lager mottakerens lærernøkkel om den ikke finnes, og legger kopien som `saved`. Kopier fra andre telles, egne kopier ikke.
+- **Egne oppdrag:**
+  - `plan.missions` har 1–12 tekster på 2–80 tegn, trimmes og dedupliseres uten hensyn til store og små bokstaver. En tom liste betyr at feltet mangler.
+  - Et oppdrag trekker en av tekstene (`ev.mission_text`, via `_ev_start`-wrapper) i stedet for de seks innebygde.
+  - Mobilen får teksten via `_mode_tick`-wrapperen. Læreren ser den i ⚡-arket.
+- **Startpakker** (`lib/starter.ts`, testet mot `normPlan`): Skolegården (70 m), Skogen (150 m, 3 lag), Park i sentrum (100 m) og Leir (130 m, 4 lag).
+  - Hver pakke har en spilleliste, egne oppdrag og tips om forbudte soner.
+  - Området blir en sirkel rundt læreren, fordi områder alltid er lokale.
+- **Lærernøkkel:**
+  - Eksport viser nøkkelen og en QR med `CHASE-KEY:<nøkkel>`. QR-en skannes i appen og er aldri en URL, så nøkkelen havner ikke i nettleserhistorikk eller logger.
+  - Import tar skrevet tekst (store eller små bokstaver, med eller uten bindestrek) eller en skannet QR. Den sjekker at nøkkelen finnes (`known`) og ber om bekreftelse før den erstatter et bibliotek som ikke er tomt.
+- **Personvern:**
+  - Biblioteket har ingen elevdata. Lærere som ikke har vært brukt på 395 dager, slettes med biblioteket sitt (`purge_expired`-wrapper).
+  - Malene for databehandleravtale og DPIA (`lib/legal.ts`, `/personvern`) bygger på slettetabellen i PLAN §8 og har tydelige plassholdere. Behandlingsansvarlig må tilpasse og godkjenne dem.
+  - Underdatabehandlernes region og overføringsgrunnlag er merket «kontroller».
+- **QR-PDF:** A4-utskrift (`@page`) for QR-postene og malene. «Skriv ut / lagre som PDF» bruker nettleserens PDF-utskrift i stedet for et eget PDF-bibliotek.
+- **Testet lokalt:**
+  - DB-testene er grønne for alle 10 migrasjoner (kjørt to ganger), og TS-testene er grønne.
+  - I nettleseren:
+    - Startpakken «Skogen» ga radius 150 og fem oppdrag, og økta ble lagret automatisk i biblioteket.
+    - «Behold» med navn og deling med område ga en lenke. En ny lærer (ny nøkkel) åpnet `/d/<kode>`, laget en kopi og trykket «Start økt med dette». Økta ble laget uten endringer, med plan, lag, 5 oppdrag og område identiske med lenken.
+    - Lærernøkkel A ble importert med små bokstaver og mellomrom på «enhet B», og biblioteket kom fram.

@@ -135,7 +135,9 @@ function RunningEvent({ ev, serverNow, onStop }: { ev: HostEventView; serverNow:
         <p className="text-lg font-black">{e.kinds[ev.kind]}</p>
         <p className="font-mono text-2xl font-black tabular-nums">{formatClock(left)}</p>
       </div>
-      {ev.kind === "mission" && ev.mission !== null && <p className="mt-1 font-bold text-gold">{e.missions[ev.mission]}</p>}
+      {ev.kind === "mission" && (ev.mission_text || ev.mission !== null) && (
+        <p className="mt-1 font-bold text-gold">{ev.mission_text ?? e.missions[ev.mission!]}</p>
+      )}
       <p className="mt-1 text-sm text-txt-dim">{e.hostDesc[ev.kind]}</p>
       {made.length > 0 && (
         <ol className="mt-2 space-y-1 text-sm">
