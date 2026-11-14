@@ -90,6 +90,8 @@ export default function Wizard() {
   const ml = useRef<Awaited<ReturnType<typeof loadMapLibre>> | null>(null);
   const vertexMarkers = useRef<Marker[]>([]);
   const assemblyMarker = useRef<Marker | null>(null);
+  const centreMarker = useRef<Marker | null>(null);
+  const sheetEl = useRef<HTMLDivElement | null>(null);
 
   const [ready, setReady] = useState(false);
   const [step, setStep] = useState<Step>("area");
@@ -213,6 +215,7 @@ export default function Wizard() {
       cancelled = true;
       vertexMarkers.current.forEach((mk) => mk.remove());
       assemblyMarker.current?.remove();
+      centreMarker.current?.remove();
       map.current?.remove();
       map.current = null;
     };
@@ -330,15 +333,87 @@ export default function Wizard() {
         [Math.max(...lngs), Math.max(...lats)],
       ],
       {
-        // The sheet docks left on wide screens and at the bottom on phones.
-        padding: window.matchMedia("(min-width: 1024px)").matches
-          ? { top: 80, left: 500, right: 80, bottom: 60 }
-          : { top: 90, left: 40, right: 60, bottom: 360 },
+        // The sheet's footprint is already map padding (see below); this is just breathing room.
+        padding: 36,
         maxZoom: 18,
         duration: 500,
       },
     );
   }, [areaRing]);
+
+  const fitRef = useRef(fitArea);
+  useEffect(() => {
+    fitRef.current = fitArea;
+  }, [fitArea]);
+
+  // The sheet covers part of the map (bottom on phones, left on wide screens).
+  // Tell the map, so «centre» means the centre of what the teacher can see:
+  // GPS lock, fitBounds and the circle all land in the visible part.
+  useEffect(() => {
+    const m = map.current;
+    const el = sheetEl.current;
+    if (!ready || !m || !el) return;
+    const apply = () => {
+      const r = el.getBoundingClientRect();
+      const wide = window.matchMedia("(min-width: 1024px)").matches;
+      const padding = wide
+        ? { top: 0, bottom: 0, right: 0, left: Math.round(r.right) }
+        : { top: 84, left: 0, right: 0, bottom: Math.max(0, Math.round(window.innerHeight - r.top)) };
+      m.easeTo({ padding, duration: 250 });
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    window.addEventListener("resize", apply);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", apply);
+    };
+  }, [ready]);
+
+  // Circle mode: move the circle by tapping the map or dragging its handle.
+  const circleEdit = ready && step === "area" && areaMode === "circle" && !drawTarget;
+  useEffect(() => {
+    const m = map.current;
+    const lib = ml.current;
+    if (!circleEdit || !m || !lib) return;
+    const onClick = (e: { lngLat: { lng: number; lat: number } }) => setCircleCentre([e.lngLat.lng, e.lngLat.lat]);
+    m.on("click", onClick);
+    return () => {
+      m.off("click", onClick);
+    };
+  }, [circleEdit]);
+  useEffect(() => {
+    const m = map.current;
+    const lib = ml.current;
+    if (!circleEdit || !circleCentre || !m || !lib) {
+      centreMarker.current?.remove();
+      centreMarker.current = null;
+      return;
+    }
+    if (!centreMarker.current) {
+      const el = document.createElement("div");
+      el.className = "t-centre-handle";
+      el.setAttribute("aria-label", t.area.handle);
+      const mk = new lib.Marker({ element: el, draggable: true }).setLngLat([circleCentre[0], circleCentre[1]]).addTo(m);
+      mk.on("drag", () => {
+        const ll = mk.getLngLat();
+        setCircleCentre([ll.lng, ll.lat]);
+      });
+      centreMarker.current = mk;
+    } else {
+      centreMarker.current.setLngLat([circleCentre[0], circleCentre[1]]);
+    }
+  }, [circleEdit, circleCentre]);
+
+  // Keep the whole circle in view when it first appears and when its size changes
+  // (not while it is being moved: the teacher put it where they want it).
+  const hasCentre = !!circleCentre;
+  useEffect(() => {
+    if (!ready || step !== "area" || areaMode !== "circle" || !hasCentre) return;
+    const id = setTimeout(() => fitRef.current(), 60);
+    return () => clearTimeout(id);
+  }, [ready, step, areaMode, hasCentre, radius]);
 
   // ── drawing actions ──
   function startDraw(target: Exclude<DrawTarget, null>) {
@@ -485,6 +560,7 @@ export default function Wizard() {
 
       <div className="pointer-events-none absolute inset-x-0 bottom-0 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:inset-y-0 lg:right-auto lg:flex lg:w-[28rem] lg:flex-col lg:justify-end lg:pt-24">
         <div
+          ref={sheetEl}
           className={cx(
             "m-sheet-in pointer-events-auto mx-auto w-full max-w-md overflow-y-auto overscroll-contain rounded-[1.75rem] bg-ink-2 shadow-[var(--shadow-float)] transition-[max-height] duration-[var(--dur-3)] ease-[var(--ease-out)] lg:max-w-none",
             tall ? "max-h-[82dvh] lg:max-h-full" : "max-h-[50dvh] lg:max-h-full",
@@ -673,16 +749,22 @@ export default function Wizard() {
                             className="mt-1 h-12 w-full cursor-pointer accent-gold"
                           />
                         </label>
-                        <Button
-                          variant="ghost"
-                          className="-ml-3 text-sm text-txt-dim"
-                          onClick={() => {
-                            const c = map.current?.getCenter();
-                            if (c) setCircleCentre([c.lng, c.lat]);
-                          }}
-                        >
-                          ⌖ {t.area.useMapCentre}
-                        </Button>
+                        <div className="flex items-center gap-3">
+                          <p className="min-w-0 flex-1 text-sm leading-snug text-txt-dim">{t.area.moveHint}</p>
+                          {me && (
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              className="min-h-12 flex-none"
+                              onClick={() => {
+                                setCircleCentre(me);
+                                setTimeout(() => fitRef.current(), 0);
+                              }}
+                            >
+                              ◎ {t.area.centreOnMe}
+                            </Button>
+                          )}
+                        </div>
                       </>
                     )}
 

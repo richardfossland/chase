@@ -75,3 +75,20 @@
 
 /* Sjekkliste-kort som skifter tone når de krysses av. */
 .t-check { transition: background-color var(--dur-2) var(--ease-out), border-color var(--dur-2) var(--ease-out); }
+
+/* Veiviser: håndtak i midten av sirkelen (dra for å flytte området). */
+.t-centre-handle {
+  width: 44px;
+  height: 44px;
+  border-radius: 9999px;
+  cursor: grab;
+  touch-action: none;
+  background:
+    radial-gradient(circle, var(--color-gold) 0 7px, #fff 7.5px 10px, transparent 10.5px),
+    rgb(235 184 75 / 0.22);
+  border: 2px solid rgb(235 184 75 / 0.7);
+  box-shadow: 0 2px 10px rgb(20 23 30 / 0.25);
+  transition: box-shadow var(--dur-1) var(--ease-out);
+}
+/* Ingen transform her: MapLibre eier transform på markøren. */
+.t-centre-handle:active { cursor: grabbing; box-shadow: 0 0 0 8px rgb(235 184 75 / 0.3), 0 2px 10px rgb(20 23 30 / 0.25); }

@@ -77,7 +77,9 @@ export const no = {
       hardLimit: "Området må være mellom 500 m² og 5 km².",
       locating: "Finner posisjonen din …",
       noGps: "Fant ikke posisjonen din. Sirkelen settes midt i kartet – flytt kartet dit dere er.",
-      useMapCentre: "Bruk midten av kartet",
+      moveHint: "Trykk i kartet eller dra håndtaket for å flytte sirkelen.",
+      centreOnMe: "Rundt meg",
+      handle: "Midten av sirkelen. Dra for å flytte.",
       corners: (n: number) => (n === 1 ? "1 hjørne" : `${n} hjørner`),
     },
     forbidden: {
