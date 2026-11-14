@@ -583,4 +583,4 @@ Eierens valg 2026-11-14: lys lærerside og mørk elevside, leken bevegelse hos e
   - «Start seremoni» er hovedknapp når `playlist_done`.
   - Veiviseren: spillelista er delt i «Runder» og sammenleggbart «Tillegg» (oppdrag, spørsmål).
   - Elev: kompasspil med avstand til nærmeste post, «Ring lærer» som ikonknapp, gråtonekart (`topograatone`).
-- **Testet:** `npm run check` grønn (154 tester). Lokal sim med 20 boter (Postjakt 60 s + Smittejakt 60 s): alle krav oppfylt, alarmer hos læreren innen fristen. Skjermbilder av alle skjermer i 390x844 og 1280x800. Ikke testet: ekte iPhone, lagrunder og hendelser visuelt, A4-utskrift av QR-poster.
+- **Testet:** `npm run check` grønn (154 tester). Lokal sim med 20 boter (Postjakt 60 s + Smittejakt 60 s): alle krav oppfylt, alarmer hos læreren innen fristen. Skjermbilder av alle skjermer i 390x844 og 1280x800. Lagrunde, Flaggjakt, hendelser, lagark og `prefers-reduced-motion` er kontrollert med skjermbilder i en lokal sim (16 boter, 2 lag, hendelser hvert 60. s, 0 feil), og QR-arket er skrevet ut til A4-PDF. Ikke testet: ekte iPhone.

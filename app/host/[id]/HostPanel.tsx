@@ -1046,7 +1046,7 @@ function RoundBar({
     >
       <div className="min-w-0 flex-1 py-1">
         <p className="truncate text-sm font-extrabold leading-tight">{roundName(r)}</p>
-        <p className={cx("truncate text-xs font-semibold", paused ? "text-warn-text" : "text-txt-dim")}>{sub}</p>
+        <p className={cx("line-clamp-2 text-xs font-semibold leading-tight", paused ? "text-warn-text" : "text-txt-dim")}>{sub}</p>
       </div>
       <span className="font-mono text-[1.4rem] font-black tabular-nums">{r.frozen ? "⏸" : formatClock(left)}</span>
       {live && (
