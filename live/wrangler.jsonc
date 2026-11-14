@@ -1,0 +1,33 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  // Session rooms for Chase (Durable Objects stage 1, ADR-031). One SessionRoom
+  // per game session collects fixes over WebSocket and flushes them to Postgres
+  // with chase.tick_batch about once a second.
+  //
+  // No routes and no workers.dev URL: reachable only through the service binding
+  // from the Next worker ("chase"), which forwards /live/s/<id>/ws.
+  // Deploy:   npx wrangler deploy -c live/wrangler.jsonc
+  // Secret:   npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY -c live/wrangler.jsonc
+  // Rollback: npx wrangler rollback -c live/wrangler.jsonc
+  // Never deploy during school hours: a deploy restarts every room and drops sockets.
+  "name": "chase-live",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "durable_objects": {
+    "bindings": [{ "name": "ROOM", "class_name": "SessionRoom" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SessionRoom"] }],
+  "vars": {
+    "SUPABASE_URL": "https://fwbfhwxgkjelcutwajza.supabase.co",
+    // "0" = kill switch: rooms refuse sockets and close open ones (4003); phones fall back to HTTP.
+    "LIVE_ENABLED": "1",
+    // Rooms live in the EU jurisdiction (GDPR). Local workerd cannot: .dev.vars sets "".
+    "ROOM_JURISDICTION": "eu",
+    // Browser Origins allowed to open a socket. Non-browser clients (the sim) send none.
+    "ALLOWED_ORIGINS": "https://chase.sundaysuite.app"
+  },
+  "observability": { "enabled": true }
+}
