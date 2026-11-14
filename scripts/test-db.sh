@@ -29,7 +29,11 @@ docker run -d --name "$CONTAINER" -e POSTGRES_PASSWORD="$PW" -p "$PORT:5432" "$I
 # only, so TCP succeeds just once the real server is up.
 # chase.upkeep_every_ms=0 (0011): tests tick many times inside one transaction
 # (constant now()), so the 1 s upkeep throttle is off; 0011's own test turns it on.
-PSQL() { docker exec -i -e PGPASSWORD="$PW" -e PGOPTIONS='-c chase.upkeep_every_ms=0' "$CONTAINER" psql -h 127.0.0.1 -q -v ON_ERROR_STOP=1 -U postgres -d postgres "$@"; }
+# chase.test_dblink_host (0014): the container's own IP. Loopback is "trust" in the
+# image and dblink refuses password-less connections for non-superusers; the IP
+# goes through scram, so a test can hold a row lock from a second connection.
+DBLINK_HOST=""
+PSQL() { docker exec -i -e PGPASSWORD="$PW" -e PGOPTIONS="-c chase.upkeep_every_ms=0 -c chase.test_dblink_host=${DBLINK_HOST}" "$CONTAINER" psql -h 127.0.0.1 -q -v ON_ERROR_STOP=1 -U postgres -d postgres "$@"; }
 # Migrations: hide "already exists, skipping" notices; tests keep their NOTICEs.
 PSQL_QUIET() { docker exec -i -e PGPASSWORD="$PW" -e PGOPTIONS='-c client_min_messages=warning' "$CONTAINER" psql -h 127.0.0.1 -q -v ON_ERROR_STOP=1 -U postgres -d postgres "$@"; }
 
@@ -40,6 +44,8 @@ for i in $(seq 1 240); do
   sleep 0.5
   if [ "$i" -eq 240 ]; then echo "Postgres did not come up"; docker logs "$CONTAINER" | tail -20; exit 1; fi
 done
+
+DBLINK_HOST="$(docker exec "$CONTAINER" hostname -i 2>/dev/null | awk '{print $1}' || true)"
 
 shopt -s nullglob
 migrations=("$MIG"/*.sql)
