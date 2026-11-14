@@ -39,7 +39,7 @@ export default function QrClaim({ sessionId, code }: { sessionId: string; code: 
 
   const ok = state.kind === "ok" && !state.r.already;
   return (
-    <main className={`flex min-h-dvh flex-col items-center justify-center gap-3 px-6 text-center ${ok ? "bg-ok text-ink" : "bg-ink text-txt"}`}>
+    <main className={`flex min-h-dvh flex-col items-center justify-center gap-3 px-6 text-center ${ok ? "bg-ok text-on-accent" : "bg-ink text-txt"}`}>
       <p className="text-sm font-bold uppercase opacity-70">{q.title}</p>
       {state.kind === "working" && <p className="text-3xl font-black">…</p>}
       {state.kind === "noPlayer" && <p className="text-xl font-bold">{q.noPlayer}</p>}
@@ -53,7 +53,7 @@ export default function QrClaim({ sessionId, code }: { sessionId: string; code: 
       )}
       <Link
         href={state.kind === "noPlayer" ? "/j" : `/play/${sessionId}`}
-        className="mt-6 rounded-2xl bg-gold px-8 py-4 text-xl font-black text-ink"
+        className="mt-6 rounded-2xl bg-gold px-8 py-4 text-xl font-black text-on-accent"
       >
         {state.kind === "noPlayer" ? t.toJoin : q.toGame}
       </Link>

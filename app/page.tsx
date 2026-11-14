@@ -34,7 +34,7 @@ export default function Home() {
       <div className="mt-10 flex flex-wrap items-center gap-4">
         <Link
           href="/ny"
-          className="rounded-xl bg-gold px-6 py-3 text-lg font-extrabold text-ink transition hover:bg-gold-light active:scale-[0.98]"
+          className="rounded-xl bg-gold px-6 py-3 text-lg font-extrabold text-on-accent transition hover:bg-gold-light active:scale-[0.98]"
         >
           {no.landing.startSession}
         </Link>

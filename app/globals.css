@@ -1,4 +1,7 @@
 @import "tailwindcss";
+@import "./styles/player.css";
+@import "./styles/host.css";
+@import "./styles/teacher.css";
 
 /* Chase — design foundation.
    Sunday Suite brand (gold #EBB84B · ink · paper; Hanken Grotesk) tuned for an
@@ -12,13 +15,36 @@
   --color-gold-light: #f2d58a;
   --color-gold-deep: #d4a23a;
 
-  --color-ink: #0e1117;
-  --color-ink-2: #161a22;
-  --color-ink-3: #1f2430;
-  --color-line: rgb(255 255 255 / 0.1);
+  /* Surfaces + text are THEMED (see «Themes» below): light by default, dark
+     wherever the page contains .theme-dark (the pupil screens). */
+  --color-ink: #f7f4ed;      /* page ground */
+  --color-ink-2: #ffffff;    /* raised surface: cards, sheets */
+  --color-ink-3: #ece7db;    /* inset / hover / track */
+  --color-line: rgb(20 23 30 / 0.12);
 
-  --color-txt: #f3efe6;
-  --color-txt-dim: #a3a9b6;
+  --color-txt: #14171e;
+  --color-txt-dim: #5c6370;
+
+  /* Text on a gold / role-colour fill. Never themed. */
+  --color-on-accent: #0e1117;
+  /* Readable accent TEXT on the current ground (fills keep the plain colour). */
+  --color-gold-text: #8a6410;
+  --color-ok-text: #17804a;
+  --color-warn-text: #9a6200;
+  --color-danger-text: #c9241b;
+  --color-prey-text: #1c6fd1;
+  --color-hunter-text: #d63a2f;
+
+  --shadow-card: 0 1px 2px rgb(20 23 30 / 0.05), 0 8px 24px -12px rgb(20 23 30 / 0.18);
+  --shadow-float: 0 2px 6px rgb(20 23 30 / 0.08), 0 18px 40px -16px rgb(20 23 30 / 0.3);
+
+  --radius-card: 1.25rem;
+  --radius-ctl: 0.9rem;
+
+  /* Motion. Teacher = quick + quiet (out); pupil = springy (spring). */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
 
   --color-hunter: #ff5a4e;
   --color-prey: #3d9bff;
@@ -30,8 +56,33 @@
     "Segoe UI", sans-serif;
 }
 
+/* ── Themes ─────────────────────────────────────────────────────────────
+   Light «paper» is the default (landing, wizard, library, teacher panel).
+   Any page that renders an element with .theme-dark (pupil screens, big
+   screen) flips the whole document dark — no JS, no flash. */
 :root {
+  color-scheme: light;
+  --dur-1: 120ms;
+  --dur-2: 220ms;
+  --dur-3: 380ms;
+  --dur-4: 600ms;
+}
+html:has(.theme-dark) {
   color-scheme: dark;
+  --color-ink: #0e1117;
+  --color-ink-2: #161a22;
+  --color-ink-3: #1f2430;
+  --color-line: rgb(255 255 255 / 0.1);
+  --color-txt: #f3efe6;
+  --color-txt-dim: #a3a9b6;
+  --color-gold-text: #ebb84b;
+  --color-ok-text: #4fd18b;
+  --color-warn-text: #ffb020;
+  --color-danger-text: #ff6b62;
+  --color-prey-text: #6db3ff;
+  --color-hunter-text: #ff7a70;
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 10px 30px -14px rgb(0 0 0 / 0.7);
+  --shadow-float: 0 2px 8px rgb(0 0 0 / 0.35), 0 20px 50px -18px rgb(0 0 0 / 0.8);
 }
 
 html {
@@ -68,6 +119,64 @@ body {
   25% { transform: scale(1); }
   75% { opacity: 1; }
   100% { opacity: 0; }
+}
+
+/* ── Motion library ─────────────────────────────────────────────────────
+   Use via the .m-* classes (or lib/client/ui). Area-specific keyframes live in
+   app/styles/{player,host,teacher}.css. Safety UI (SOS, alarms) must never be
+   delayed by an animation: no animation-delay and no opacity:0 start on those. */
+@keyframes m-fade-in { from { opacity: 0; } }
+@keyframes m-fade-out { to { opacity: 0; } }
+@keyframes m-rise-in { from { opacity: 0; transform: translateY(12px); } }
+@keyframes m-drop-in { from { opacity: 0; transform: translateY(-14px); } }
+@keyframes m-drop-out { to { opacity: 0; transform: translateY(-14px); } }
+@keyframes m-sheet-in { from { transform: translateY(100%); } }
+@keyframes m-sheet-out { to { transform: translateY(100%); } }
+@keyframes m-scale-in { from { opacity: 0; transform: scale(0.94); } }
+@keyframes m-scale-out { to { opacity: 0; transform: scale(0.96); } }
+@keyframes m-pop { 0% { opacity: 0; transform: scale(0.6); } 60% { opacity: 1; transform: scale(1.12); } 100% { transform: scale(1); } }
+@keyframes m-bump { 0% { transform: scale(1); } 35% { transform: scale(1.28); } 100% { transform: scale(1); } }
+@keyframes m-shake { 0%, 100% { transform: translateX(0); } 20% { transform: translateX(-6px); } 40% { transform: translateX(6px); } 60% { transform: translateX(-4px); } 80% { transform: translateX(4px); } }
+@keyframes m-ripple { from { transform: scale(0.2); opacity: 0.7; } to { transform: scale(2.6); opacity: 0; } }
+@keyframes m-confetti { from { transform: translate3d(0, -10vh, 0) rotate(0); } to { transform: translate3d(var(--dx, 0), 110vh, 0) rotate(var(--rot, 540deg)); } }
+
+.m-fade-in { animation: m-fade-in var(--dur-2) var(--ease-out) both; }
+.m-fade-out { animation: m-fade-out var(--dur-2) var(--ease-out) both; }
+.m-rise-in { animation: m-rise-in var(--dur-3) var(--ease-out) both; }
+.m-drop-in { animation: m-drop-in var(--dur-3) var(--ease-spring) both; }
+.m-drop-out { animation: m-drop-out var(--dur-2) var(--ease-in-out) both; }
+.m-sheet-in { animation: m-sheet-in var(--dur-3) var(--ease-out) both; }
+.m-sheet-out { animation: m-sheet-out var(--dur-2) var(--ease-in-out) both; }
+.m-scale-in { animation: m-scale-in var(--dur-2) var(--ease-out) both; }
+.m-scale-out { animation: m-scale-out var(--dur-1) var(--ease-in-out) both; }
+.m-pop { animation: m-pop var(--dur-3) var(--ease-spring) both; }
+.m-bump { animation: m-bump var(--dur-3) var(--ease-spring); }
+.m-shake { animation: m-shake var(--dur-3) var(--ease-in-out); }
+/* Stagger children: set style={{ "--i": n }} on each. */
+.m-stagger > * { animation: m-rise-in var(--dur-3) var(--ease-out) both; animation-delay: calc(var(--i, 0) * 45ms); }
+
+/* Full-bleed role colour changes (pupil phase shifts) cross-fade instead of snapping. */
+.m-tone { transition: background-color var(--dur-4) var(--ease-in-out), color var(--dur-3) var(--ease-in-out); }
+
+/* Page-to-page: a quick cross-fade where the browser supports it. */
+@view-transition { navigation: auto; }
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: 200ms; }
+
+/* Press feedback for every control built on lib/client/ui. */
+.ui-press { transition: transform var(--dur-1) var(--ease-out), background-color var(--dur-1), box-shadow var(--dur-2), border-color var(--dur-1), opacity var(--dur-1); }
+.ui-press:active:not(:disabled) { transform: scale(0.97); }
+
+:focus-visible { outline: 2px solid var(--color-gold-deep); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  @view-transition { navigation: none; }
 }
 
 /* Fase 6 (0010): A4 print / «lagre som PDF» for QR posts and the privacy templates. */

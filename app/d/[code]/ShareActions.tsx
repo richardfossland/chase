@@ -18,7 +18,7 @@ export default function ShareActions({ code }: { code: string }) {
     <div className="mt-6 space-y-3">
       {!done ? (
         <button
-          className="w-full rounded-xl bg-gold px-5 py-4 text-lg font-extrabold text-ink transition hover:bg-gold-light disabled:opacity-50"
+          className="w-full rounded-xl bg-gold px-5 py-4 text-lg font-extrabold text-on-accent transition hover:bg-gold-light disabled:opacity-50"
           disabled={busy}
           onClick={async () => {
             setBusy(true);
@@ -39,10 +39,10 @@ export default function ShareActions({ code }: { code: string }) {
         </button>
       ) : (
         <>
-          <p className="rounded-xl bg-ok px-4 py-3 font-bold text-ink">{s.copied}</p>
+          <p className="rounded-xl bg-ok px-4 py-3 font-bold text-on-accent">{s.copied}</p>
           <Link
             href={`/ny?plan=${done.planId}${done.areaId ? `&area=${done.areaId}` : ""}`}
-            className="block w-full rounded-xl bg-gold px-5 py-4 text-center text-lg font-extrabold text-ink"
+            className="block w-full rounded-xl bg-gold px-5 py-4 text-center text-lg font-extrabold text-on-accent"
             data-testid="share-start"
           >
             {s.start}

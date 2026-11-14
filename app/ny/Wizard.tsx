@@ -418,10 +418,10 @@ export default function Wizard() {
   // ── UI ──
   const sheet = "pointer-events-auto mx-auto max-h-[55dvh] max-w-md overflow-y-auto rounded-2xl border border-line bg-ink-2/95 p-4 shadow-2xl backdrop-blur";
   const primary =
-    "rounded-xl bg-gold px-5 py-3 text-lg font-extrabold text-ink transition hover:bg-gold-light active:scale-[0.98] disabled:opacity-40";
+    "rounded-xl bg-gold px-5 py-3 text-lg font-extrabold text-on-accent transition hover:bg-gold-light active:scale-[0.98] disabled:opacity-40";
   const secondary = "rounded-xl border border-line px-4 py-3 font-bold text-txt transition hover:bg-ink-3 disabled:opacity-40";
   const chip = (on: boolean) =>
-    `flex-1 rounded-xl px-3 py-2.5 text-sm font-extrabold transition disabled:opacity-40 ${on ? "bg-gold text-ink" : "border border-line text-txt hover:bg-ink-3"}`;
+    `flex-1 rounded-xl px-3 py-2.5 text-sm font-extrabold transition disabled:opacity-40 ${on ? "bg-gold text-on-accent" : "border border-line text-txt hover:bg-ink-3"}`;
 
   return (
     <div className="relative h-dvh w-full">
@@ -877,7 +877,7 @@ function DrawControls(props: {
           </button>
         )}
         <button
-          className="ml-auto rounded-xl bg-gold px-4 py-2.5 text-sm font-extrabold text-ink disabled:opacity-40"
+          className="ml-auto rounded-xl bg-gold px-4 py-2.5 text-sm font-extrabold text-on-accent disabled:opacity-40"
           disabled={props.count < 3}
           onClick={props.onFinish}
         >

@@ -52,7 +52,7 @@ export function HostCeremony({ view, act, onEnd }: { view: CeremonyView; act: Ho
                   <button
                     key={String(yes)}
                     className={`flex-1 rounded-xl py-3 text-lg font-black ${
-                      view.again?.teacher === yes ? "bg-gold text-ink" : "bg-ink-3"
+                      view.again?.teacher === yes ? "bg-gold text-on-accent" : "bg-ink-3"
                     }`}
                     onClick={() => void act("vote_again", { yes })}
                   >
@@ -84,12 +84,12 @@ export function HostCeremony({ view, act, onEnd }: { view: CeremonyView; act: Ho
           {c.back}
         </button>
         {cards ? (
-          <button className="col-span-3 rounded-2xl bg-gold py-4 text-lg font-black text-ink" onClick={onEnd} data-testid="ceremony-end">
+          <button className="col-span-3 rounded-2xl bg-gold py-4 text-lg font-black text-on-accent" onClick={onEnd} data-testid="ceremony-end">
             ■ {c.end}
           </button>
         ) : (
           <button
-            className="col-span-3 rounded-2xl bg-gold py-4 text-lg font-black text-ink disabled:opacity-60"
+            className="col-span-3 rounded-2xl bg-gold py-4 text-lg font-black text-on-accent disabled:opacity-60"
             disabled={drumming}
             onClick={next}
             data-testid="ceremony-next"

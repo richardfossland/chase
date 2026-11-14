@@ -67,12 +67,12 @@ export function TeamsSheet({ snap, hs, onSelect }: { snap: Snapshot; hs: HostSes
       <h2 className="text-xl font-black">{th.title}</h2>
       {!teams.length && <p className="text-sm text-txt-dim">{th.notDealt}</p>}
       {canDeal && (
-        <button className="w-full rounded-xl bg-gold py-3 font-black text-ink disabled:opacity-50" disabled={busy} onClick={() => void deal()} data-testid="teams-deal">
+        <button className="w-full rounded-xl bg-gold py-3 font-black text-on-accent disabled:opacity-50" disabled={busy} onClick={() => void deal()} data-testid="teams-deal">
           {teams.length ? th.redeal : th.deal}
         </button>
       )}
       <p className="text-xs text-txt-dim">{th.dealHint}</p>
-      {err && <p className="rounded-xl bg-warn px-3 py-2 text-sm font-bold text-ink">{err}</p>}
+      {err && <p className="rounded-xl bg-warn px-3 py-2 text-sm font-bold text-on-accent">{err}</p>}
       {teams.map((t) => (
         <div key={t.n} className="rounded-xl border-2 p-2" style={{ borderColor: t.color }}>
           <p className="flex items-center gap-2 font-black">

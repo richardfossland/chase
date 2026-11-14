@@ -899,7 +899,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
         <div
           key={flash.id}
           className={`pointer-events-none absolute inset-0 z-40 flex flex-col items-center justify-center text-center ${
-            flash.tone === "gold" ? "bg-gold/85 text-ink" : flash.tone === "ok" ? "bg-ok/80 text-ink" : "bg-black/60 text-white"
+            flash.tone === "gold" ? "bg-gold/85 text-on-accent" : flash.tone === "ok" ? "bg-ok/80 text-on-accent" : "bg-black/60 text-white"
           } animate-[flash_1.6s_ease-out_forwards]`}
           role="status"
           data-testid="flash"
@@ -941,7 +941,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
       )}
       {showCode && isPrey && tag?.code && (
         <button
-          className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-white p-6 text-center text-ink"
+          className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-white p-6 text-center text-on-accent"
           onClick={() => setShowCode(false)}
           data-testid="code-sheet"
         >
@@ -955,7 +955,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
 
       {(sosOpen || sosAcked) && (
         <div
-          className={`absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 p-6 text-center ${sosAcked ? "bg-ok text-ink" : "bg-danger"}`}
+          className={`absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 p-6 text-center ${sosAcked ? "bg-ok text-on-accent" : "bg-danger"}`}
           role="alertdialog"
           data-testid="sos-overlay"
         >
@@ -963,12 +963,12 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
           <p className="text-4xl font-black">{sosAcked ? t.sosAcked : t.sosSent}</p>
           {!sosAcked && <p className="text-xl font-bold">{t.sosWaiting}</p>}
           {boot.teacherPhone && (
-            <a href={`tel:${boot.teacherPhone}`} className="mt-4 rounded-2xl bg-white px-8 py-5 text-2xl font-black text-ink">
+            <a href={`tel:${boot.teacherPhone}`} className="mt-4 rounded-2xl bg-white px-8 py-5 text-2xl font-black text-on-accent">
               {t.callTeacher}
             </a>
           )}
           {sosAcked && view?.sos && (
-            <button className="mt-2 rounded-2xl border-2 border-ink px-8 py-3 text-xl font-black" onClick={() => setSosDismissed(view.sos!.id)}>
+            <button className="mt-2 rounded-2xl border-2 border-on-accent px-8 py-3 text-xl font-black" onClick={() => setSosDismissed(view.sos!.id)}>
               OK
             </button>
           )}
@@ -985,9 +985,9 @@ const TONE_BG: Record<Tone, string> = {
   hunter: "bg-hunter text-white",
   pause: "bg-ink-3 text-txt",
   edge: "bg-prey text-white ring-[10px] ring-inset ring-warn",
-  warn: "bg-warn text-ink",
+  warn: "bg-warn text-on-accent",
   danger: "bg-danger text-white animate-pulse",
-  ok: "bg-ok text-ink",
+  ok: "bg-ok text-on-accent",
 };
 
 function GpsChip({ fix, lost }: { fix: Fix | null; lost: boolean }) {
@@ -1167,7 +1167,7 @@ function ReadyScreen({ name, onReady, error }: { name: string; onReady: () => vo
       </div>
       {error === "unsupported" && <p className="mt-4 font-semibold text-danger">{no.map.noGps}</p>}
       <button
-        className="mt-6 w-full rounded-2xl bg-gold px-6 py-5 text-2xl font-black text-ink active:scale-[0.98]"
+        className="mt-6 w-full rounded-2xl bg-gold px-6 py-5 text-2xl font-black text-on-accent active:scale-[0.98]"
         onClick={onReady}
         data-testid="ready"
       >
@@ -1193,7 +1193,7 @@ function DeniedHelp({ onRetry }: { onRetry: () => void }) {
           <li key={s}>{s}</li>
         ))}
       </ol>
-      <button className="mt-6 w-full rounded-2xl bg-gold px-6 py-4 text-xl font-black text-ink" onClick={onRetry}>
+      <button className="mt-6 w-full rounded-2xl bg-gold px-6 py-4 text-xl font-black text-on-accent" onClick={onRetry}>
         {t.denied.retry}
       </button>
     </main>
@@ -1206,7 +1206,7 @@ function Fullscreen({ tone, title, body, link }: { tone: Tone; title: string; bo
       <h1 className="text-3xl font-black">{title}</h1>
       {body && <p className="text-lg text-txt-dim">{body}</p>}
       {link && (
-        <Link href="/j" className="mt-4 rounded-xl bg-gold px-6 py-3 font-extrabold text-ink">
+        <Link href="/j" className="mt-4 rounded-xl bg-gold px-6 py-3 font-extrabold text-on-accent">
           {t.toJoin}
         </Link>
       )}

@@ -128,7 +128,7 @@ export function QrScanner({
           className="min-w-0 flex-1 rounded-xl border border-line bg-ink-2 px-3 py-3 text-center text-2xl font-black tracking-[0.3em] outline-none focus:border-gold"
           aria-label={codeLabel}
         />
-        <button className="rounded-xl bg-gold px-5 py-3 text-lg font-extrabold text-ink disabled:opacity-40" disabled={busy || !typed.trim()}>
+        <button className="rounded-xl bg-gold px-5 py-3 text-lg font-extrabold text-on-accent disabled:opacity-40" disabled={busy || !typed.trim()}>
           {t.send}
         </button>
       </form>

@@ -85,7 +85,7 @@ export default function JoinForm({ initialPin }: { initialPin?: string }) {
 
   const input = "mt-1 w-full rounded-xl border border-line bg-ink px-4 py-3 text-xl font-bold outline-none focus:border-gold";
   const primary =
-    "mt-5 w-full rounded-2xl bg-gold px-6 py-4 text-xl font-black text-ink transition active:scale-[0.98] disabled:opacity-40";
+    "mt-5 w-full rounded-2xl bg-gold px-6 py-4 text-xl font-black text-on-accent transition active:scale-[0.98] disabled:opacity-40";
 
   if (newCode) {
     return (

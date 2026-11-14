@@ -26,7 +26,7 @@ export function PodiumCard({ podium, big = false }: { podium: CeremonyView["reve
         {podium.entries.map((e) => (
           <li
             key={e.place}
-            className={`flex items-center gap-3 rounded-2xl px-4 py-3 ${e.me ? "bg-gold text-ink" : "bg-ink-3"} ${
+            className={`flex items-center gap-3 rounded-2xl px-4 py-3 ${e.me ? "bg-gold text-on-accent" : "bg-ink-3"} ${
               big && e.place === 1 ? "text-3xl" : "text-xl"
             } font-black`}
           >
@@ -65,7 +65,7 @@ export function CeremonyScreen({ view, voted, onVote }: { view: CeremonyView; vo
       )}
       {cards && (
         <div className="my-auto w-full space-y-4" data-testid="best-card">
-          <div className="rounded-3xl bg-gold p-6 text-ink shadow-2xl">
+          <div className="rounded-3xl bg-gold p-6 text-on-accent shadow-2xl">
             <p className="text-sm font-black uppercase tracking-widest">{c.bestTitle}</p>
             <p className="mt-2 text-3xl font-black leading-tight">{bestText(view.best)}</p>
             {view.on_podium && <p className="mt-3 text-xl font-black">{c.onPodium}</p>}
@@ -77,7 +77,7 @@ export function CeremonyScreen({ view, voted, onVote }: { view: CeremonyView; vo
               <>
                 <p className="text-xl font-black">{c.again}</p>
                 <div className="mt-3 flex gap-3">
-                  <button className="flex-1 rounded-2xl bg-ok py-4 text-2xl font-black text-ink" onClick={() => onVote(true)} data-testid="again-yes">
+                  <button className="flex-1 rounded-2xl bg-ok py-4 text-2xl font-black text-on-accent" onClick={() => onVote(true)} data-testid="again-yes">
                     {c.yes}
                   </button>
                   <button className="flex-1 rounded-2xl bg-ink-3 py-4 text-2xl font-black" onClick={() => onVote(false)} data-testid="again-no">

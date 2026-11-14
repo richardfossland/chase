@@ -231,7 +231,7 @@ export default function SimPanel() {
             <input className={`${input} w-24`} type="number" value={seed} onChange={(e) => setSeed(Number(e.target.value))} />
           </label>
           <div className="flex gap-2">
-            <button className="rounded-lg bg-gold px-4 py-2 font-black text-ink disabled:opacity-40" onClick={start} disabled={running || !/^\d{6}$/.test(pin)}>
+            <button className="rounded-lg bg-gold px-4 py-2 font-black text-on-accent disabled:opacity-40" onClick={start} disabled={running || !/^\d{6}$/.test(pin)}>
               ▶ Start sverm
             </button>
             <button className={btn} onClick={stop} disabled={!running}>

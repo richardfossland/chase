@@ -38,22 +38,22 @@ export function ConfirmDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4"
+      className="m-fade-in fixed inset-0 z-50 grid place-items-center bg-black/45 p-4"
       role="dialog"
       aria-modal="true"
       onClick={onCancel}
     >
-      <div className="w-full max-w-sm rounded-2xl border border-line bg-ink-2 p-5 text-center" onClick={(e) => e.stopPropagation()}>
+      <div className="m-scale-in w-full max-w-sm rounded-[var(--radius-card)] bg-ink-2 p-6 text-center shadow-[var(--shadow-float)]" onClick={(e) => e.stopPropagation()}>
         <p className="text-lg font-bold">{message}</p>
         <div className="mt-5 flex justify-center gap-3">
           <button
-            className={`min-h-12 rounded-xl px-5 font-extrabold ${danger ? "bg-danger text-white" : "bg-gold text-ink"}`}
+            className={`ui-press min-h-12 rounded-[var(--radius-ctl)] px-5 font-extrabold ${danger ? "bg-danger text-white" : "bg-gold text-on-accent"}`}
             autoFocus
             onClick={onConfirm}
           >
             {confirmLabel}
           </button>
-          <button className="min-h-12 rounded-xl border border-line px-5 font-bold text-txt" onClick={onCancel}>
+          <button className="ui-press min-h-12 rounded-[var(--radius-ctl)] border border-line px-5 font-bold text-txt hover:bg-ink-3" onClick={onCancel}>
             {cancelLabel}
           </button>
         </div>

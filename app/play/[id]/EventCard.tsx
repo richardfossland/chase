@@ -81,7 +81,7 @@ export function EventStrip({
       </div>
       {ev.kind === "mission" && !over && !me && !pendingLocal && (
         <div className="mt-2 flex gap-2">
-          <button className="flex-1 rounded-xl bg-ok py-3 text-lg font-black text-ink" onClick={onDone} data-testid="mission-done">
+          <button className="flex-1 rounded-xl bg-ok py-3 text-lg font-black text-on-accent" onClick={onDone} data-testid="mission-done">
             {e.done}
           </button>
           {qr && (
@@ -138,7 +138,7 @@ export function PowerBar({
         );
       })}
       {running.map((r) => (
-        <span key={r} className="rounded-full bg-gold px-3 py-1.5 text-sm font-black text-ink">
+        <span key={r} className="rounded-full bg-gold px-3 py-1.5 text-sm font-black text-on-accent">
           {r}
         </span>
       ))}

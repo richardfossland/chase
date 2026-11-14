@@ -21,7 +21,7 @@ import { LIBRARY, normMissions, parseTeacherKey, teacherKeyQr } from "@/lib/rule
 
 const t = no.library;
 const btn = "rounded-xl border border-line px-3 py-2 text-sm font-bold transition hover:bg-ink-3 disabled:opacity-40";
-const gold = "rounded-xl bg-gold px-4 py-2.5 font-extrabold text-ink transition hover:bg-gold-light disabled:opacity-40";
+const gold = "rounded-xl bg-gold px-4 py-2.5 font-extrabold text-on-accent transition hover:bg-gold-light disabled:opacity-40";
 const input = "w-full rounded-xl border border-line bg-ink px-3 py-2.5 font-bold outline-none focus:border-gold";
 
 type Confirm = { message: string; danger?: boolean; run: () => void } | null;
@@ -88,7 +88,7 @@ export default function LibraryView() {
       </div>
       <h1 className="mt-6 text-4xl font-black">{t.title}</h1>
       <p className="mt-2 text-txt-dim">{t.lead}</p>
-      {err && <p className="mt-4 rounded-xl bg-warn px-3 py-2 font-bold text-ink">{err}</p>}
+      {err && <p className="mt-4 rounded-xl bg-warn px-3 py-2 font-bold text-on-accent">{err}</p>}
 
       {key && <KeyPanel teacherKey={key} libraryCount={total} onSwitch={(k) => { setKey(k); void load(k); }} />}
 
@@ -208,7 +208,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function KindTag({ kind }: { kind: "recent" | "saved" }) {
   return (
-    <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${kind === "saved" ? "bg-gold text-ink" : "bg-ink-3 text-txt-dim"}`}>
+    <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${kind === "saved" ? "bg-gold text-on-accent" : "bg-ink-3 text-txt-dim"}`}>
       {kind === "saved" ? t.saved : t.recent}
     </span>
   );
@@ -385,7 +385,7 @@ function CopyLink({ code }: { code: string }) {
 function ShareSheet({ plan, areas, onClose, onShare }: { plan: LibPlan; areas: LibArea[]; onClose: () => void; onShare: (areaId: string | null) => void }) {
   const [area, setArea] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const chip = (on: boolean) => `w-full rounded-xl px-3 py-2.5 text-left font-bold ${on ? "bg-gold text-ink" : "border border-line hover:bg-ink-3"}`;
+  const chip = (on: boolean) => `w-full rounded-xl px-3 py-2.5 text-left font-bold ${on ? "bg-gold text-on-accent" : "border border-line hover:bg-ink-3"}`;
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-3 sm:items-center" onClick={onClose}>
       <div className="max-h-[85dvh] w-full max-w-md overflow-y-auto rounded-2xl border border-line bg-ink-2 p-4" onClick={(e) => e.stopPropagation()}>

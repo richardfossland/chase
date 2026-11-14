@@ -72,7 +72,7 @@ export default function HostPanel({ sessionId }: { sessionId: string }) {
         <p className="text-5xl">✔</p>
         <h1 className="mt-3 text-3xl font-black">{h.end.ended}</h1>
         <p className="mt-2 text-txt-dim">{h.end.endedBody}</p>
-        <Link href="/ny" className="mt-6 rounded-xl bg-gold px-6 py-3 font-extrabold text-ink">
+        <Link href="/ny" className="mt-6 rounded-xl bg-gold px-6 py-3 font-extrabold text-on-accent">
           {h.end.newSession}
         </Link>
       </Center>
@@ -173,7 +173,7 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
         {/* top: status + alarm strip */}
         <div className="pointer-events-none absolute inset-x-0 top-0 z-10 space-y-2 p-2 pt-[max(0.5rem,env(safe-area-inset-top))] lg:max-w-xl">
           <div className="pointer-events-auto flex items-center justify-between gap-2">
-            <span className={`rounded-full px-3 py-1.5 text-sm font-black ${paused ? "bg-warn text-ink" : gathering ? "bg-ok text-ink" : "bg-ink-2/95 text-txt"}`}>
+            <span className={`rounded-full px-3 py-1.5 text-sm font-black ${paused ? "bg-warn text-on-accent" : gathering ? "bg-ok text-on-accent" : "bg-ink-2/95 text-txt"}`}>
               {h.status[snap.status] ?? snap.status} · PIN {snap.pin}
             </span>
             {!sound && (
@@ -188,7 +188,7 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
           {!ceremony && <EventChip snap={snap} onOpen={() => setSheet({ kind: "events" })} />}
           <TeamsChip snap={snap} onOpen={() => setSheet({ kind: "teams" })} />
           {hs.error === "network" || hs.error === "timeout" ? (
-            <p className="pointer-events-auto rounded-xl bg-warn px-3 py-2 text-sm font-bold text-ink">{h.errors.network}</p>
+            <p className="pointer-events-auto rounded-xl bg-warn px-3 py-2 text-sm font-bold text-on-accent">{h.errors.network}</p>
           ) : null}
         </div>
 
@@ -413,7 +413,7 @@ function AlarmStrip({ alarms, onAck, onFocus }: { alarms: HostAlarm[]; onAck: (i
               </span>
             </button>
             {urgent ? (
-              <button className="rounded-lg bg-white px-3 py-2 text-sm font-black text-ink" onClick={() => onAck(ids)}>
+              <button className="rounded-lg bg-white px-3 py-2 text-sm font-black text-on-accent" onClick={() => onAck(ids)}>
                 {h.ack}
               </button>
             ) : (
@@ -555,7 +555,7 @@ function PlayerList({
               (p.checked_in ? (
                 <span className="text-sm font-bold text-ok">✔</span>
               ) : (
-                <button className="rounded-lg bg-ok px-2.5 py-1.5 text-xs font-black text-ink" onClick={() => void act("check_in", { player_id: p.id })}>
+                <button className="rounded-lg bg-ok px-2.5 py-1.5 text-xs font-black text-on-accent" onClick={() => void act("check_in", { player_id: p.id })}>
                   {h.card.checkIn}
                 </button>
               ))}
@@ -645,7 +645,7 @@ function PlayerCard({
             onChange={(e) => setName(e.target.value)}
             autoFocus
           />
-          <button className="rounded-xl bg-gold px-4 font-black text-ink">{h.card.save}</button>
+          <button className="rounded-xl bg-gold px-4 font-black text-on-accent">{h.card.save}</button>
         </form>
       ) : null}
       {adjusting && (
@@ -666,7 +666,7 @@ function PlayerCard({
               <button
                 key={d}
                 type="button"
-                className={`flex-1 rounded-lg py-2 font-black tabular-nums ${delta === d ? "bg-gold text-ink" : "bg-ink-3"}`}
+                className={`flex-1 rounded-lg py-2 font-black tabular-nums ${delta === d ? "bg-gold text-on-accent" : "bg-ink-3"}`}
                 onClick={() => setDelta(d)}
               >
                 {d > 0 ? `+${d}` : d}
@@ -687,7 +687,7 @@ function PlayerCard({
             maxLength={80}
             onChange={(e) => setReason(e.target.value)}
           />
-          <button className="w-full rounded-xl bg-gold py-2.5 font-black text-ink disabled:opacity-40" disabled={!reason.trim()}>
+          <button className="w-full rounded-xl bg-gold py-2.5 font-black text-on-accent disabled:opacity-40" disabled={!reason.trim()}>
             {h.card.adjustSave(delta)}
           </button>
         </form>
@@ -767,7 +767,7 @@ function MessageSheet({ to, onSend }: { to: string | null; onSend: (text: string
           value={text}
           onChange={(e) => setText(e.target.value)}
         />
-        <button className="rounded-xl bg-gold px-5 font-black text-ink disabled:opacity-40" disabled={!text.trim()}>
+        <button className="rounded-xl bg-gold px-5 font-black text-on-accent disabled:opacity-40" disabled={!text.trim()}>
           {h.msg.send}
         </button>
       </div>
@@ -809,7 +809,7 @@ function BarButton({
   className?: string;
   disabled?: boolean;
 }) {
-  const bg = tone === "gold" ? "bg-gold text-ink" : tone === "ok" ? "bg-ok text-ink" : "bg-ink-2/95 text-txt border border-line";
+  const bg = tone === "gold" ? "bg-gold text-on-accent" : tone === "ok" ? "bg-ok text-on-accent" : "bg-ink-2/95 text-txt border border-line";
   return (
     <button
       className={`flex min-h-16 flex-col items-center justify-center rounded-2xl font-black shadow-lg backdrop-blur active:scale-[0.97] disabled:opacity-40 ${bg} ${className}`}
@@ -874,7 +874,7 @@ function RoundBar({
   const r = snap.round;
   if (!r || snap.status === "lobby" || snap.status === "ceremony") return null;
   if (snap.playlist_done) {
-    return <p className="pointer-events-auto rounded-xl bg-ok px-3 py-2 text-sm font-black text-ink">✔ {h.round.done}</p>;
+    return <p className="pointer-events-auto rounded-xl bg-ok px-3 py-2 text-sm font-black text-on-accent">✔ {h.round.done}</p>;
   }
   const left = phaseLeftS(r.phase_ends_at, offset, now);
   const live = snap.status === "live";
@@ -936,7 +936,7 @@ function CeremonyStart({ onStart }: { onStart: (spread: boolean) => void }) {
         <input type="checkbox" className="size-5 accent-[var(--color-gold)]" checked={spread} onChange={(e) => setSpread(e.target.checked)} />
         {no.ceremony.spread}
       </label>
-      <button className="w-full rounded-2xl bg-gold py-4 text-lg font-black text-ink" onClick={() => onStart(spread)} data-testid="ceremony-start">
+      <button className="w-full rounded-2xl bg-gold py-4 text-lg font-black text-on-accent" onClick={() => onStart(spread)} data-testid="ceremony-start">
         {no.ceremony.start}
       </button>
     </div>

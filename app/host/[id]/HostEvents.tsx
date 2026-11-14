@@ -38,7 +38,7 @@ export function EventChip({ snap, onOpen }: { snap: Snapshot; onOpen: () => void
   if ((!ev || ev.done) && !pending) return null;
   return (
     <button
-      className="pointer-events-auto flex w-full items-center justify-between gap-2 rounded-xl bg-gold px-3 py-2 text-left text-sm font-black text-ink"
+      className="pointer-events-auto flex w-full items-center justify-between gap-2 rounded-xl bg-gold px-3 py-2 text-left text-sm font-black text-on-accent"
       onClick={onOpen}
       data-testid="event-chip"
     >
@@ -70,7 +70,7 @@ export function EventSheet({ snap, hs }: { snap: Snapshot; hs: HostSession }) {
   return (
     <div className="space-y-3" data-testid="event-sheet">
       <h2 className="text-xl font-black">{e.title}</h2>
-      {err && <p className="rounded-xl bg-warn px-3 py-2 text-sm font-bold text-ink">{err}</p>}
+      {err && <p className="rounded-xl bg-warn px-3 py-2 text-sm font-bold text-on-accent">{err}</p>}
 
       {running ? (
         <RunningEvent ev={running} serverNow={snap.server_now} onStop={() => void run("event_stop")} />
@@ -97,7 +97,7 @@ export function EventSheet({ snap, hs }: { snap: Snapshot; hs: HostSession }) {
         <div className="rounded-2xl border border-gold/50 p-3">
           <div className="flex items-center justify-between gap-2">
             <p className="font-black">{e.pendingTitle(pending.length)}</p>
-            <button className="rounded-lg bg-gold px-3 py-2 text-sm font-black text-ink" onClick={() => void run("mission_confirm")} data-testid="confirm-all">
+            <button className="rounded-lg bg-gold px-3 py-2 text-sm font-black text-on-accent" onClick={() => void run("mission_confirm")} data-testid="confirm-all">
               {e.confirmAll}
             </button>
           </div>
@@ -105,7 +105,7 @@ export function EventSheet({ snap, hs }: { snap: Snapshot; hs: HostSession }) {
             {pending.map((p) => (
               <li key={p.player_id} className="flex items-center justify-between rounded-xl bg-ink px-3 py-2">
                 <span className="font-bold">{p.nickname}</span>
-                <button className="rounded-lg bg-ok px-3 py-1 text-sm font-black text-ink" onClick={() => void run("mission_confirm", { player_id: p.player_id })}>
+                <button className="rounded-lg bg-ok px-3 py-1 text-sm font-black text-on-accent" onClick={() => void run("mission_confirm", { player_id: p.player_id })}>
                   {e.confirm}
                 </button>
               </li>

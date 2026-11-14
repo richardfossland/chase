@@ -111,7 +111,7 @@ export default function BigScreen({ sessionId }: { sessionId: string }) {
           <p className="mt-2 font-mono text-[7rem] font-black leading-none tabular-nums">{formatClock(left)}</p>
         </div>
         {ev && (
-          <div className="rounded-2xl bg-gold px-4 py-3 text-ink">
+          <div className="rounded-2xl bg-gold px-4 py-3 text-on-accent">
             <p className="text-3xl font-black">{no.events.kinds[ev.kind]}</p>
             {ev.mission_text && <p className="mt-1 text-xl font-bold">{ev.mission_text}</p>}
           </div>

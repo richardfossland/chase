@@ -8,7 +8,7 @@ export default function NotFound() {
       <p className="text-3xl font-black text-gold">{no.brand}</p>
       <h1 className="mt-6 text-2xl font-extrabold">{no.common.notFoundTitle}</h1>
       <p className="mt-2 text-txt-dim">{no.common.notFoundBody}</p>
-      <Link href="/" className="mt-6 grid min-h-12 place-items-center rounded-xl bg-gold px-5 font-extrabold text-ink">
+      <Link href="/" className="mt-6 grid min-h-12 place-items-center rounded-xl bg-gold px-5 font-extrabold text-on-accent">
         {no.common.home}
       </Link>
     </main>
