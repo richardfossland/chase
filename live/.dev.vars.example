@@ -1,0 +1,5 @@
+# Copy to live/.dev.vars for `npm run live:dev` (local Supabase from `supabase start`).
+SUPABASE_URL=http://127.0.0.1:55321
+SUPABASE_SERVICE_ROLE_KEY=<service_role key from `supabase status`>
+ALLOWED_ORIGINS=http://localhost:3000
+ROOM_JURISDICTION=

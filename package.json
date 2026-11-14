@@ -11,8 +11,10 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit",
-    "check": "tsc --noEmit && eslint && vitest run",
+    "typecheck": "tsc --noEmit && tsc -p live/tsconfig.json",
+    "live:dev": "wrangler dev -c live/wrangler.jsonc --port 8787",
+    "live:types": "wrangler types -c live/wrangler.jsonc live/worker-configuration.d.ts",
+    "check": "tsc --noEmit && tsc -p live/tsconfig.json && eslint && vitest run",
     "test:db": "./scripts/test-db.sh"
   },
   "dependencies": {
