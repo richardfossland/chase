@@ -32,3 +32,7 @@ next-env.d.ts
 
 # lokal forhåndsvisning (Claude)
 /.claude/
+
+# chase-live local secrets
+/live/.dev.vars
+/live/.wrangler/
