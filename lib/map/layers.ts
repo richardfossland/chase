@@ -344,6 +344,8 @@ export interface TeamMapData {
   mates?: { nickname: string; pos: Pt }[];
   mateColor?: string;
   msgs?: { label: string; pos: Pt | null }[];
+  /** 0013 Stafett: the base ring and the course; `target` = my post (0-based), "base", or null. */
+  relay?: { base: Pt; r: number; posts: { n: number; pos: Pt }[]; target?: number | "base" | null } | null;
 }
 
 export function setTeam(m: MlMap, d: TeamMapData | null) {
@@ -372,10 +374,28 @@ export function setTeam(m: MlMap, d: TeamMapData | null) {
       { type: "Feature", properties: { kind: "flag", label: "Haugen", color }, geometry: { type: "Point", coordinates: [d.hill.pos.lng, d.hill.pos.lat] } },
     );
   }
+  if (d.relay) {
+    const gold = "#f5b800";
+    const baseColor = d.relay.target === "base" ? gold : NEUTRAL;
+    features.push(
+      { type: "Feature", properties: { kind: "area", color: baseColor, line: baseColor, taking: false }, geometry: { type: "Polygon", coordinates: [circleRing(d.relay.base, d.relay.r)] } },
+      { type: "Feature", properties: { kind: "flag", label: "Veksling", color: baseColor }, geometry: { type: "Point", coordinates: [d.relay.base.lng, d.relay.base.lat] } },
+    );
+    for (const p of d.relay.posts) {
+      const on = d.relay.target === p.n;
+      features.push({
+        type: "Feature",
+        properties: { kind: "flag", label: `Post ${p.n + 1}`, color: on ? gold : NEUTRAL },
+        geometry: { type: "Point", coordinates: [p.pos.lng, p.pos.lat] },
+      });
+    }
+  }
+  // 0013: a big team (e.g. everybody waiting at the relay base) gets dots without name tags.
+  const named = (d.mates ?? []).length <= 8;
   for (const mt of d.mates ?? []) {
     features.push({
       type: "Feature",
-      properties: { kind: "mate", color: d.mateColor ?? NEUTRAL, label: mt.nickname.slice(0, 10) },
+      properties: { kind: "mate", color: d.mateColor ?? NEUTRAL, label: named ? mt.nickname.slice(0, 10) : "" },
       geometry: { type: "Point", coordinates: [mt.pos.lng, mt.pos.lat] },
     });
   }

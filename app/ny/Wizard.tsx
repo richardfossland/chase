@@ -889,7 +889,7 @@ function DrawControls(props: {
 }
 
 const ROUND_MINUTES = [3, 4, 5, 6, 8, 10, 15];
-const ROUND_KINDS = ["posts", "convert", "swap", "free", "flag", "king"] as const;
+const ROUND_KINDS = ["posts", "convert", "swap", "fox", "free", "flag", "king", "relay"] as const;
 const TEAM_COUNTS = [2, 3, 4] as const;
 const BREATHERS = [0, 30, 60, 90, 120];
 const EVENT_EVERY = [0, 60, 90, 120] as const;
@@ -952,9 +952,9 @@ function PlaylistEditor(props: { plan: Plan; onChange: (p: Plan) => void; chip: 
                     onClick={() =>
                       setRound(
                         i,
-                        k === "convert" || k === "swap"
+                        k === "convert" || k === "swap" || k === "fox"
                           ? { mode: "tag", variant: k, team: undefined }
-                          : k === "flag" || k === "king"
+                          : k === "flag" || k === "king" || k === "relay"
                             ? { mode: k, variant: undefined, zone: undefined, team: undefined }
                             : { mode: k as RoundMode, variant: undefined },
                       )
@@ -976,7 +976,7 @@ function PlaylistEditor(props: { plan: Plan; onChange: (p: Plan) => void; chip: 
                 </button>
               ))}
             </div>
-            {r.mode !== "flag" && r.mode !== "king" && (
+            {r.mode !== "flag" && r.mode !== "king" && r.mode !== "relay" && (
               <div className="mt-2 flex gap-1.5">
                 <button
                   className={`${chip(!!r.zone)} flex-1`}
@@ -1010,6 +1010,7 @@ function PlaylistEditor(props: { plan: Plan; onChange: (p: Plan) => void; chip: 
       </button>
 
       {plan.rounds.some((r) => r.zone) && <p className="mt-2 text-xs text-txt-dim">{p.zoneHint}</p>}
+      {plan.rounds.some((r) => r.mode === "tag" && r.variant === "fox") && <p className="mt-2 text-xs text-txt-dim">{p.foxHint}</p>}
 
       {/* Fase 5 (0009): number of teams when the playlist has a team round. */}
       {plan.rounds.some((r) => isTeamRound(r)) && (
@@ -1024,7 +1025,7 @@ function PlaylistEditor(props: { plan: Plan; onChange: (p: Plan) => void; chip: 
           </div>
           <p className="mt-1 text-xs text-txt-dim">{p.teamsHint}</p>
           {plan.rounds.map((r, i) =>
-            r.mode === "flag" || r.mode === "king" ? (
+            r.mode === "flag" || r.mode === "king" || r.mode === "relay" ? (
               <p key={i} className="mt-1 text-xs text-txt-dim">
                 {p.round(i + 1)}: {p.modeHint[r.mode]}
               </p>

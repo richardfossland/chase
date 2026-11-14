@@ -99,6 +99,7 @@ export default function BigScreen({ sessionId }: { sessionId: string }) {
           teamOf={snap.team_of}
           flags={r?.flags ?? null}
           hill={r?.hill ?? null}
+          relay={r?.relay ?? null}
           anonymous
           onSelect={() => {}}
         />
@@ -122,7 +123,10 @@ export default function BigScreen({ sessionId }: { sessionId: string }) {
               {teams.map((t) => (
                 <div key={t.n} className="flex items-center justify-between rounded-2xl px-4 py-3 text-3xl font-black" style={{ background: t.color, color: t.color === "#f5b800" ? "#111827" : "#fff" }}>
                   <span>{t.name}</span>
-                  <span className="tabular-nums">{t.points}</span>
+                  <span className="tabular-nums">
+                    {r?.relay && <span className="mr-3 text-xl opacity-80">{no.relay.legs(r.relay.legs[String(t.n)] ?? 0)}</span>}
+                    {t.points}
+                  </span>
                 </div>
               ))}
             </div>

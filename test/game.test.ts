@@ -18,8 +18,11 @@ import {
 
 const sql = readFileSync(new URL("../supabase/migrations/0003_playlist_posts_points.sql", import.meta.url), "utf8");
 
+// chase.kg() was last redefined in 0013 (posts_max 15 → 40).
+const sqlKg = readFileSync(new URL("../supabase/migrations/0013_relay_fox_scale.sql", import.meta.url), "utf8");
+
 describe("GAME twin of chase.kg()", () => {
-  const body = sql.slice(sql.indexOf("function chase.kg("), sql.indexOf("end::real;", sql.indexOf("function chase.kg(")));
+  const body = sqlKg.slice(sqlKg.indexOf("function chase.kg("), sqlKg.indexOf("end::real;", sqlKg.indexOf("function chase.kg(")));
   const pairs = [...body.matchAll(/when '([a-z0-9_]+)'\s+then ([0-9.]+)/g)].map((m) => [m[1], Number(m[2])] as const);
   it("has exactly the same keys and values as the SQL", () => {
     expect(pairs.length).toBeGreaterThan(20);
@@ -30,7 +33,8 @@ describe("GAME twin of chase.kg()", () => {
       + readFileSync(new URL("../supabase/migrations/0005_zone.sql", import.meta.url), "utf8")
       + readFileSync(new URL("../supabase/migrations/0007_events_powerups.sql", import.meta.url), "utf8")
       + readFileSync(new URL("../supabase/migrations/0009_teams_flag_king.sql", import.meta.url), "utf8")
-      + readFileSync(new URL("../supabase/migrations/0012_quiz_steps.sql", import.meta.url), "utf8");
+      + readFileSync(new URL("../supabase/migrations/0012_quiz_steps.sql", import.meta.url), "utf8")
+      + sqlKg;
     for (const b of BADGES) expect(all).toContain(`'${b}'`);
   });
 });
@@ -48,7 +52,7 @@ describe("normPlan", () => {
   it("rejects what the server rejects", () => {
     const bad: unknown[] = [
       { rounds: [] },
-      { rounds: [{ mode: "relay", duration_s: 300 }] },
+      { rounds: [{ mode: "bogus", duration_s: 300 }] },
       { rounds: [{ mode: "tag", duration_s: 300, variant: "bogus" }] },
       { rounds: [{ mode: "posts", duration_s: 300, zone: "yes" }] },
       { rounds: [{ mode: "posts", duration_s: 30 }] },
@@ -93,12 +97,13 @@ describe("normPlan", () => {
 });
 
 describe("rules", () => {
-  it("post target ~players/4 within 3–15", () => {
+  it("post target ~players/4 within 3–40", () => {
     expect(postTarget(1)).toBe(3);
     expect(postTarget(16)).toBe(4);
     expect(postTarget(17)).toBe(5);
     expect(postTarget(60)).toBe(15);
-    expect(postTarget(100)).toBe(15);
+    expect(postTarget(100)).toBe(25);
+    expect(postTarget(300)).toBe(40);
   });
   it("claim radius max(12, acc), none above 25 m", () => {
     expect(claimRadiusM(5)).toBe(12);

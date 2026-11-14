@@ -115,11 +115,11 @@ begin
   assert chase.resume_player(pin, pg_temp.h('ra'), pg_temp.h('a4')) ->> 'error' = 'kicked', 'kicked resume';
   assert chase.tick((j ->> 'player_id')::uuid, pg_temp.h('a2'), 59.91045, 10.7509, 5) ->> 'error' = 'kicked', 'kicked tick';
 
-  -- Player cap (60 active).
-  for i in 1..60 loop
+  -- Player cap (chase.k('max_players') active: 60 in 0002, 300 since 0013).
+  for i in 1..chase.k('max_players')::int loop
     assert (chase.join_session(pin, 'B' || i, pg_temp.h('bot' || i), pg_temp.h('rbot' || i)) ->> 'ok')::boolean, 'bot join ' || i;
   end loop;
-  assert chase.join_session(pin, 'B61', pg_temp.h('bot61'), pg_temp.h('rbot61')) ->> 'error' = 'full', 'cap 60';
+  assert chase.join_session(pin, 'Bx', pg_temp.h('botx'), pg_temp.h('rbotx')) ->> 'error' = 'full', 'player cap';
   raise notice '0002 join/resume: ok';
 end $$;
 

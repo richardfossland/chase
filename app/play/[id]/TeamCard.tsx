@@ -5,7 +5,7 @@
 // when it moves) and the quick team messages. The server decides
 // everything; this only shows it and sends one-tap requests.
 
-import type { FlagView, HillView, RoundView, TeamView } from "@/lib/client/api";
+import type { FlagView, HillView, RelayCourse, RelayView, RoundView, TeamView } from "@/lib/client/api";
 import { no } from "@/lib/locale/no";
 import { bearing, haversine } from "@/lib/geo";
 import { TEAM_MSGS, captureLeftS, type TeamMsgKind } from "@/lib/rules/teams";
@@ -47,6 +47,24 @@ function hillLine(team: TeamView, hill: HillView, fix: Fix | null, offsetMs: num
   return { head, status: tt.hillMoves(moves), dir: inside ? null : d, near: d ? (inside ? tt.hillIn : tt.hillTo(d.m)) : null };
 }
 
+// 0013 Stafett: my baton (post or base) with an arrow, legs per team, my legs.
+function relayLine(team: TeamView, course: RelayCourse, me: RelayView | null, fix: Fix | null) {
+  const rl = no.relay;
+  const legs = team.palette.map((p) => `${p.name} ${course.legs[String(p.n)] ?? 0}`).join(" · ");
+  const status = me && me.legs > 0 ? `${legs} · ${rl.myLegs(me.legs)}` : legs;
+  if (!me || me.post === null || !me.target) {
+    const runners = me?.runners.map((r) => r.nickname).join(", ");
+    return { head: rl.wait, status: runners ? `${rl.runners(runners)} · ${status}` : status, dir: null, near: null };
+  }
+  const d = dirTo(fix, me.target);
+  return {
+    head: me.back ? rl.back : rl.run,
+    status,
+    dir: d,
+    near: me.back ? rl.toBase(d?.m ?? null) : rl.toPost(me.post + 1, d?.m ?? null),
+  };
+}
+
 export function TeamStrip({
   team,
   round,
@@ -54,6 +72,7 @@ export function TeamStrip({
   offsetMs,
   now,
   live,
+  relay = null,
 }: {
   team: TeamView;
   round: RoundView | null;
@@ -61,12 +80,14 @@ export function TeamStrip({
   offsetMs: number;
   now: number;
   live: boolean;
+  relay?: RelayView | null;
 }) {
   // While paused the banner says so; the hill clock stops on its own frozen_at.
   const frozenAt = round?.frozen ? (round.hill?.frozen_at ?? null) : null;
   const obj =
     live && round?.flags?.length ? flagLine(team, round.flags, fix, offsetMs, now, frozenAt)
     : live && round?.hill ? hillLine(team, round.hill, fix, offsetMs, now)
+    : live && round?.relay ? relayLine(team, round.relay, relay, fix)
     : null;
   return (
     <div

@@ -124,7 +124,7 @@ export interface RoundView {
   phase_ends_at: string | null;
   frozen: boolean;
   qr: boolean;
-  variant: "convert" | "swap" | null;
+  variant: "convert" | "swap" | "fox" | null;
   /** Krympende sone on this round (0005). */
   zoned: boolean;
   /** Live/paused zone round: centre, radii, phase times — lib/rules/zone.ts computes the circle. */
@@ -136,6 +136,26 @@ export interface RoundView {
   flags?: FlagView[] | null;
   /** Konge på haugen (live/paused). */
   hill?: HillView | null;
+  /** 0013 Stafett (live/paused): the course and legs per team (key = team n). */
+  relay?: RelayCourse | null;
+}
+
+export interface RelayCourse {
+  base: LatLng;
+  r: number;
+  posts: { n: number; pos: LatLng }[];
+  legs: Record<string, number>;
+}
+
+/** 0013: my part of the relay (chase._relay_tick). */
+export interface RelayView {
+  /** Post (0-based) I run to; null = no baton. */
+  post: number | null;
+  back: boolean;
+  /** My legs this round. */
+  legs: number;
+  target: LatLng | null;
+  runners: { nickname: string; post: number; back: boolean }[];
 }
 
 export interface FlagView {
@@ -176,8 +196,9 @@ export interface TeamView extends TeamInfo {
   rank: number;
   of: number;
   palette: TeamInfo[];
-  /** Team rounds only. */
+  /** Team rounds only: the 20 nearest teammates (0013) out of mates_total. */
   mates?: { nickname: string; pos: LatLng }[];
+  mates_total?: number;
   msgs?: { nickname: string; kind: TeamMsgKind; pos: LatLng | null; at: string; me: boolean }[];
 }
 
@@ -304,6 +325,8 @@ export interface TickView {
   power?: PowerView;
   /** 0009: my team (once dealt). */
   team?: TeamView;
+  /** 0013: Stafett. */
+  relay?: RelayView;
   safety: { geofence: 0 | 1 | 2 | 3; forbidden: boolean; outside_m: number; uncertain: boolean };
   sos: { id: string; acked: boolean } | null;
   gather: { assembly: LatLng; distance_m: number; checked_in: boolean } | null;
@@ -344,7 +367,7 @@ export interface CeremonyView {
 
 /** Smittejakt layer of the tick view (chase._mode_tick). Never other players' exact positions for prey. */
 export interface TagView {
-  variant: "convert" | "swap";
+  variant: "convert" | "swap" | "fox";
   code: string | null;
   immune_until: string | null;
   role_changed_at: string | null;
@@ -357,6 +380,9 @@ export interface TagView {
   blackout?: boolean;
   /** 0007: radar power-up — every opponent for a few seconds. */
   radar_live?: LatLng[];
+  /** 0013 Sporing: set in a fox round; the fox sees hunters within 150 m (nearest 40). */
+  fox?: boolean;
+  hunter_pos?: { pos: LatLng }[];
 }
 
 export interface CatchResult {

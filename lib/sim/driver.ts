@@ -8,6 +8,7 @@
 //     pressed, inside a forbidden zone, > 40 m outside, 60 s without a fix)
 //     until the teacher's snapshot shows that alarm. Needs the host token.
 
+import { relayBatons } from "@/lib/rules/relay";
 import { powerupCheck } from "@/lib/rules/events";
 
 import { createBot, type Behaviour, type Bot, type BotFix, type SimGeo } from "./behaviours";
@@ -81,7 +82,12 @@ export interface SimStats {
     teamPoints: Record<string, number>;
     flagCaptures: number;
     hillHolds: number;
+    /** 0013: relay legs (all teams, from the course), batons held at once on one team vs. the cap. */
+    relayLegs: number;
+    relayBatonMax: number;
+    relayBatonCap: number;
     capKeys: Set<string>;
+    relayLegsByRound: Map<number, number>;
     msgsSent: number;
     msgsSeen: number;
     msgKeys: Set<string>;
@@ -138,7 +144,7 @@ export function startSwarm(opts: SwarmOptions) {
     alarms: [],
     game: { claims: 0, golden: 0, lost: 0, qr: 0, duplicateClaims: 0, claimedIds: new Set(), statuses: [], playlistDone: false, rounds: 0, catches: 0, catchFails: {}, zoneHits: 0, zonePen: 0, bestCards: 0, votes: 0,
       events: {}, eventKeys: new Set(), sprintMax: 0, prizes: 0, powerupsGot: 0, powerupsUsed: 0, powerupFails: {}, missionsDone: 0, missionsConfirmed: 0,
-      teamSizes: null, teamPoints: {}, flagCaptures: 0, hillHolds: 0, capKeys: new Set(), msgsSent: 0, msgsSeen: 0, msgKeys: new Set(), quizAnswered: 0, quizRight: 0, steps: 0 },
+      teamSizes: null, teamPoints: {}, flagCaptures: 0, hillHolds: 0, relayLegs: 0, relayBatonMax: 0, relayBatonCap: 0, relayLegsByRound: new Map(), capKeys: new Set(), msgsSent: 0, msgsSeen: 0, msgKeys: new Set(), quizAnswered: 0, quizRight: 0, steps: 0 },
   };
   const players: SimPlayer[] = [];
   const timers: ReturnType<typeof setInterval>[] = [];
@@ -364,7 +370,29 @@ export function startSwarm(opts: SwarmOptions) {
       const c = await opts.transport.post(`/api/s/${sessionId}/host`, { hostToken: opts.hostToken, action: "mission_confirm", payload: {} });
       if (c.status === 200) g.missionsConfirmed += Number(c.data.confirmed ?? 0);
     }
-    const round = r.data.round as { idx: number; team?: boolean; flags?: { n: number; owner: number | null }[] | null; hill?: { no: number; holder: number | null } | null } | null;
+    const round = r.data.round as { idx: number; team?: boolean; flags?: { n: number; owner: number | null }[] | null; hill?: { no: number; holder: number | null } | null;
+      relay?: { legs: Record<string, number> } | null } | null;
+    if (round?.relay) {
+      const prev = g.relayLegsByRound.get(round.idx) ?? 0;
+      const sum = Object.values(round.relay.legs).reduce((a, b) => a + b, 0);
+      if (sum > prev) {
+        g.relayLegs += sum - prev;
+        g.relayLegsByRound.set(round.idx, sum);
+        log(`🎽 etapper: ${JSON.stringify(round.relay.legs)}`);
+      }
+      // Batons held at once per team (from the bots' own views) vs. ceil(members / 5).
+      const held = new Map<number, number>();
+      for (const q of players) {
+        const qv = q.view as { team?: { n: number }; relay?: { post: number | null } } | null;
+        if (qv?.team && qv.relay?.post !== null && qv.relay?.post !== undefined) held.set(qv.team.n, (held.get(qv.team.n) ?? 0) + 1);
+      }
+      const tms = (r.data.teams as { n: number; members: number }[] | undefined) ?? [];
+      for (const [n, k] of held) {
+        const cap = relayBatons(tms.find((t) => t.n === n)?.members ?? 0);
+        g.relayBatonCap = Math.max(g.relayBatonCap, cap);
+        if (k > cap) g.relayBatonMax = Math.max(g.relayBatonMax, k);
+      }
+    }
     if (round) g.rounds = Math.max(g.rounds, round.idx + 1);
     // Teams (0009): sizes at the first team round, live points, captures and hill holds.
     const teams = (r.data.teams as { n: number; name: string; points: number; members: number }[] | undefined) ?? [];
@@ -514,6 +542,9 @@ export function summarize(stats: SimStats) {
       missionsDone: stats.game.missionsDone,
       missionsConfirmed: stats.game.missionsConfirmed,
       teamSizes: stats.game.teamSizes,
+      relayLegs: stats.game.relayLegs,
+      relayBatonMax: stats.game.relayBatonMax,
+      relayBatonCap: stats.game.relayBatonCap,
       teamPoints: stats.game.teamPoints,
       flagCaptures: stats.game.flagCaptures,
       hillHolds: stats.game.hillHolds,

@@ -23,7 +23,7 @@ export const TAG = {
   fix_fresh_s: 20,
 } as const;
 
-export type TagVariant = "convert" | "swap";
+export type TagVariant = "convert" | "swap" | "fox";
 
 /** Hunters dealt at round start: ~15 %, at least 1. */
 export function hunterCount(players: number): number {

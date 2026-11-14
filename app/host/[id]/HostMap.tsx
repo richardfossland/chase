@@ -2,12 +2,13 @@
 
 import "maplibre-gl/dist/maplibre-gl.css";
 
-import type { Map as MlMap, Marker } from "maplibre-gl";
+import type { GeoJSONSource, Map as MlMap, Marker } from "maplibre-gl";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 
-import type { FlagView, HillView, HostPlayer, PostView, SessionGeo, SessionStatus, TeamScore } from "@/lib/client/api";
+import type { FlagView, HillView, HostPlayer, PostView, RelayCourse, SessionGeo, SessionStatus, TeamScore } from "@/lib/client/api";
 import { addEventLayer, addPostsLayer, addSessionLayers, addTeamLayer, addZoneLayer, boundsOf, setEvent, setPosts, setTeam, setZone } from "@/lib/map/layers";
 import { TEAMS } from "@/lib/rules/teams";
+import { CROWD_FROM } from "@/lib/rules/relay";
 import { loadMapLibre } from "@/lib/map/maplibre";
 import { kartverketStyle } from "@/lib/map/style";
 import { EVENTS } from "@/lib/rules/events";
@@ -49,16 +50,19 @@ const HostMap = forwardRef<
     teamOf?: Record<string, number>;
     flags?: FlagView[] | null;
     hill?: HillView | null;
+    /** 0013: the relay course (base + posts). */
+    relay?: RelayCourse | null;
     /** 0012 storskjerm: dots only — no names, not clickable. */
     anonymous?: boolean;
     onSelect: (id: string) => void;
   }
->(function HostMap({ geo, players, posts, sosPlayers, status, zone, serverNow, eventTarget = null, teams, teamOf, flags = null, hill = null, anonymous = false, onSelect }, ref) {
+>(function HostMap({ geo, players, posts, sosPlayers, status, zone, serverNow, eventTarget = null, teams, teamOf, flags = null, hill = null, relay = null, anonymous = false, onSelect }, ref) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<MlMap | null>(null);
   const lib = useRef<Awaited<ReturnType<typeof loadMapLibre>> | null>(null);
   const markers = useRef<Map<string, { marker: Marker; el: HTMLDivElement }>>(new Map());
   const selectRef = useRef(onSelect);
+  const anonymousRef = useRef(anonymous);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -90,6 +94,7 @@ const HostMap = forwardRef<
         addPostsLayer(m);
         addEventLayer(m);
         addTeamLayer(m);
+        addCrowdLayer(m, !anonymousRef.current, (id) => selectRef.current(id));
         setReady(true);
       });
       map.current = m;
@@ -109,8 +114,21 @@ const HostMap = forwardRef<
     const ml = lib.current;
     if (!ready || !m || !ml) return;
     const seen = new Set<string>();
+    // 0013: a big group draws ordinary dots in one WebGL layer (clustered when
+    // zoomed out); anyone who needs the teacher keeps a named marker (rule 4).
+    const crowd = players.length >= CROWD_FROM;
+    const dots: GeoJSON.Feature[] = [];
     for (const p of players) {
       if (!p.pos) continue;
+      if (crowd) {
+        const s0 = dotState(p, sosPlayers.has(p.id), status);
+        const still0 = p.still_s !== null && p.still_s > SAFETY.still_alert_s && status === "live";
+        const needs = s0.pulse || s0.bg === "#ff3b30" || s0.bg === "#6b7280" || still0 || (status === "gathering" && !p.checked_in);
+        if (!needs) {
+          dots.push({ type: "Feature", properties: { id: p.id, bg: s0.bg, ring: s0.ring, name: anonymous ? "" : p.nickname }, geometry: { type: "Point", coordinates: [p.pos.lng, p.pos.lat] } });
+          continue;
+        }
+      }
       seen.add(p.id);
       let entry = markers.current.get(p.id);
       if (!entry) {
@@ -150,11 +168,13 @@ const HostMap = forwardRef<
         markers.current.delete(id);
       }
     }
+    m.getSource<GeoJSONSource>("crowd")?.setData({ type: "FeatureCollection", features: dots });
   }, [ready, players, sosPlayers, status, teams, teamOf, anonymous]);
 
   // Flags / hill (0009), colour by owner / holder.
-  const teamKey = (flags?.length || hill) && teams?.length
-    ? JSON.stringify({ c: teams.map((t) => [t.n, t.color]), flags, hill: hill ? { pos: hill.pos, r: hill.r, holder: hill.holder } : null })
+  const teamKey = (flags?.length || hill || relay) && teams?.length
+    ? JSON.stringify({ c: teams.map((t) => [t.n, t.color]), flags, hill: hill ? { pos: hill.pos, r: hill.r, holder: hill.holder } : null,
+        relay: relay ? { base: relay.base, r: relay.r, posts: relay.posts } : null })
     : null;
   useEffect(() => {
     if (!ready || !map.current) return;
@@ -162,9 +182,10 @@ const HostMap = forwardRef<
       setTeam(map.current, null);
       return;
     }
-    const d = JSON.parse(teamKey) as { c: [number, string][]; flags: FlagView[] | null; hill: { pos: { lat: number; lng: number }; r: number; holder: number | null } | null };
+    const d = JSON.parse(teamKey) as { c: [number, string][]; flags: FlagView[] | null; hill: { pos: { lat: number; lng: number }; r: number; holder: number | null } | null;
+      relay: Omit<RelayCourse, "legs"> | null };
     const colors = new Map(d.c);
-    setTeam(map.current, { colorOf: (n) => (n ? colors.get(n) : undefined) ?? "#9aa3b2", flags: d.flags, flagR: TEAMS.flag_r_m, hill: d.hill });
+    setTeam(map.current, { colorOf: (n) => (n ? colors.get(n) : undefined) ?? "#9aa3b2", flags: d.flags, flagR: TEAMS.flag_r_m, hill: d.hill, relay: d.relay });
   }, [ready, teamKey]);
 
   // Posts of the round: open in colour, taken in grey (teacher sees both).
@@ -204,3 +225,50 @@ const HostMap = forwardRef<
 });
 
 export default HostMap;
+
+/** 0013: ordinary dots of a big group — clusters with a count when zoomed out, names close up. */
+function addCrowdLayer(m: MlMap, named: boolean, onSelect: (id: string) => void) {
+  m.addSource("crowd", { type: "geojson", data: { type: "FeatureCollection", features: [] }, cluster: true, clusterMaxZoom: 16, clusterRadius: 28 });
+  m.addLayer({
+    id: "crowd-cluster",
+    type: "circle",
+    source: "crowd",
+    filter: ["has", "point_count"],
+    paint: { "circle-color": "#3d9bff", "circle-opacity": 0.85, "circle-stroke-color": "#ffffff", "circle-stroke-width": 2,
+      "circle-radius": ["step", ["get", "point_count"], 12, 10, 16, 30, 21] },
+  });
+  m.addLayer({
+    id: "crowd-count",
+    type: "symbol",
+    source: "crowd",
+    filter: ["has", "point_count"],
+    layout: { "text-field": ["get", "point_count_abbreviated"], "text-size": 13, "text-allow-overlap": true },
+    paint: { "text-color": "#ffffff" },
+  });
+  m.addLayer({
+    id: "crowd-dot",
+    type: "circle",
+    source: "crowd",
+    filter: ["!", ["has", "point_count"]],
+    paint: { "circle-radius": 7, "circle-color": ["get", "bg"], "circle-stroke-color": ["get", "ring"], "circle-stroke-width": 2 },
+  });
+  if (named) {
+    m.addLayer({
+      id: "crowd-name",
+      type: "symbol",
+      source: "crowd",
+      minzoom: 18,
+      filter: ["!", ["has", "point_count"]],
+      layout: { "text-field": ["get", "name"], "text-size": 11, "text-offset": [0, 1.3] },
+      paint: { "text-color": "#ffffff", "text-halo-color": "#111827", "text-halo-width": 2 },
+    });
+    m.on("click", "crowd-dot", (e) => {
+      const id = e.features?.[0]?.properties?.id;
+      if (typeof id === "string") onSelect(id);
+    });
+  }
+  m.on("click", "crowd-cluster", (e) => {
+    const f = e.features?.[0];
+    if (f?.geometry.type === "Point") m.easeTo({ center: f.geometry.coordinates as [number, number], zoom: m.getZoom() + 2 });
+  });
+}

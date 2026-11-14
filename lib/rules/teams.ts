@@ -30,9 +30,9 @@ export const TEAMS = {
 export const TEAM_MSGS = ["help", "come", "mine", "ok"] as const;
 export type TeamMsgKind = (typeof TEAM_MSGS)[number];
 
-/** Same as chase._is_team_round(). */
+/** Same as chase._is_team_round() (0013: + relay). */
 export function isTeamRound(r: { mode?: string; team?: boolean } | null | undefined): boolean {
-  return !!r && (r.mode === "flag" || r.mode === "king" || r.team === true);
+  return !!r && (r.mode === "flag" || r.mode === "king" || r.mode === "relay" || r.team === true);
 }
 
 /** Same as chase._team_snake(): i-th player (0-based, strongest first) → team 1..n. */

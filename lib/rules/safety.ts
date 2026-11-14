@@ -1,10 +1,11 @@
 // TS twin of chase.k() in supabase/migrations/0002_session_tick_safety.sql
+// (last redefined in 0013_relay_fox_scale.sql: max_players 300)
 // (CLAUDE.md rule 2). The server decides; the client uses these only to
 // explain state (e.g. "Nær grensa" copy, GPS hints). test/safety.test.ts
 // fails if the two drift apart.
 
 export const SAFETY = {
-  max_players: 60,
+  max_players: 300,
   edge_warn_m: 15,
   outside_alarm_s: 30,
   outside_alarm_m: 40,

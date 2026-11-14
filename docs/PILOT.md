@@ -30,6 +30,12 @@
   - Åpne den på PC-en ved prosjektoren i samme nettleser som lærerpanelet, eller cast fanen.
 - **Skritteller:** mobilen spør om tilgang til bevegelse når eleven trykker «Jeg er klar». Sier eleven nei, er telleren bare av.
 
+## Stafett, Sporing og store grupper (fase 8)
+- **🎽 Stafett** (lagrunde): fem poster rundt samlingspunktet. Eleven med pinne løper til posten og tilbake til samlingspunktet, og da går pinnen videre. Ett lag har én pinne per påbegynte 5 elever. Resten heier ved samlingspunktet. Flest etapper vinner. En pinne som ikke er tilbake innen 3 min, går videre av seg selv.
+- **🦊 Sporing** (Smittejakt-variant): én rev, alle andre jager. Reven ser jegerne i nærheten, og jegerne ser reven hvert 20. sekund. Den som fanger reven, blir rev. Fangst skjer med kode/QR som i Smittejakt.
+- **Store grupper** (opptil 300): fra 80 elever viser kartet vanlige elever som små prikker og klynger med antall. Elever som trenger deg (SOS, utenfor, mistet signal, står stille) har fortsatt navn. I lobbyen ser du bare dem med svak GPS. Trykk «Vis alle» for resten. Spillerlista har søk.
+- ⚠️ Mange klasser samtidig krever en større databasemaskin enn den vi har nå. Si fra før dere prøver mer enn én klasse.
+
 ## I timen (start)
 1. **Lag økta** på chase.sundaysuite.app: tegn området og velg samlingspunkt. Velg malen *Full gymtime*, eller *Første gang* hvis klassen ikke har spilt før. Legg inn mobilnummeret ditt.
 2. **Vis QR-koden.** Elevene skanner, velger kallenavn og trykker **«Jeg er klar»** for å slå på lyd, GPS og skjerm-på.

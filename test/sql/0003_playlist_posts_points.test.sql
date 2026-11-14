@@ -57,7 +57,7 @@ begin
   assert n = '{"rounds":[{"mode":"posts","duration_s":360},{"mode":"free","duration_s":60}],
                "countdown_s":10,"breather_s":60,"qr_posts":0}'::jsonb, 'defaults filled: ' || n::text;
   assert chase._norm_plan('{"rounds":[]}') is null, 'no rounds';
-  assert chase._norm_plan('{"rounds":[{"mode":"relay","duration_s":300}]}') is null, 'mode not supported yet';
+  assert chase._norm_plan('{"rounds":[{"mode":"bogus","duration_s":300}]}') is null, 'unknown mode';
   assert chase._norm_plan('{"rounds":[{"mode":"posts","duration_s":30}]}') is null, 'too short';
   assert chase._norm_plan('{"rounds":[{"mode":"posts","duration_s":99999}]}') is null, 'too long';
   assert chase._norm_plan('{"rounds":[{"mode":"posts","duration_s":"360"}]}') is null, 'string duration';

@@ -47,11 +47,15 @@ export interface BotView {
   event?: { kind: string; done: boolean; target: { lat: number; lng: number } | null; me: unknown } | null;
   /** 0009: my team; flags / hill of the round arrive in round. */
   team?: { n: number } | null;
+  /** 0013: my baton — run to target (post, then the base). */
+  relay?: { post: number | null; target: LL | null } | null;
 }
 type LL = { lat: number; lng: number };
 export interface BotRoundTeam {
   flags?: { pos: LL; owner: number | null }[] | null;
   hill?: { pos: LL; r: number } | null;
+  /** 0013: the relay course. */
+  relay?: { base: LL; r: number } | null;
 }
 
 export interface BotOptions {
@@ -148,6 +152,13 @@ export function createBot(kind: Behaviour, geo: SimGeo, opts: BotOptions) {
   function teamTarget(): XY | null {
     const rd = view.round;
     const mine = view.team?.n;
+    if (rd?.relay) {
+      // Stafett: the runner goes for its target; everybody else waits at the base.
+      if (view.relay?.target) return proj.toXY([view.relay.target.lng, view.relay.target.lat]) as XY;
+      const c = proj.toXY([rd.relay.base.lng, rd.relay.base.lat]) as XY;
+      const off = rd.relay.r * 0.4;
+      return [c[0] + Math.cos(spotA) * off, c[1] + Math.sin(spotA) * off];
+    }
     if (rd?.hill) {
       const c = proj.toXY([rd.hill.pos.lng, rd.hill.pos.lat]) as XY;
       const off = rd.hill.r * 0.45;

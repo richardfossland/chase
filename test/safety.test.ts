@@ -2,10 +2,11 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { SAFETY, geofenceLevel, inForbidden } from "@/lib/rules/safety";
 
-const sql = readFileSync(new URL("../supabase/migrations/0002_session_tick_safety.sql", import.meta.url), "utf8");
+// chase.k() was last redefined in 0013 (max_players 60 → 300).
+const sql = readFileSync(new URL("../supabase/migrations/0013_relay_fox_scale.sql", import.meta.url), "utf8");
 
 describe("SAFETY twin of chase.k()", () => {
-  const body = sql.slice(sql.indexOf("function chase.k("), sql.indexOf("end::real;"));
+  const body = sql.slice(sql.indexOf("function chase.k("), sql.indexOf("end::real;", sql.indexOf("function chase.k(")));
   const pairs = [...body.matchAll(/when '([a-z_]+)'\s+then ([0-9.]+)/g)].map((m) => [m[1], Number(m[2])] as const);
 
   it("has exactly the same keys and values as the SQL", () => {

@@ -24,7 +24,7 @@ export const GAME = {
   claim_hits: 2,
   players_per_post: 4,
   posts_min: 3,
-  posts_max: 15,
+  posts_max: 40,
   post_min_player_m: 25,
   post_min_post_m: 30,
   post_edge_m: 10,
@@ -44,13 +44,13 @@ export const GAME = {
   cell_m: 20,
 } as const;
 
-/** 0009 (fase 5): flag = Flaggjakt, king = Konge på haugen — always team rounds. */
-export type RoundMode = "free" | "posts" | "tag" | "flag" | "king";
+/** 0009 (fase 5): flag = Flaggjakt, king = Konge på haugen; 0013 (fase 8): relay = Stafett — always team rounds. */
+export type RoundMode = "free" | "posts" | "tag" | "flag" | "king" | "relay";
 export interface PlanRound {
   mode: RoundMode;
   duration_s: number;
-  /** Smittejakt only: «smitte» (convert) or «sisten» (swap). */
-  variant?: "convert" | "swap";
+  /** Smittejakt only: «smitte» (convert), «sisten» (swap) or 0013 «sporing» (fox: one fox, everybody hunts). */
+  variant?: "convert" | "swap" | "fox";
   /** Krympende sone on top of the round (0005, lib/rules/zone.ts). */
   zone?: boolean;
   /** 0009: a Postjakt / free round played as teams (flag and king always are). */
@@ -136,19 +136,20 @@ export function normPlan(p: Partial<Plan> & { rounds?: unknown }): Plan | null {
   for (const r of p.rounds as unknown as Array<Record<string, unknown>>) {
     const d = r?.duration_s;
     const m = r?.mode;
-    if ((m !== "free" && m !== "posts" && m !== "tag" && m !== "flag" && m !== "king") || typeof d !== "number" || !Number.isInteger(d)) return null;
+    if ((m !== "free" && m !== "posts" && m !== "tag" && m !== "flag" && m !== "king" && m !== "relay") || typeof d !== "number" || !Number.isInteger(d)) return null;
     if (d < GAME.round_min_s || d > GAME.round_max_s) return null;
     let out: PlanRound;
     if (r.mode === "tag") {
       const v = r.variant ?? "convert";
-      if (v !== "convert" && v !== "swap") return null;
+      if (v !== "convert" && v !== "swap" && v !== "fox") return null;
       out = { mode: "tag", duration_s: d, variant: v };
     } else out = { mode: m, duration_s: d };
     if (r.zone !== undefined && r.zone !== null && typeof r.zone !== "boolean") return null;
     if (r.zone === true) out.zone = true;
     // 0009: teams. Flag/king: no zone (flags and hill must stay reachable); tag stays individual.
     if (r.team !== undefined && r.team !== null && typeof r.team !== "boolean") return null;
-    if (m === "flag" || m === "king") {
+    if (m === "relay" && r.team !== undefined && r.team !== null && r.team !== true) return null;
+    if (m === "flag" || m === "king" || m === "relay") {
       if (out.zone) return null;
       nTeam++;
     } else if (r.team === true) {
@@ -249,5 +250,7 @@ export const BADGES = [
   "flag", "hill",
   // 0012 (fase 7)
   "quiz",
+  // 0013 (fase 8)
+  "fox", "relay",
 ] as const;
 export type Badge = (typeof BADGES)[number];

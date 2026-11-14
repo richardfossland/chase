@@ -10,7 +10,7 @@
 //   --pin PIN         join an existing session (e.g. one made in /ny)
 //   --create          create a sim session (needs SIM_ENABLED=1 on the server),
 //                     start it, and check alarm latency as the teacher
-//   --bots N          number of bots (default 10, max 60)
+//   --bots N          number of bots (default 10, max 300)
 //   --mix SPEC        e.g. "runner:50,sos:2,forbidden:2" (default: one of each special)
 //   --minutes M       run time (default 2)
 //   --seed S          scenario seed (default 42)
@@ -52,7 +52,7 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const args = parseArgs(process.argv.slice(2));
 const base = args.base ?? "http://localhost:3120";
 const minutes = Number(args.minutes ?? 2);
-const bots = Math.min(60, Number(args.bots ?? 10));
+const bots = Math.min(300, Number(args.bots ?? 10));
 const seed = Number(args.seed ?? 42);
 const p95Limit = Number(args.p95 ?? 50);
 
@@ -75,12 +75,12 @@ if (args.create) {
     plan: {
       rounds: args.plan
         ? String(args.plan).split(",").map((x) => {
-            // posts:360 | free:180 | convert:300 | swap:300 | flag:300 | king:300,
+            // posts:360 | free:180 | convert:300 | swap:300 | fox:300 | flag:300 | king:300 | relay:300,
             // "+zone" adds the shrinking zone (posts+zone:300), "+team" plays it as teams (posts+team:300)
             const [kind, secs] = x.split(":");
             const [mode, layer] = kind.split("+");
             const zone = layer === "zone" ? { zone: true } : layer === "team" ? { team: true } : {};
-            return mode === "convert" || mode === "swap"
+            return mode === "convert" || mode === "swap" || mode === "fox"
               ? { mode: "tag", variant: mode, duration_s: Number(secs), ...zone }
               : { mode, duration_s: Number(secs), ...zone };
           })
@@ -174,7 +174,7 @@ if (args.assert) {
     if (summary.game.rounds !== want) problems.push(`${summary.game.rounds} av ${want} runder`);
     if (String(args.plan).includes("posts") && summary.game.claims === 0) problems.push("ingen poster tatt");
     if (summary.game.duplicateClaims > 0) problems.push(`${summary.game.duplicateClaims} poster tatt to ganger`);
-    if (/convert|swap/.test(String(args.plan))) {
+    if (/convert|swap|fox/.test(String(args.plan))) {
       const fails = Object.entries(summary.game.catchFails)
         .filter(([k]) => k === "too_far" || k === "no_fix")
         .reduce((s, [, n]) => s + n, 0);
@@ -204,7 +204,7 @@ if (args.assert) {
     if (summary.game.quizAnswered === 0) problems.push("ingen svarte på spørsmål");
     else if (summary.game.quizRight === 0) problems.push("ingen riktige svar (fasit/valg ser feil ut)");
   }
-  const teamPlan = /flag|king|\+team/.test(String(args.plan ?? ""));
+  const teamPlan = /flag|king|relay|\+team/.test(String(args.plan ?? ""));
   if (teamPlan && hostToken) {
     const sz = summary.game.teamSizes;
     if (!sz) problems.push("lagene ble aldri fordelt");
@@ -216,6 +216,11 @@ if (args.assert) {
     if (!pts.length || pts.every((x) => x === 0)) problems.push("ingen lagpoeng");
     if (/flag/.test(String(args.plan)) && summary.game.flagCaptures === 0) problems.push("ingen flagg tatt");
     if (/king/.test(String(args.plan)) && summary.game.hillHolds === 0) problems.push("ingen holdt haugen");
+    if (/relay/.test(String(args.plan))) {
+      if (summary.game.relayLegs === 0) problems.push("ingen stafett-etapper");
+      // Bot views lag up to one tick, so hand-overs overlap: allow ~20 % (the exact cap is a SQL test).
+      if (summary.game.relayBatonMax > summary.game.relayBatonCap + Math.max(1, Math.ceil(summary.game.relayBatonCap * 0.2))) problems.push(`${summary.game.relayBatonMax} pinner på ett lag (maks ${summary.game.relayBatonCap})`);
+    }
     if (summary.game.msgsSent > 0 && summary.game.msgsSeen === 0) problems.push("lagbeskjeder kom aldri fram");
     if (args.ceremony && summary.ceremony && !summary.ceremony.error) {
       if (!summary.ceremony.cats?.includes("team")) problems.push("ingen Lagpall i seremonien");

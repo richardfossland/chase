@@ -11,6 +11,7 @@ import { audioReady, unlockAudio } from "@/lib/client/sound";
 import { no } from "@/lib/locale/no";
 import { formatClock, phaseLeftS, planTotalS } from "@/lib/rules/game";
 import { SAFETY } from "@/lib/rules/safety";
+import { CROWD_FROM } from "@/lib/rules/relay";
 
 import { HostCeremony } from "./HostCeremony";
 import { EventChip, EventSheet } from "./HostEvents";
@@ -22,7 +23,7 @@ const h = no.host;
 
 function roundName(r: { mode: string; variant?: string | null; zone?: unknown; zoned?: boolean; team?: boolean }): string {
   const base = r.mode === "tag" ? h.round.variants[r.variant ?? "convert"] : h.round.modes[r.mode];
-  const teamed = r.team === true && r.mode !== "flag" && r.mode !== "king" ? base + h.round.teamTag : base;
+  const teamed = r.team === true && r.mode !== "flag" && r.mode !== "king" && r.mode !== "relay" ? base + h.round.teamTag : base;
   return r.zoned || r.zone === true ? teamed + h.round.zoneTag : teamed;
 }
 
@@ -164,6 +165,7 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
             teamOf={snap.team_of}
             flags={snap.round?.flags ?? null}
             hill={snap.round?.hill ?? null}
+            relay={snap.round?.relay ?? null}
             onSelect={select}
           />
         )}
@@ -440,6 +442,13 @@ function LobbyBoard({
   sessionId: string;
 }) {
   const plan = snap.plan;
+  // 0013: a big group lists only the phones that need help (GPS weak or missing).
+  const [showAll, setShowAll] = useState(false);
+  const crowd = players.length >= CROWD_FROM;
+  const level = (p: HostPlayer) => (p.acc === null || p.signal === "none" || p.signal === "lost" ? 2 : p.acc < 15 ? 0 : p.acc <= 30 ? 1 : 2);
+  const counts = [0, 0, 0];
+  for (const p of players) counts[level(p)]++;
+  const shown = crowd && !showAll ? players.filter((p) => level(p) > 0) : players;
   return (
     <div className="h-full overflow-y-auto px-4 pt-16 pb-28">
       <section className="mx-auto flex max-w-3xl flex-col items-center gap-4 rounded-3xl border border-line bg-ink-2 p-6 text-center sm:flex-row sm:text-left">
@@ -468,8 +477,16 @@ function LobbyBoard({
       </section>
       <section className="mx-auto mt-6 max-w-3xl">
         <h2 className="text-lg font-extrabold">{players.length ? h.players(players.length) : h.waiting}</h2>
+        {crowd && (
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm font-bold">
+            <span className="text-txt-dim">{no.crowd.summary(counts[0], counts[1], counts[2])}</span>
+            <button className="ml-auto rounded-lg border border-line px-3 py-1.5" onClick={() => setShowAll((v) => !v)} data-testid="crowd-toggle">
+              {showAll ? no.crowd.issuesOnly(counts[1] + counts[2]) : no.crowd.showAll(players.length)}
+            </button>
+          </div>
+        )}
         <ul className="mt-3 grid gap-2 sm:grid-cols-2">
-          {players.map((p) => {
+          {shown.map((p) => {
             const b = gpsBadge(p);
             return (
               <li key={p.id}>
@@ -507,9 +524,25 @@ function PlayerList({
   act: HostSession["act"];
 }) {
   const gathering = status === "gathering";
+  const [q, setQ] = useState("");
+  const crowd = players.length >= CROWD_FROM;
+  const needle = q.trim().toLocaleLowerCase("nb");
+  const list = crowd && needle ? players.filter((p) => p.nickname.toLocaleLowerCase("nb").includes(needle)) : players;
   return (
+    <>
+    {crowd && (
+      <input
+        className="mb-2 w-full rounded-xl border border-line bg-ink px-3 py-2 font-bold"
+        placeholder={no.crowd.search}
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        aria-label={no.crowd.search}
+        data-testid="player-search"
+      />
+    )}
+    {crowd && needle && list.length === 0 && <p className="text-sm text-txt-dim">{no.crowd.noMatch}</p>}
     <ul className="space-y-1.5">
-      {players.map((p) => {
+      {list.map((p) => {
         const s = dotState(p, sosPlayers.has(p.id), status);
         return (
           <li key={p.id} className="flex items-center gap-2 rounded-xl bg-ink px-3 py-2">
@@ -530,6 +563,7 @@ function PlayerList({
         );
       })}
     </ul>
+    </>
   );
 }
 
@@ -858,7 +892,14 @@ function RoundBar({
         {live && r.mode === "posts" && <p className="text-xs font-bold text-txt-dim">{h.round.posts(open, taken)}</p>}
         {live && r.mode === "tag" && (
           <p className="text-xs font-bold text-txt-dim">
-            {h.round.counts(snap.players.filter((p) => p.role === "hunter").length, snap.players.filter((p) => p.role === "prey").length)}
+            {r.variant === "fox"
+              ? h.round.foxCounts(snap.players.filter((p) => p.role === "hunter").length)
+              : h.round.counts(snap.players.filter((p) => p.role === "hunter").length, snap.players.filter((p) => p.role === "prey").length)}
+          </p>
+        )}
+        {live && r.relay && (
+          <p className="text-xs font-bold text-txt-dim">
+            {h.round.relay((snap.teams ?? []).map((t) => `${t.name} ${r.relay?.legs[String(t.n)] ?? 0}`).join(" · "))}
           </p>
         )}
       </div>

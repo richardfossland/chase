@@ -39,7 +39,7 @@ const t = no.play;
 
 function roundTitle(r: { mode: string; variant?: string | null; zone?: unknown; zoned?: boolean; team?: boolean }): string {
   const base = r.mode === "tag" ? t.variants[r.variant ?? "convert"] : t.modes[r.mode];
-  const teamed = r.team === true && r.mode !== "flag" && r.mode !== "king" ? base + t.teamTag : base;
+  const teamed = r.team === true && r.mode !== "flag" && r.mode !== "king" && r.mode !== "relay" ? base + t.teamTag : base;
   return r.zoned || r.zone === true ? teamed + t.zoneTag : teamed;
 }
 const SIM_ALLOWED = process.env.NODE_ENV !== "production" || process.env.NEXT_PUBLIC_SIM_ENABLED === "1";
@@ -213,6 +213,24 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
       setFlash({ id: Date.now(), text: t.caughtYou, sub: t.nowHunter, tone: "dim" });
     }
     if (view.tag?.hunter_near && !p?.tag?.hunter_near) cue("danger");
+    // 0013 Sporing: I caught the fox → I am the fox now.
+    if (!storm && view.tag?.fox && p && p.status === "live" && view.status === "live" && p.role === "hunter" && view.role === "prey") {
+      cue("golden");
+      setFlash({ id: Date.now(), text: no.fox.became, tone: "gold" });
+    }
+    // 0013 Stafett: post reached, leg done.
+    if (view.relay && p?.relay && p.round?.idx === view.round?.idx) {
+      if (view.relay.back && !p.relay.back && view.relay.post !== null) {
+        cue("claim");
+        setFlash({ id: Date.now(), text: no.relay.postTaken(5), tone: "ok" });
+      } else if (view.relay.legs > p.relay.legs) {
+        cue("golden");
+        setToast({ id: Date.now(), text: no.relay.legDone, label: no.relay.title });
+      } else if (view.relay.post !== null && p.relay.post === null) {
+        cue("go");
+        setToast({ id: Date.now(), text: no.relay.run, label: no.relay.title });
+      }
+    }
     // Ceremony: fanfare on every reveal, extra buzz when it is me.
     if (view.ceremony && p?.ceremony && view.ceremony.step > p.ceremony.step && view.ceremony.step <= view.ceremony.total) {
       const latest = view.ceremony.revealed[view.ceremony.revealed.length - 1];
@@ -600,9 +618,15 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
         hill: round?.hill ? { pos: round.hill.pos, r: round.hill.r, holder: round.hill.holder } : null,
         mates: team.mates ?? [],
         mateColor: team.color,
+        relay: round?.relay
+          ? { base: round.relay.base, r: round.relay.r, posts: round.relay.posts,
+              target: !view?.relay || view.relay.post === null ? null : view.relay.back ? "base" : view.relay.post }
+          : null,
         msgs: (team.msgs ?? []).filter((m) => !m.me).map((m) => ({ label: `${m.nickname}: ${no.teams.msgsPlain[m.kind] ?? ""}`, pos: m.pos })),
       })
     : null;
+  // 0013 Sporing: the fox sees the hunters near it (same dots as the radar power-up).
+  const foxLive = isPrey && tag?.fox ? (tag.hunter_pos ?? []).map((h) => h.pos) : null;
   const sprintTarget = evView && !evView.done && evView.kind === "sprint" && !evView.me ? evView.target : null;
   const zoneEdge = zn && zoneState && gps.fix
     ? { m: Math.max(0, Math.round(haversine([gps.fix.lng, gps.fix.lat], [zoneState.c.lng, zoneState.c.lat]) - zn.r)),
@@ -618,7 +642,16 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
     title = t.countdown;
     body = `${t.roundOf(round.idx + 1, round.count)} · ${roundTitle(round)}`;
   }
-  if (status === "live" && isHunter && tag) {
+  if (status === "live" && isHunter && tag?.fox) {
+    // 0013 Sporing: everybody hunts the one fox.
+    tone = "hunter";
+    title = no.fox.hunt;
+    body = tag.prey_near ? t.preyNear(tag.prey_near) : tag.radar?.length ? no.fox.seen(Math.min(...tag.radar.map((r) => r.age_s))) : t.modeHint.fox;
+  } else if (status === "live" && isPrey && tag?.fox) {
+    tone = "live";
+    title = no.fox.you;
+    body = immuneLeft ? t.immune(immuneLeft) : tag.hunter_pos?.length ? no.fox.hunters(tag.hunter_pos.length) : no.fox.noHunters;
+  } else if (status === "live" && isHunter && tag) {
     tone = "hunter";
     title = t.hunter;
     body = tag.prey_near ? t.preyNear(tag.prey_near) : t.hunterHint;
@@ -712,7 +745,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
 
       {tag && (
         <div className="flex items-center justify-between gap-2 px-4 pb-2 text-sm font-bold">
-          <span className="opacity-90">{t.counts(tag.hunters, tag.prey)}</span>
+          <span className="opacity-90">{tag.fox ? no.host.round.foxCounts(tag.hunters) : t.counts(tag.hunters, tag.prey)}</span>
           {isPrey && tag.code && (
             <button className="rounded-full bg-black/30 px-3 py-1 font-mono font-black tracking-widest" onClick={() => setShowCode(true)}>
               {t.yourCode} {tag.code}
@@ -740,7 +773,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
       )}
 
       {team && status !== "ceremony" && (
-        <TeamStrip team={team} round={round} fix={gps.fix} offsetMs={offsetMs} now={now} live={teamLive} />
+        <TeamStrip team={team} round={round} fix={gps.fix} offsetMs={offsetMs} now={now} live={teamLive} relay={view?.relay ?? null} />
       )}
       {team && teamLive && status === "live" && <TeamMsgBar busy={msgBusy} onSend={(k) => void sendTeamMsg(k)} />}
 
@@ -781,7 +814,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
           zoneNextR={zn?.warn ? (zn.next?.r ?? null) : null}
           targetLat={sprintTarget?.lat ?? null}
           targetLng={sprintTarget?.lng ?? null}
-          live={tag?.radar_live ?? NO_LIVE}
+          live={foxLive ?? tag?.radar_live ?? NO_LIVE}
           teamMap={teamMap}
         />
         {sim && <SimPad sim={sim} />}
@@ -1053,10 +1086,13 @@ function PlayerMap({
       ? { c: { lat: zoneLat, lng: zoneLng }, r: zoneR, nextR: zoneNextR } : null);
   }, [ready, zoneLat, zoneLng, zoneR, zoneNextR]);
 
+  // By value: the fox's hunter list is a new array on every tick.
+  const liveKey = JSON.stringify(live);
   useEffect(() => {
     if (!ready || !map.current) return;
-    setEvent(map.current, targetLat !== null && targetLng !== null ? { lat: targetLat, lng: targetLng } : null, EVENTS.sprint_reach_m, live);
-  }, [ready, targetLat, targetLng, live]);
+    const pts = JSON.parse(liveKey) as { lat: number; lng: number }[];
+    setEvent(map.current, targetLat !== null && targetLng !== null ? { lat: targetLat, lng: targetLng } : null, EVENTS.sprint_reach_m, pts);
+  }, [ready, targetLat, targetLng, liveKey]);
 
   useEffect(() => {
     if (!ready || !map.current) return;

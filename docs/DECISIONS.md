@@ -538,3 +538,35 @@ Migrasjon 0012 og tvillingen `lib/rules/quiz.ts`:
   - DB-testene er grønne for alle 12 migrasjoner (kjørt to ganger), og TS-testene er grønne.
   - Full sim med 40 boter og 4 lag (lag-Postjakt + Flaggjakt + Konge, spørsmål, skritt, hendelser hvert 60. s, seremoni): alle krav oppfylt. 135 spørsmål besvart (= poster), 54 riktige, 9 paller med «Flest riktige», tick p95 61 ms, 0 feil.
   - I nettleseren: spørsmålskortet etter en post, et feil svar (ingen poengtap, registrert som feil), og storskjermen med kart uten navn og lagpoeng.
+
+## ADR-030 — Fase 8: Stafett, Sporing og over 150 spillere (2026-11-14)
+Eierens valg 2026-11-14: «Stafett + Sporing» og «Over 150 spillere». Native app og Feide venter. Foto-oppdrag venter på DPIA. Alt bygges før én felles betatest, og deploy er godkjent på forhånd.
+
+Migrasjon 0013 og tvillingen `lib/rules/relay.ts`:
+- **Sporing** (Smittejakt-variant `fox`):
+  - Én rev, alle andre jager. Rollene deles ut som i Smittejakt, og deretter gjøres byttene om til én rev pluss jegere (`_fox_begin`).
+  - Reven ser alle jegere innen 150 m (de 40 nærmeste) som prikker på kartet. Jegerne får en radarping av reven hvert 20. sekund, også når den løper («stealth» gjelder ikke reven).
+  - En fangst bytter roller som i sisten: den som fanger, blir rev med 20 s immunitet. `catch()` er kopiert fra 0004 med `fox` behandlet som `swap`.
+  - En rev som går ut eller sitter over, erstattes av en tilfeldig jeger med fersk posisjon. Elever som kommer sent, jager.
+  - Reven ved fløyta får +25 og merket «🦊 Rev». Reven tjener ellers +1 per 5 s som andre bytter.
+  - Rollebytte-storm virker også her (alle blir rev i 30 s). Det er bevisst, siden det er gøy og går over av seg selv.
+- **Stafett** (`relay`, alltid lagrunde, ingen sone):
+  - Fem poster spredt bort fra samlingspunktet, som er basen. Hvert lag løper postene i fast rekkefølge og starter på hver sin post.
+  - Løperen med pinne når posten (innenfor max(15 m, nøyaktighet), fix ≤ 25 m) og får +5. Tilbake ved basen (innenfor max(25 m, nøyaktighet)) er én etappe, som gir +10 til laget.
+  - Pinnen går så videre: først til de som står ved basen, deretter til den som har løpt minst.
+  - Pinner per lag = ceil(medlemmer / 5), så store lag holder alle i bevegelse. En pinne som ikke kommer hjem innen 3 min, går videre (elev som har gått seg vill eller stoppet). Den eleven havner bakerst i køen.
+  - Flest etapper vinner. Etappene teller i «Lagspiller», og merket «🎽 Stafettløper» gis ved 3 etapper.
+  - Hendelser i en stafettrunde: bare lærerens oppdrag, ingen sprint eller samling som drar løperne ut av løypa.
+  - Alt avgjøres i vedlikeholdet (høyst 1/s, under øktlåsen). Andre spilleres rader låses først i id-rekkefølge (ADR-025). Tick leser bare.
+- **Over 150 spillere:**
+  - `max_players` 60 → 300, åpne poster opptil 40. IP-grensen for innmelding er 400/min, fordi hele skolen deler NAT.
+  - Lagvisningen caches per lag (`team_clock`, UNLOGGED). Hver tick leser bare eget lag og de 20 nærmeste lagkameratene (`_nearest`, flat-jord-avstand). Jegerradaren bærer de 25 nærmeste pingene.
+  - Lærerkartet går over i **gruppemodus** fra 80 spillere: vanlige prikker tegnes i ett WebGL-lag og samles i klynger med antall når man zoomer ut. Navn vises tett inne. **Alle som trenger læreren** (SOS, utenfor, forbudt sone, mistet signal, stillstand, ikke møtt ved samling) **beholder navngitt markør** (regel 4).
+  - Lobbylista viser bare elever med svak eller manglende GPS («Vis alle» for resten). Spillerlista får søk.
+- **Personvernretting:** lagvisnings-cachen fra 0011 inneholdt lagkameratenes posisjoner og ble ikke slettet ved «Avslutt», bare med øktraden etter 24 t. Den var UNLOGGED (aldri i WAL eller backup), men brøt regel 3. `_end_session` sletter nå `team_clock` og `session_clock`, og migrasjonen tømmer cachen for allerede avsluttede økter. PLAN § 8 er oppdatert.
+- **Målt lokalt med 300 boter** (direkte mot PostgREST, Stafett 120 s + Sporing 90 s + lag-Postjakt 90 s):
+  - Alle krav oppfylt, 0 feil, tick p95 19 ms (ende til ende).
+  - Etapper på alle fire lag (34/36/38/28), fangster i Sporing.
+  - DB-tid per tick ca. 5,7 ms med 300 boter, PostgREST og databasen på samme Mac. Uten konkurranse om CPU koster lagvisningen 0,42 ms mot 1,8 ms for 0009-versjonen.
+  - 300 spillere er ~150 tick/s, altså ca. 0,6–0,9 kjerne databasetid. **Det tåler ikke Nano.** Skal flere klasser spille samtidig i prod, må Supabase oppgraderes (eiers beslutning).
+- **Testet:** DB-testene er grønne for alle 13 migrasjoner (kjørt to ganger, med vektorer for Sporing, Stafett, 300-taket og slettingen). Sim med 40 boter over HTTP (Stafett + Sporing + Postjakt med spørsmål, hendelser og seremoni): alle krav oppfylt, p95 46 ms.

@@ -10,9 +10,9 @@ import { joinBody } from "@/lib/server/schemas";
 import { newToken, sha256Hex } from "@/lib/server/tokens";
 
 // A whole class shares one school NAT IP, so the IP limit is generous; the
-// per-session player cap (60) is enforced in SQL.
+// per-session player cap (300) is enforced in SQL.
 export const POST = guarded(async (req) => {
-  const rl = limited(ipKey(req, "join"), 150);
+  const rl = limited(ipKey(req, "join"), 400);
   if (rl) return rl;
   const body = await parseBody(req, joinBody);
   if (body instanceof Response) return body;

@@ -281,6 +281,9 @@ Fysiske oppdrag gjøres der eleven er, aldri som en betingelse for å slippe str
 | Lærerens telefonnummer | `sessions` | Nullstilles ved øktslutt |
 | Spørsmål ved poster: hvilket spørsmål eleven har åpent, antall stilt og antall riktige (ikke hvilke svar) | `player_stats.quiz_*` | 24 t etter slutt. Hendelsesloggen har spørsmålsnummer og riktig/feil, uten koordinater. |
 | Skritt (sum fra mobilens skritteller, valgfri) | `player_live.steps` (UNLOGGED) | **Slettes ved øktslutt** |
+| Stafett: om eleven har pinnen, hvilken post, på vei tilbake, når pinnen ble gitt, antall etapper | `player_stats.relay_*`, `round_relay` | 24 t etter slutt. Ingen posisjoner. |
+| Stafettløype (base og poster: punkter i området, ikke elevposisjoner) og etapper per lag | `rounds.state` | Som økta |
+| Lagvisnings-cache (lagkameratenes posisjoner og lagbeskjeder, bygges hvert sekund) | `team_clock`, `session_clock.team_cache` (UNLOGGED) | **Slettes ved øktslutt** (fra 0013; før det fulgte den økta i 24 t) |
 | **Lærerbibliotek** (lagrede og sist brukte områder, opplegg, oppdragspakker), knyttet til en anonym lærernøkkel (bare hash lagres). Ingen elevdata. | `teachers`, `areas`, `plans`, `challenge_packs` | Til læreren sletter det, eller **13 måneder uten bruk** (`purge_expired`). Bare de 5 siste «sist brukt» per type beholdes. |
 | Delelenker (kopi av et opplegg og ev. et område, ingen info om læreren) | `shares` | Til læreren trekker lenken tilbake (raden slettes), eller med biblioteket |
 | **Anonymt sammendrag** | `session_summaries` | Beholdes: antall spillere, varighet, moduser, total og median distanse og aktive minutter som histogram, og anonym telling av «vil spille igjen» (ja/nei, lærerens svar). **Ingen koordinater, navn eller område.** |
@@ -608,10 +611,10 @@ Fase 1–3 gir **spillbar MVP for kroppsøvingstimen**. Hver fase avsluttes med 
 
 ### Fase 8 – Senere (egne beslutninger)
 
-- Native app (Capacitor eller Expo) for bakgrunns-GPS og «mobil i lomma».
-- Foto-oppdrag etter DPIA.
-- Feide-innlogging.
-- Over 150 spillere (aggregering og soneinndeling).
+- ✅ **Stafett og Sporing** (§ 3.4) og **over 150 spillere** (aggregering og soneinndeling): bygget 2026-11-14, migrasjon 0013, ADR-030.
+- ⏸ Native app (Capacitor eller Expo) for bakgrunns-GPS og «mobil i lomma». Eier valgte å vente (2026-11-14).
+- ⏸ Foto-oppdrag etter DPIA. Venter på DPIA (eiers valg 2026-11-14).
+- ⏸ Feide-innlogging. Eier valgte å vente (krever registrering i Feide kundeportal).
 
 ---
 
