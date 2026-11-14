@@ -8,6 +8,7 @@ import { ConfirmDialog } from "@/lib/client/ConfirmDialog";
 import { identity } from "@/lib/client/identity";
 import { QRCode } from "@/lib/client/QRCode";
 import { audioReady, unlockAudio } from "@/lib/client/sound";
+import { Button, buttonClass, Card, Chip, cx, Sheet, useCountUp } from "@/lib/client/ui";
 import { no } from "@/lib/locale/no";
 import { formatClock, phaseLeftS, planTotalS } from "@/lib/rules/game";
 import { SAFETY } from "@/lib/rules/safety";
@@ -59,20 +60,20 @@ export default function HostPanel({ sessionId }: { sessionId: string }) {
     return (
       <Center>
         <p className="text-lg font-bold">{h.noToken}</p>
-        <Link href="/" className="mt-4 text-gold underline">
+        <Link href="/" className={buttonClass("secondary", "md", "mt-6")}>
           {no.common.home}
         </Link>
       </Center>
     );
   }
-  if (!hs.snap || !hs.geo) return <Center>…</Center>;
+  if (!hs.snap || !hs.geo) return <Center><span className="size-3 animate-pulse rounded-full bg-gold" aria-label="…" /></Center>;
   if (hs.snap.status === "ended") {
     return (
       <Center>
-        <p className="text-5xl">✔</p>
-        <h1 className="mt-3 text-3xl font-black">{h.end.ended}</h1>
-        <p className="mt-2 text-txt-dim">{h.end.endedBody}</p>
-        <Link href="/ny" className="mt-6 rounded-xl bg-gold px-6 py-3 font-extrabold text-on-accent">
+        <span className="m-pop grid size-16 place-items-center rounded-full bg-ok text-3xl font-black text-on-accent">✔</span>
+        <h1 className="mt-5 text-3xl font-black">{h.end.ended}</h1>
+        <p className="mt-2 max-w-sm text-txt-dim">{h.end.endedBody}</p>
+        <Link href="/ny" className={buttonClass("primary", "lg", "mt-8")}>
           {h.end.newSession}
         </Link>
       </Center>
@@ -101,6 +102,7 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
   );
   const byId = useMemo(() => new Map(snap.players.map((p) => [p.id, p])), [snap.players]);
   const select = useCallback((id: string) => setSheet({ kind: "player", id }), []);
+  const closeSheet = useCallback(() => setSheet(null), []);
   const lobby = snap.status === "lobby";
   const gathering = snap.status === "gathering";
   const ceremony = snap.status === "ceremony";
@@ -108,6 +110,7 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
   const joinUrl = origin ? `${origin}/j/${snap.pin}` : "";
   const playlistDone = snap.playlist_done;
   const qrCount = snap.plan?.qr_posts ?? 0;
+  const roundBar = !!snap.round && !lobby && !ceremony;
 
   function focusAlarm(a: HostAlarm) {
     if (a.pos) mapRef.current?.flyTo(a.pos.lat, a.pos.lng);
@@ -137,9 +140,20 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
   const checkedIn = snap.players.filter((p) => p.checked_in).length;
   const missing = snap.players.filter((p) => !p.checked_in && p.role !== "referee");
 
+  const sheetTitle: Record<NonNullable<Sheet>["kind"], string> = {
+    player: sheet?.kind === "player" ? (byId.get(sheet.id)?.nickname ?? "") : "",
+    message: h.msg.title(sheet?.kind === "message" && sheet.to ? (byId.get(sheet.to)?.nickname ?? null) : null),
+    more: h.more,
+    players: h.playersList,
+    qr: h.showQr,
+    ceremony: no.ceremony.start,
+    events: no.events.title,
+    teams: no.teams.host.title,
+  };
+
   return (
     <div
-      className="relative h-dvh w-full overflow-hidden lg:grid lg:grid-cols-[1fr_22rem]"
+      className="host-panel relative h-dvh w-full overflow-hidden bg-ink lg:grid lg:grid-cols-[1fr_23rem]"
       onPointerDown={() => {
         if (!sound) {
           unlockAudio();
@@ -166,191 +180,236 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
             flags={snap.round?.flags ?? null}
             hill={snap.round?.hill ?? null}
             relay={snap.round?.relay ?? null}
+            selectedId={sheet?.kind === "player" ? sheet.id : null}
             onSelect={select}
           />
         )}
 
-        {/* top: status + alarm strip */}
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 space-y-2 p-2 pt-[max(0.5rem,env(safe-area-inset-top))] lg:max-w-xl">
-          <div className="pointer-events-auto flex items-center justify-between gap-2">
-            <span className={`rounded-full px-3 py-1.5 text-sm font-black ${paused ? "bg-warn text-on-accent" : gathering ? "bg-ok text-on-accent" : "bg-ink-2/95 text-txt"}`}>
-              {h.status[snap.status] ?? snap.status} · PIN {snap.pin}
-            </span>
-            {!sound && (
-              <button className="rounded-full bg-danger px-3 py-1.5 text-xs font-black text-white" onClick={() => unlockAudio()}>
-                {h.soundOff}
-              </button>
-            )}
-          </div>
-          <RoundBar snap={snap} act={hs.act} onConfirm={setConfirm} />
+        {/* top: status + round + alarm strip (safety first, rule 4) */}
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex flex-col gap-2 p-3 pt-[max(0.75rem,env(safe-area-inset-top))] lg:max-w-lg">
+          {(!roundBar || !sound) && (
+            <div className="flex items-center justify-between gap-2">
+              {!roundBar ? (
+                <span
+                  className={cx(
+                    "pointer-events-auto inline-flex shrink-0 items-center gap-2 rounded-full px-3.5 py-2 text-sm font-extrabold whitespace-nowrap",
+                    paused ? "bg-warn text-on-accent" : gathering ? "bg-ok text-on-accent" : "host-float text-txt",
+                  )}
+                >
+                  <span className={cx("size-2 rounded-full", paused || gathering ? "bg-on-accent/70" : "bg-ok")} aria-hidden />
+                  {h.status[snap.status] ?? snap.status} · PIN {snap.pin}
+                </span>
+              ) : (
+                <span />
+              )}
+              {!sound && (
+                <button
+                  className="ui-press pointer-events-auto min-h-12 min-w-0 rounded-full bg-danger px-4 text-xs leading-tight font-black text-white shadow-[var(--shadow-float)]"
+                  onClick={() => unlockAudio()}
+                >
+                  {h.soundOff}
+                </button>
+              )}
+            </div>
+          )}
+          {roundBar && <RoundBar snap={snap} act={hs.act} onConfirm={setConfirm} />}
           <AlarmStrip alarms={snap.alarms} onAck={(ids) => ids.forEach((id) => void hs.ack(id))} onFocus={focusAlarm} />
           {/* Under the alarms: safety beats game (CLAUDE.md rule 4). */}
           {!ceremony && <EventChip snap={snap} onOpen={() => setSheet({ kind: "events" })} />}
           <TeamsChip snap={snap} onOpen={() => setSheet({ kind: "teams" })} />
           {hs.error === "network" || hs.error === "timeout" ? (
-            <p className="pointer-events-auto rounded-xl bg-warn px-3 py-2 text-sm font-bold text-on-accent">{h.errors.network}</p>
+            <p className="m-drop-in pointer-events-auto rounded-2xl bg-warn px-4 py-2.5 text-sm font-bold text-on-accent shadow-[var(--shadow-float)]">
+              {h.errors.network}
+            </p>
           ) : null}
         </div>
 
         {/* gathering roll call */}
         {gathering && (
           <button
-            className="absolute inset-x-2 bottom-[calc(5.5rem+env(safe-area-inset-bottom))] z-10 flex items-center justify-between rounded-2xl border border-line bg-ink-2/95 px-4 py-3 text-left lg:hidden"
+            className="host-float ui-press m-rise-in absolute inset-x-3 bottom-[calc(6rem+env(safe-area-inset-bottom))] z-10 flex min-h-14 items-center justify-between gap-3 rounded-2xl px-4 py-3 text-left lg:hidden"
             onClick={() => setSheet({ kind: "players", missingOnly: true })}
           >
             <span className="font-extrabold">
               🧲 {h.gatherPanel.title}: {h.gatherPanel.here(checkedIn, snap.players.length)}
             </span>
-            <span className={`font-black ${missing.length ? "text-warn" : "text-ok"}`}>{h.gatherPanel.missing(missing.length)} ▸</span>
+            <span className={cx("shrink-0 text-sm font-black", missing.length ? "text-warn-text" : "text-ok-text")}>
+              {h.gatherPanel.missing(missing.length)} ›
+            </span>
           </button>
         )}
 
         {/* ceremony (0006): under the alarm strip, own controls */}
         {ceremony && snap.ceremony && <HostCeremony view={snap.ceremony} act={hs.act} onEnd={endFlow} />}
 
-        {/* bottom bar */}
+        {/* bottom dock */}
         {!ceremony && (
-        <nav
-          className={`absolute inset-x-0 bottom-0 z-10 grid gap-2 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] ${
-            lobby || (gathering && playlistDone) ? "grid-cols-4" : "grid-cols-5"
-          }`}
-        >
-          {gathering && playlistDone ? (
-            <>
-              <BarButton icon="🏆" label={no.ceremony.start} tone="gold" className="col-span-2" onClick={() => setSheet({ kind: "ceremony" })} />
-              <BarButton icon="📣" label={h.message} onClick={() => setSheet({ kind: "message", to: null })} />
-              <BarButton icon="⋯" label={h.more} onClick={() => setSheet({ kind: "more" })} />
-            </>
-          ) : lobby ? (
-            <>
-              <BarButton
-                icon="▶"
-                label={h.start}
-                tone="gold"
-                className="col-span-2"
-                disabled={snap.players.length === 0}
-                onClick={() =>
-                  setConfirm({ message: h.startConfirm(snap.players.length), label: h.start, run: () => void hs.act("start") })
-                }
-              />
-              <BarButton icon="📣" label={h.message} onClick={() => setSheet({ kind: "message", to: null })} />
-              <BarButton icon="⋯" label={h.more} onClick={() => setSheet({ kind: "more" })} />
-            </>
-          ) : (
-            <>
-              {/* PLAN §6: ⏸ · 📣 · ⚡ · 🧲 · ⋯ — ⚡ needs a round (0007) */}
-              <BarButton
-                icon={paused ? "▶" : "⏸"}
-                label={paused ? h.resume : h.pause}
-                tone={paused ? "gold" : undefined}
-                onClick={() => void hs.act(paused ? "resume" : "pause")}
-              />
-              <BarButton icon="📣" label={h.message} onClick={() => setSheet({ kind: "message", to: null })} />
-              <BarButton
-                icon="⚡"
-                label={no.events.button}
-                tone={snap.event && !snap.event.done ? "gold" : undefined}
-                onClick={() => setSheet({ kind: "events" })}
-              />
-              <BarButton
-                icon="🧲"
-                label={gathering ? h.endGather : h.gather}
-                tone={gathering ? "ok" : undefined}
-                onClick={() => void hs.act(gathering ? "end_gather" : "gather")}
-              />
-              <BarButton icon="⋯" label={h.more} onClick={() => setSheet({ kind: "more" })} />
-            </>
-          )}
-        </nav>
+          <nav className="absolute inset-x-0 bottom-0 z-10 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:mx-auto lg:max-w-2xl">
+            <div
+              className={cx(
+                "host-float grid gap-1 rounded-[1.4rem] p-1.5",
+                lobby || (gathering && playlistDone) ? "grid-cols-4" : "grid-cols-5",
+              )}
+            >
+              {gathering && playlistDone ? (
+                <>
+                  {/* The playlist is done: the ceremony is the next step, so it is the main button. */}
+                  <BarButton label={no.ceremony.start} tone="gold" wide onClick={() => setSheet({ kind: "ceremony" })} />
+                  <BarButton icon="📣" label={h.message} onClick={() => setSheet({ kind: "message", to: null })} />
+                  <BarButton icon="⋯" label={h.more} onClick={() => setSheet({ kind: "more" })} />
+                </>
+              ) : lobby ? (
+                <>
+                  <BarButton
+                    icon="▶"
+                    label={h.start}
+                    tone="gold"
+                    wide
+                    disabled={snap.players.length === 0}
+                    onClick={() =>
+                      setConfirm({ message: h.startConfirm(snap.players.length), label: h.start, run: () => void hs.act("start") })
+                    }
+                  />
+                  <BarButton icon="📣" label={h.message} onClick={() => setSheet({ kind: "message", to: null })} />
+                  <BarButton icon="⋯" label={h.more} onClick={() => setSheet({ kind: "more" })} />
+                </>
+              ) : (
+                <>
+                  {/* PLAN §6: ⏸ · 📣 · ⚡ · 🧲 · ⋯ (⚡ needs a round, 0007) */}
+                  <BarButton
+                    icon={paused ? "▶" : "⏸"}
+                    label={paused ? h.resume : h.pause}
+                    tone={paused ? "gold" : undefined}
+                    onClick={() => void hs.act(paused ? "resume" : "pause")}
+                  />
+                  <BarButton icon="📣" label={h.message} onClick={() => setSheet({ kind: "message", to: null })} />
+                  <BarButton
+                    icon="⚡"
+                    label={no.events.button}
+                    tone={snap.event && !snap.event.done ? "gold" : undefined}
+                    onClick={() => setSheet({ kind: "events" })}
+                  />
+                  <BarButton
+                    icon="🧲"
+                    label={gathering ? h.endGather : h.gather}
+                    tone={gathering ? "ok" : undefined}
+                    onClick={() => void hs.act(gathering ? "end_gather" : "gather")}
+                  />
+                  <BarButton icon="⋯" label={h.more} onClick={() => setSheet({ kind: "more" })} />
+                </>
+              )}
+            </div>
+          </nav>
         )}
       </div>
 
       {/* tablet / PC: always-visible list */}
-      <aside className="hidden h-dvh overflow-y-auto border-l border-line bg-ink-2 p-3 lg:block">
-        <PlayerList players={snap.players} status={snap.status} sosPlayers={sosPlayers} onSelect={select} act={hs.act} />
+      <aside className="hidden h-dvh flex-col border-l border-line bg-ink-2 lg:flex">
+        <div className="flex items-baseline justify-between gap-2 border-b border-line px-5 pt-5 pb-3">
+          <h2 className="text-lg font-black">{h.playersList}</h2>
+          <span className="text-sm font-bold text-txt-dim tabular-nums">
+            {gathering ? h.gatherPanel.here(checkedIn, snap.players.length) : snap.players.length}
+          </span>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-3">
+          <PlayerList players={snap.players} status={snap.status} sosPlayers={sosPlayers} onSelect={select} act={hs.act} />
+        </div>
       </aside>
 
-      {sheet && (
-        <SheetFrame onClose={() => setSheet(null)}>
-          {sheet.kind === "player" && byId.get(sheet.id) && (
-            <PlayerCard
-              p={byId.get(sheet.id)!}
-              status={snap.status}
-              hs={hs}
-              tagLive={(snap.status === "live" || snap.status === "paused") && snap.round?.mode === "tag"}
-              awarded={(snap.referee_awards ?? []).includes(sheet.id)}
-              onMessage={() => setSheet({ kind: "message", to: sheet.id })}
-              onShow={(lat, lng) => {
-                mapRef.current?.flyTo(lat, lng);
-                setSheet(null);
-              }}
-              onKick={(p) =>
-                setConfirm({
-                  message: h.card.kickConfirm(p.nickname),
-                  label: h.card.kick,
-                  danger: true,
-                  run: () => {
-                    void hs.act("kick", { player_id: p.id });
-                    setSheet(null);
-                  },
-                })
-              }
-            />
-          )}
-          {sheet.kind === "message" && (
-            <MessageSheet
-              to={sheet.to ? (byId.get(sheet.to)?.nickname ?? null) : null}
-              onSend={async (text) => {
-                const ok = await hs.act("message", sheet.to ? { text, player_id: sheet.to } : { text });
-                if (ok) setSheet(null);
-              }}
-            />
-          )}
-          {sheet.kind === "players" && (
-            <PlayerList
-              players={sheet.missingOnly ? missing : snap.players}
-              status={snap.status}
-              sosPlayers={sosPlayers}
-              onSelect={select}
-              act={hs.act}
-            />
-          )}
-          {sheet.kind === "qr" && (
-            <div className="flex flex-col items-center gap-3 py-2">
-              {joinUrl && <QRCode value={joinUrl} size={240} />}
-              <p className="font-mono text-5xl font-black tracking-[0.15em] text-gold">{snap.pin}</p>
-            </div>
-          )}
-          {sheet.kind === "ceremony" && (
-            <CeremonyStart
-              onStart={async (spread) => {
-                if (await hs.act("ceremony_start", { spread })) setSheet(null);
-              }}
-            />
-          )}
-          {sheet.kind === "events" && <EventSheet snap={snap} hs={hs} />}
-          {sheet.kind === "teams" && <TeamsSheet snap={snap} hs={hs} onSelect={select} />}
-          {sheet.kind === "more" && (
-            <div className="grid gap-2">
-              <SheetButton onClick={() => setSheet({ kind: "qr" })}>▦ {h.showQr}</SheetButton>
-              <a href={`/host/${hs.sessionId}/tavle`} target="_blank" rel="noopener" className="rounded-xl bg-ink px-3 py-3 text-left font-bold hover:bg-ink-3" data-testid="open-screen">
-                {no.screen.open}
-              </a>
-              {qrCount > 0 && (
-                <Link href={`/host/${hs.sessionId}/poster`} className="rounded-xl bg-ink px-3 py-3 text-left font-bold hover:bg-ink-3">
-                  {h.printQr(qrCount)}
-                </Link>
-              )}
-              <SheetButton onClick={() => setSheet({ kind: "players" })}>👥 {h.playersList} ({snap.players.length})</SheetButton>
-              {(snap.plan?.teams ?? 0) >= 2 && <SheetButton onClick={() => setSheet({ kind: "teams" })}>{no.teams.host.title}</SheetButton>}
-              {gathering && <SheetButton onClick={() => setSheet({ kind: "ceremony" })}>{no.ceremony.start}</SheetButton>}
-              <SheetButton danger onClick={endFlow}>
-                ■ {h.endSession}
-              </SheetButton>
-            </div>
-          )}
-        </SheetFrame>
-      )}
+      <Sheet open={!!sheet} onClose={closeSheet} title={sheet ? sheetTitle[sheet.kind] : undefined} closeLabel={h.close}>
+        {sheet && (
+          <div key={sheet.kind === "player" ? `p-${sheet.id}` : sheet.kind} className="m-fade-in">
+            {sheet.kind === "player" && byId.get(sheet.id) && (
+              <PlayerCard
+                p={byId.get(sheet.id)!}
+                status={snap.status}
+                hs={hs}
+                tagLive={(snap.status === "live" || snap.status === "paused") && snap.round?.mode === "tag"}
+                awarded={(snap.referee_awards ?? []).includes(sheet.id)}
+                onMessage={() => setSheet({ kind: "message", to: sheet.id })}
+                onShow={(lat, lng) => {
+                  mapRef.current?.flyTo(lat, lng);
+                  setSheet(null);
+                }}
+                onKick={(p) =>
+                  setConfirm({
+                    message: h.card.kickConfirm(p.nickname),
+                    label: h.card.kick,
+                    danger: true,
+                    run: () => {
+                      void hs.act("kick", { player_id: p.id });
+                      setSheet(null);
+                    },
+                  })
+                }
+              />
+            )}
+            {sheet.kind === "message" && (
+              <MessageSheet
+                onSend={async (text) => {
+                  const ok = await hs.act("message", sheet.to ? { text, player_id: sheet.to } : { text });
+                  if (ok) setSheet(null);
+                }}
+              />
+            )}
+            {sheet.kind === "players" && (
+              <PlayerList
+                players={sheet.missingOnly ? missing : snap.players}
+                status={snap.status}
+                sosPlayers={sosPlayers}
+                onSelect={select}
+                act={hs.act}
+              />
+            )}
+            {sheet.kind === "qr" && (
+              <div className="flex flex-col items-center gap-4 py-2">
+                {joinUrl && (
+                  <div className="rounded-3xl bg-white p-4 shadow-[var(--shadow-card)]">
+                    <QRCode value={joinUrl} size={240} />
+                  </div>
+                )}
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-txt-dim">{h.pin}</p>
+                <p className="-mt-3 font-mono text-5xl font-black tracking-[0.15em]">{snap.pin}</p>
+              </div>
+            )}
+            {sheet.kind === "ceremony" && (
+              <CeremonyStart
+                onStart={async (spread) => {
+                  if (await hs.act("ceremony_start", { spread })) setSheet(null);
+                }}
+              />
+            )}
+            {sheet.kind === "events" && <EventSheet snap={snap} hs={hs} />}
+            {sheet.kind === "teams" && <TeamsSheet snap={snap} hs={hs} onSelect={select} />}
+            {sheet.kind === "more" && (
+              <div className="grid gap-2">
+                {gathering && (
+                  <SheetButton tone="gold" onClick={() => setSheet({ kind: "ceremony" })}>
+                    {no.ceremony.start}
+                  </SheetButton>
+                )}
+                <SheetButton onClick={() => setSheet({ kind: "qr" })}>▦ {h.showQr}</SheetButton>
+                <a href={`/host/${hs.sessionId}/tavle`} target="_blank" rel="noopener" className={sheetBtn()} data-testid="open-screen">
+                  {no.screen.open}
+                </a>
+                {qrCount > 0 && (
+                  <Link href={`/host/${hs.sessionId}/poster`} className={sheetBtn()}>
+                    {h.printQr(qrCount)}
+                  </Link>
+                )}
+                <SheetButton onClick={() => setSheet({ kind: "players" })}>
+                  👥 {h.playersList} <span className="ml-auto text-txt-dim tabular-nums">{snap.players.length}</span>
+                </SheetButton>
+                {(snap.plan?.teams ?? 0) >= 2 && <SheetButton onClick={() => setSheet({ kind: "teams" })}>{no.teams.host.title}</SheetButton>}
+                <div className="my-1 h-px bg-line" aria-hidden />
+                <SheetButton tone="danger" onClick={endFlow}>
+                  ■ {h.endSession}
+                </SheetButton>
+              </div>
+            )}
+          </div>
+        )}
+      </Sheet>
 
       {confirm && (
         <ConfirmDialog
@@ -391,39 +450,84 @@ export function groupAlarms(alarms: HostAlarm[]) {
 }
 
 function AlarmStrip({ alarms, onAck, onFocus }: { alarms: HostAlarm[]; onAck: (ids: string[]) => void; onFocus: (a: HostAlarm) => void }) {
+  const [expanded, setExpanded] = useState(false);
   if (!alarms.length) return null;
+  // Server order (unacked first, then sos › forbidden › outside › signal › speed) is kept.
+  const groups = groupAlarms(alarms);
+  // Always in sight, no tap needed (rule 4): the most severe row and every open SOS.
+  const pinned = groups.filter((g, i) => i === 0 || (g.a.kind === "sos" && !g.a.acked));
+  const rest = groups.filter((g) => !pinned.includes(g));
+  const restOpen = rest.filter((g) => !g.a.acked).length;
+  const shown = expanded ? groups : pinned;
   return (
-    <ul className="pointer-events-auto max-h-[40dvh] space-y-1.5 overflow-y-auto" aria-live="assertive" data-testid="alarm-strip">
-      {groupAlarms(alarms).map(({ a, ids }) => {
+    <ul className="pointer-events-auto max-h-[45dvh] space-y-1.5 overflow-y-auto overscroll-contain" aria-live="assertive" data-testid="alarm-strip">
+      {shown.map(({ a, ids }, i) => {
         const urgent = !a.acked;
         const sos = a.kind === "sos";
         return (
           <li
             key={a.id}
-            className={`flex items-center gap-2 rounded-xl px-3 py-2 shadow-lg ${
-              urgent ? (sos ? "animate-pulse bg-danger text-white" : "bg-danger/95 text-white") : "bg-ink-2/95 text-txt-dim"
-            }`}
+            className={cx(
+              "flex items-center gap-2 rounded-2xl py-1.5 pr-1.5 pl-4",
+              urgent
+                ? cx("bg-danger text-white shadow-[0_10px_30px_-10px_rgb(255_59_48/0.7)]", sos && "host-sos")
+                : "host-float text-txt-dim",
+            )}
           >
-            <button className="min-w-0 flex-1 text-left" onClick={() => onFocus(a)}>
-              <span className="font-black">{sos ? "🆘 " : ""}{h.alarms[a.kind] ?? a.kind}</span>
-              {a.level >= 2 && a.kind === "outside" ? <span className="font-bold"> · {h.alarmHigh}</span> : null}
-              <span className="block truncate text-sm font-bold opacity-90">
+            <button className="min-h-12 min-w-0 flex-1 text-left" onClick={() => onFocus(a)}>
+              <span className="block truncate font-black leading-tight">
+                {sos ? "🆘 " : ""}
+                {h.alarms[a.kind] ?? a.kind}
+                {a.level >= 2 && a.kind === "outside" ? <span className="font-bold"> · {h.alarmHigh}</span> : null}
+              </span>
+              <span className={cx("block truncate text-sm font-bold", urgent ? "text-white/90" : "text-txt-dim")}>
                 {a.nickname ?? "?"}
                 {a.resolved ? ` · ${h.over}` : ""}
               </span>
             </button>
+            {i === 0 && rest.length > 0 && (
+              <button
+                className={cx(
+                  "ui-press relative min-h-12 min-w-12 shrink-0 rounded-xl px-3 text-sm font-black tabular-nums",
+                  urgent ? "bg-white/20 text-white hover:bg-white/30" : "bg-ink-3 text-txt",
+                )}
+                onClick={() => setExpanded((v) => !v)}
+                aria-expanded={expanded}
+                aria-label={expanded ? h.alarmLess : h.alarmMore(rest.length, restOpen)}
+                data-testid="alarm-more"
+              >
+                {expanded ? "▲" : `+${rest.length}`}
+                {!expanded && restOpen > 0 && (
+                  <span className="absolute -top-1 -right-1 size-3 rounded-full border-2 border-danger bg-white" aria-hidden />
+                )}
+              </button>
+            )}
             {urgent ? (
-              <button className="rounded-lg bg-white px-3 py-2 text-sm font-black text-on-accent" onClick={() => onAck(ids)}>
+              <button className="ui-press min-h-12 shrink-0 rounded-xl bg-white px-4 text-sm font-black text-on-accent" onClick={() => onAck(ids)}>
                 {h.ack}
               </button>
             ) : (
-              <span className="text-xs font-bold">{h.seen}</span>
+              <span className="shrink-0 px-2 text-xs font-bold">{h.seen}</span>
             )}
           </li>
         );
       })}
     </ul>
   );
+}
+
+/** Ids that were not in the previous list: only those rows pop in (not the whole list on every poll). */
+function useFreshIds(ids: string[]): Set<string> {
+  const key = ids.join(",");
+  const [prevKey, setPrevKey] = useState(key);
+  const [known, setKnown] = useState(() => new Set(ids));
+  const [fresh, setFresh] = useState<Set<string>>(() => new Set());
+  if (prevKey !== key) {
+    setPrevKey(key);
+    setFresh(new Set(ids.filter((id) => !known.has(id))));
+    setKnown(new Set(ids));
+  }
+  return fresh;
 }
 
 function LobbyBoard({
@@ -449,50 +553,79 @@ function LobbyBoard({
   const counts = [0, 0, 0];
   for (const p of players) counts[level(p)]++;
   const shown = crowd && !showAll ? players.filter((p) => level(p) > 0) : players;
+  const fresh = useFreshIds(players.map((p) => p.id));
+  const host = joinUrl.replace(/^https?:\/\//, "").replace(/\/\d+$/, "");
   return (
-    <div className="h-full overflow-y-auto px-4 pt-16 pb-28">
-      <section className="mx-auto flex max-w-3xl flex-col items-center gap-4 rounded-3xl border border-line bg-ink-2 p-6 text-center sm:flex-row sm:text-left">
-        {joinUrl ? <QRCode value={joinUrl} size={220} /> : <div className="size-[220px] rounded-xl bg-ink-3" />}
-        <div className="flex-1">
-          <h1 className="text-3xl font-black">{h.lobbyTitle}</h1>
-          <p className="mt-1 text-txt-dim">
-            {h.scan} <span className="font-bold text-txt">{joinUrl.replace(/^https?:\/\//, "").replace(/\/\d+$/, "")}</span>
+    <div className="h-full overflow-y-auto px-4 pt-20 pb-32 lg:px-8">
+      <Card className="m-rise-in mx-auto flex max-w-3xl flex-col items-center gap-6 p-6 text-center sm:flex-row sm:items-center sm:gap-8 sm:p-8 sm:text-left">
+        <div className="shrink-0 rounded-3xl border border-line bg-white p-3">
+          {joinUrl ? <QRCode value={joinUrl} size={208} /> : <div className="size-[208px] rounded-xl bg-ink-3" />}
+        </div>
+        <div className="min-w-0 flex-1">
+          <h1 className="text-3xl font-black tracking-tight">{h.lobbyTitle}</h1>
+          <p className="mt-1.5 text-txt-dim">
+            {h.scan} <span className="font-bold whitespace-nowrap text-txt">{host}</span>
           </p>
-          <p className="mt-3 text-sm font-bold uppercase tracking-widest text-txt-dim">{h.pin}</p>
-          <p className="font-mono text-6xl font-black tracking-[0.15em] text-gold" data-testid="pin">
+          <p className="mt-5 text-xs font-bold uppercase tracking-[0.2em] text-txt-dim">{h.pin}</p>
+          <p className="font-mono text-6xl font-black tracking-[0.12em] text-txt" data-testid="pin">
             {pin}
           </p>
+          <span className="mt-1 block h-1 w-16 rounded-full bg-gold max-sm:mx-auto" aria-hidden />
+        </div>
+      </Card>
+
+      {!!(plan?.rounds?.length || plan?.qr_posts) && (
+        <div className="m-rise-in mx-auto mt-4 flex max-w-3xl flex-wrap items-center gap-2">
           {plan?.rounds?.length ? (
-            <p className="mt-3 text-sm font-bold text-txt-dim">
-              {h.round.playlist(plan.rounds.length, Math.round(planTotalS(plan) / 60))}:{" "}
-              {plan.rounds.map((r) => `${roundName(r)} ${Math.round(r.duration_s / 60)}′`).join(" → ")}
-            </p>
+            <>
+              <span className="mr-1 text-sm font-bold text-txt-dim">
+                {h.round.playlist(plan.rounds.length, Math.round(planTotalS(plan) / 60))}
+              </span>
+              {plan.rounds.map((r, i) => (
+                <span key={i} className="inline-flex items-center rounded-full bg-ink-2 px-3 py-1.5 text-xs font-bold shadow-[var(--shadow-card)]">
+                  <span className="mr-1.5 text-txt-dim">{i + 1}</span>
+                  {roundName(r)} · {Math.round(r.duration_s / 60)}′
+                </span>
+              ))}
+            </>
           ) : null}
           {plan?.qr_posts ? (
-            <Link href={`/host/${sessionId}/poster`} className="mt-3 inline-block rounded-xl border border-gold px-4 py-2 font-extrabold text-gold">
+            <Link href={`/host/${sessionId}/poster`} className={buttonClass("secondary", "md", "ml-auto")}>
               {h.printQr(plan.qr_posts)}
             </Link>
           ) : null}
         </div>
-      </section>
-      <section className="mx-auto mt-6 max-w-3xl">
-        <h2 className="text-lg font-extrabold">{players.length ? h.players(players.length) : h.waiting}</h2>
+      )}
+
+      <section className="mx-auto mt-8 max-w-3xl">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-lg font-extrabold" aria-live="polite">
+            {players.length ? h.players(players.length) : h.waiting}
+          </h2>
+          {crowd && <span className="text-sm font-bold text-txt-dim">{no.crowd.summary(counts[0], counts[1], counts[2])}</span>}
+        </div>
         {crowd && (
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm font-bold">
-            <span className="text-txt-dim">{no.crowd.summary(counts[0], counts[1], counts[2])}</span>
-            <button className="ml-auto rounded-lg border border-line px-3 py-1.5" onClick={() => setShowAll((v) => !v)} data-testid="crowd-toggle">
-              {showAll ? no.crowd.issuesOnly(counts[1] + counts[2]) : no.crowd.showAll(players.length)}
-            </button>
+          <button className={buttonClass("secondary", "sm", "mt-2 min-h-12")} onClick={() => setShowAll((v) => !v)} data-testid="crowd-toggle">
+            {showAll ? no.crowd.issuesOnly(counts[1] + counts[2]) : no.crowd.showAll(players.length)}
+          </button>
+        )}
+        {!players.length && (
+          <div className="mt-3 flex items-center gap-3 rounded-[var(--radius-card)] border border-dashed border-line px-4 py-5 text-txt-dim">
+            <span className="size-2.5 animate-pulse rounded-full bg-gold" aria-hidden />
+            {h.waiting}
           </div>
         )}
         <ul className="mt-3 grid gap-2 sm:grid-cols-2">
           {shown.map((p) => {
             const b = gpsBadge(p);
             return (
-              <li key={p.id}>
-                <button className="flex w-full items-center justify-between rounded-xl bg-ink-2 px-3 py-2.5" onClick={() => onSelect(p.id)}>
-                  <span className="font-bold">{p.nickname}</span>
-                  <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${b.cls}`}>{b.label}</span>
+              <li key={p.id} className={fresh.has(p.id) ? "host-join" : undefined}>
+                <button
+                  className="ui-press flex min-h-14 w-full items-center justify-between gap-3 rounded-2xl bg-ink-2 px-4 py-2.5 text-left shadow-[var(--shadow-card)] hover:bg-ink-3"
+                  onClick={() => onSelect(p.id)}
+                >
+                  <span className="truncate font-bold">{p.nickname}</span>
+                  <Chip tone={b.tone}>{b.label}</Chip>
                 </button>
               </li>
             );
@@ -503,11 +636,11 @@ function LobbyBoard({
   );
 }
 
-function gpsBadge(p: HostPlayer) {
-  if (p.acc === null || p.signal === "none" || p.signal === "lost") return { label: h.gps.none, cls: "bg-danger/20 text-danger" };
-  if (p.acc < 15) return { label: `${h.gps.ok} ±${Math.round(p.acc)} m`, cls: "bg-ok/20 text-ok" };
-  if (p.acc <= 30) return { label: `${h.gps.warn} ±${Math.round(p.acc)} m`, cls: "bg-warn/20 text-warn" };
-  return { label: `${h.gps.bad} ±${Math.round(p.acc)} m`, cls: "bg-danger/20 text-danger" };
+function gpsBadge(p: HostPlayer): { label: string; tone: "ok" | "warn" | "danger" } {
+  if (p.acc === null || p.signal === "none" || p.signal === "lost") return { label: h.gps.none, tone: "danger" };
+  if (p.acc < 15) return { label: `${h.gps.ok} ±${Math.round(p.acc)} m`, tone: "ok" };
+  if (p.acc <= 30) return { label: `${h.gps.warn} ±${Math.round(p.acc)} m`, tone: "warn" };
+  return { label: `${h.gps.bad} ±${Math.round(p.acc)} m`, tone: "danger" };
 }
 
 function PlayerList({
@@ -530,39 +663,41 @@ function PlayerList({
   const list = crowd && needle ? players.filter((p) => p.nickname.toLocaleLowerCase("nb").includes(needle)) : players;
   return (
     <>
-    {crowd && (
-      <input
-        className="mb-2 w-full rounded-xl border border-line bg-ink px-3 py-2 font-bold"
-        placeholder={no.crowd.search}
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        aria-label={no.crowd.search}
-        data-testid="player-search"
-      />
-    )}
-    {crowd && needle && list.length === 0 && <p className="text-sm text-txt-dim">{no.crowd.noMatch}</p>}
-    <ul className="space-y-1.5">
-      {list.map((p) => {
-        const s = dotState(p, sosPlayers.has(p.id), status);
-        return (
-          <li key={p.id} className="flex items-center gap-2 rounded-xl bg-ink px-3 py-2">
-            <span className="size-3.5 shrink-0 rounded-full border-2" style={{ background: s.bg, borderColor: s.ring }} aria-hidden />
-            <button className="min-w-0 flex-1 truncate text-left font-bold" onClick={() => onSelect(p.id)}>
-              {p.nickname}
-              <span className="ml-2 text-xs font-semibold text-txt-dim">{h.card.signal[p.signal]}</span>
-            </button>
-            {gathering &&
-              (p.checked_in ? (
-                <span className="text-sm font-bold text-ok">✔</span>
-              ) : (
-                <button className="rounded-lg bg-ok px-2.5 py-1.5 text-xs font-black text-on-accent" onClick={() => void act("check_in", { player_id: p.id })}>
-                  {h.card.checkIn}
-                </button>
-              ))}
-          </li>
-        );
-      })}
-    </ul>
+      {crowd && (
+        <input
+          className="mb-2 min-h-12 w-full rounded-[var(--radius-ctl)] border border-line bg-ink px-4 font-bold outline-none focus:border-gold-deep"
+          placeholder={no.crowd.search}
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          aria-label={no.crowd.search}
+          data-testid="player-search"
+        />
+      )}
+      {crowd && needle && list.length === 0 && <p className="px-1 text-sm text-txt-dim">{no.crowd.noMatch}</p>}
+      <ul className="space-y-0.5">
+        {list.map((p) => {
+          const s = dotState(p, sosPlayers.has(p.id), status);
+          return (
+            <li key={p.id} className="flex min-h-12 items-center gap-3 rounded-xl px-3 transition-colors duration-[var(--dur-1)] hover:bg-ink-3">
+              <span className="size-3.5 shrink-0 rounded-full border-2 shadow-sm" style={{ background: s.bg, borderColor: s.ring }} aria-hidden />
+              <button className="flex min-h-12 min-w-0 flex-1 items-center gap-2 text-left" onClick={() => onSelect(p.id)}>
+                <span className="truncate font-bold">{p.nickname}</span>
+                <span className={cx("shrink-0 text-xs font-semibold", p.signal === "ok" ? "text-txt-dim" : "text-warn-text")}>
+                  {h.card.signal[p.signal]}
+                </span>
+              </button>
+              {gathering &&
+                (p.checked_in ? (
+                  <span className="text-sm font-black text-ok-text">✔</span>
+                ) : (
+                  <Button variant="ok" size="sm" className="min-h-10" onClick={() => void act("check_in", { player_id: p.id })}>
+                    {h.card.checkIn}
+                  </Button>
+                ))}
+            </li>
+          );
+        })}
+      </ul>
     </>
   );
 }
@@ -594,42 +729,39 @@ function PlayerCard({
   const [delta, setDelta] = useState(5);
   const [reason, setReason] = useState("");
   const live = status !== "lobby" && status !== "ceremony" && status !== "ended";
+  const points = useCountUp(p.points);
+  const field = "min-h-12 rounded-[var(--radius-ctl)] border border-line bg-ink-2 px-4 font-bold outline-none focus:border-gold-deep";
 
   return (
     <div>
-      <div className="flex items-baseline justify-between gap-2">
-        <h2 className="text-2xl font-black">{p.nickname}</h2>
-        <span className="text-sm font-bold text-txt-dim">{h.card.role[p.role] ?? p.role}</span>
-      </div>
-      <ul className="mt-2 flex flex-wrap gap-1.5 text-xs font-bold">
-        <Chip warn={p.signal !== "ok"}>
+      <div className="flex flex-wrap gap-1.5">
+        <Chip tone="neutral">{h.card.role[p.role] ?? p.role}</Chip>
+        <Chip tone={p.signal !== "ok" ? "warn" : "ok"}>
           {h.card.signal[p.signal]}
           {p.acc !== null ? ` ${h.card.accuracy(p.acc)}` : ""}
           {p.fix_age_s !== null ? ` · ${h.card.age(p.fix_age_s)}` : ""}
         </Chip>
-        <Chip warn={p.geofence >= 1 || p.forbidden}>
+        <Chip tone={p.forbidden || p.geofence >= 2 ? "danger" : p.geofence >= 1 ? "warn" : "ok"}>
           {p.forbidden ? h.alarms.forbidden : h.card.geofence[p.geofence]}
           {p.geofence >= 2 ? ` · ${Math.round(p.outside_m)} m` : ""}
         </Chip>
-        {p.still_s !== null && p.still_s > SAFETY.still_alert_s && status === "live" && <Chip warn>{h.still(p.still_s)}</Chip>}
-      </ul>
-      <dl className="mt-3 grid grid-cols-3 gap-2 text-center">
+        {p.still_s !== null && p.still_s > SAFETY.still_alert_s && status === "live" && <Chip tone="warn">{h.still(p.still_s)}</Chip>}
+      </div>
+      <dl className="mt-4 grid grid-cols-3 gap-2 text-center">
         <Stat label={h.card.distance} value={no.play.meters(p.distance_m)} />
         <Stat label={h.card.active} value={no.play.minutes(p.active_s)} />
-        <Stat label={h.card.points} value={String(p.points)} />
+        <Stat label={h.card.points} value={String(points)} />
       </dl>
       {(p.catches > 0 || p.times_caught > 0) && (
-        <p className="mt-2 text-sm font-bold text-txt-dim">{h.card.tagStats(p.catches, p.times_caught)}</p>
+        <p className="mt-3 text-sm font-bold text-txt-dim">{h.card.tagStats(p.catches, p.times_caught)}</p>
       )}
       {(p.posts > 0 || p.badges > 0) && (
-        <p className="mt-2 text-sm font-bold text-txt-dim">
-          {h.card.extra(p.posts, p.badges, p.round_points)}
-        </p>
+        <p className="mt-2 text-sm font-bold text-txt-dim">{h.card.extra(p.posts, p.badges, p.round_points)}</p>
       )}
 
       {renaming ? (
         <form
-          className="mt-3 flex gap-2"
+          className="m-rise-in mt-4 flex gap-2"
           onSubmit={async (e) => {
             e.preventDefault();
             setErr(null);
@@ -638,19 +770,13 @@ function PlayerCard({
             else setErr(h.errors.nickname_taken);
           }}
         >
-          <input
-            className="min-w-0 flex-1 rounded-xl border border-line bg-ink px-3 py-2 font-bold outline-none focus:border-gold"
-            value={name}
-            maxLength={20}
-            onChange={(e) => setName(e.target.value)}
-            autoFocus
-          />
-          <button className="rounded-xl bg-gold px-4 font-black text-on-accent">{h.card.save}</button>
+          <input className={cx(field, "min-w-0 flex-1")} value={name} maxLength={20} onChange={(e) => setName(e.target.value)} autoFocus />
+          <button className={buttonClass("primary", "md")}>{h.card.save}</button>
         </form>
       ) : null}
       {adjusting && (
         <form
-          className="mt-3 space-y-2 rounded-xl bg-ink p-3"
+          className="m-rise-in mt-4 space-y-2.5 rounded-2xl bg-ink p-3"
           onSubmit={async (e) => {
             e.preventDefault();
             if (!reason.trim()) return;
@@ -666,7 +792,10 @@ function PlayerCard({
               <button
                 key={d}
                 type="button"
-                className={`flex-1 rounded-lg py-2 font-black tabular-nums ${delta === d ? "bg-gold text-on-accent" : "bg-ink-3"}`}
+                className={cx(
+                  "ui-press min-h-12 flex-1 rounded-xl font-black tabular-nums",
+                  delta === d ? "bg-gold text-on-accent shadow-[var(--shadow-card)]" : "bg-ink-2 hover:bg-ink-3",
+                )}
                 onClick={() => setDelta(d)}
               >
                 {d > 0 ? `+${d}` : d}
@@ -675,24 +804,26 @@ function PlayerCard({
           </div>
           <div className="flex flex-wrap gap-1.5">
             {h.card.adjustQuick.map((q) => (
-              <button key={q} type="button" className="rounded-full border border-line px-2.5 py-1 text-xs font-bold" onClick={() => setReason(q)}>
+              <button
+                key={q}
+                type="button"
+                className={cx(
+                  "ui-press min-h-10 rounded-full border px-3 text-xs font-bold",
+                  reason === q ? "border-gold-deep bg-gold/20 text-txt" : "border-line bg-ink-2",
+                )}
+                onClick={() => setReason(q)}
+              >
                 {q}
               </button>
             ))}
           </div>
-          <input
-            className="w-full rounded-xl border border-line bg-ink-2 px-3 py-2 font-bold outline-none focus:border-gold"
-            placeholder={h.card.adjustReason}
-            value={reason}
-            maxLength={80}
-            onChange={(e) => setReason(e.target.value)}
-          />
-          <button className="w-full rounded-xl bg-gold py-2.5 font-black text-on-accent disabled:opacity-40" disabled={!reason.trim()}>
+          <input className={cx(field, "w-full")} placeholder={h.card.adjustReason} value={reason} maxLength={80} onChange={(e) => setReason(e.target.value)} />
+          <button className={buttonClass("primary", "md", "w-full")} disabled={!reason.trim()}>
             {h.card.adjustSave(delta)}
           </button>
         </form>
       )}
-      {err && <p className="mt-2 text-sm font-semibold text-danger">{err}</p>}
+      {err && <p className="mt-2 text-sm font-semibold text-danger-text">{err}</p>}
 
       {hs.snap && status !== "ceremony" && (
         <div className="mt-4">
@@ -700,11 +831,11 @@ function PlayerCard({
         </div>
       )}
 
-      <div className="mt-4 grid grid-cols-2 gap-2">
+      <div className="mt-5 grid grid-cols-2 gap-2">
         {p.pos && <SheetButton onClick={() => onShow(p.pos!.lat, p.pos!.lng)}>📍 {h.card.showOnMap}</SheetButton>}
         <SheetButton onClick={onMessage}>📣 {h.card.sendMessage}</SheetButton>
         {status === "gathering" && (
-          <SheetButton onClick={() => void hs.act("check_in", { player_id: p.id, checked: !p.checked_in })}>
+          <SheetButton tone={p.checked_in ? undefined : "ok"} onClick={() => void hs.act("check_in", { player_id: p.id, checked: !p.checked_in })}>
             {p.checked_in ? h.card.uncheck : `✔ ${h.card.checkIn}`}
           </SheetButton>
         )}
@@ -734,7 +865,7 @@ function PlayerCard({
             {awarded ? h.card.unaward : h.card.award}
           </SheetButton>
         )}
-        <SheetButton danger onClick={() => onKick(p)}>
+        <SheetButton tone="danger" onClick={() => onKick(p)}>
           ✕ {h.card.kick}
         </SheetButton>
       </div>
@@ -742,7 +873,7 @@ function PlayerCard({
   );
 }
 
-function MessageSheet({ to, onSend }: { to: string | null; onSend: (text: string) => void }) {
+function MessageSheet({ onSend }: { onSend: (text: string) => void }) {
   const [text, setText] = useState("");
   return (
     <form
@@ -751,46 +882,26 @@ function MessageSheet({ to, onSend }: { to: string | null; onSend: (text: string
         if (text.trim()) onSend(text.trim());
       }}
     >
-      <h2 className="text-xl font-black">{h.msg.title(to)}</h2>
-      <div className="mt-3 flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2">
         {h.msg.quick.map((q) => (
-          <button key={q} type="button" className="rounded-full border border-line px-3 py-2 text-sm font-bold" onClick={() => onSend(q)}>
+          <button key={q} type="button" className={buttonClass("secondary", "sm", "min-h-12 rounded-full px-4")} onClick={() => onSend(q)}>
             {q}
           </button>
         ))}
       </div>
-      <div className="mt-3 flex gap-2">
+      <div className="mt-4 flex gap-2">
         <input
-          className="min-w-0 flex-1 rounded-xl border border-line bg-ink px-3 py-3 font-bold outline-none focus:border-gold"
+          className="min-h-12 min-w-0 flex-1 rounded-[var(--radius-ctl)] border border-line bg-ink px-4 font-bold outline-none focus:border-gold-deep"
           placeholder={h.msg.placeholder}
           maxLength={200}
           value={text}
           onChange={(e) => setText(e.target.value)}
         />
-        <button className="rounded-xl bg-gold px-5 font-black text-on-accent disabled:opacity-40" disabled={!text.trim()}>
+        <button className={buttonClass("primary", "md")} disabled={!text.trim()}>
           {h.msg.send}
         </button>
       </div>
     </form>
-  );
-}
-
-function SheetFrame({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
-  return (
-    <div className="fixed inset-0 z-40 flex items-end bg-black/40 lg:items-center lg:justify-center" onClick={onClose}>
-      <div
-        className="max-h-[80dvh] w-full overflow-y-auto rounded-t-3xl border border-line bg-ink-2 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] lg:max-w-md lg:rounded-3xl"
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-      >
-        <div className="mb-3 flex justify-end">
-          <button className="text-sm font-bold text-txt-dim" onClick={onClose}>
-            {h.close} ✕
-          </button>
-        </div>
-        {children}
-      </div>
-    </div>
   );
 }
 
@@ -799,55 +910,72 @@ function BarButton({
   label,
   onClick,
   tone,
-  className = "",
+  wide,
   disabled,
 }: {
-  icon: string;
+  icon?: string;
   label: string;
   onClick: () => void;
   tone?: "gold" | "ok";
-  className?: string;
+  wide?: boolean;
   disabled?: boolean;
 }) {
-  const bg = tone === "gold" ? "bg-gold text-on-accent" : tone === "ok" ? "bg-ok text-on-accent" : "bg-ink-2/95 text-txt border border-line";
   return (
     <button
-      className={`flex min-h-16 flex-col items-center justify-center rounded-2xl font-black shadow-lg backdrop-blur active:scale-[0.97] disabled:opacity-40 ${bg} ${className}`}
+      className={cx(
+        "ui-press flex min-h-14 items-center justify-center rounded-2xl font-extrabold disabled:opacity-40",
+        wide ? "col-span-2 gap-2 px-3 text-base" : "flex-col gap-1 px-1 text-[11px] leading-tight",
+        tone === "gold"
+          ? "bg-gold text-on-accent shadow-[var(--shadow-card)] hover:bg-gold-light"
+          : tone === "ok"
+            ? "bg-ok text-on-accent shadow-[var(--shadow-card)]"
+            : "text-txt hover:bg-ink-3",
+      )}
       onClick={onClick}
       disabled={disabled}
     >
-      <span className="text-xl leading-none">{icon}</span>
-      <span className="mt-1 text-xs">{label}</span>
+      {icon && (
+        <span className={cx("leading-none", wide ? "text-xl" : "text-lg")} aria-hidden>
+          {icon}
+        </span>
+      )}
+      <span className="text-center">{label}</span>
     </button>
   );
 }
 
-function SheetButton({ children, onClick, danger }: { children: React.ReactNode; onClick: () => void; danger?: boolean }) {
+function sheetBtn(tone?: "danger" | "gold" | "ok") {
+  return cx(
+    "ui-press flex min-h-12 items-center gap-2 rounded-[var(--radius-ctl)] px-4 py-2.5 text-left font-bold",
+    tone === "danger"
+      ? "bg-danger/10 text-danger-text hover:bg-danger/15"
+      : tone === "gold"
+        ? "bg-gold text-on-accent shadow-[var(--shadow-card)] hover:bg-gold-light"
+        : tone === "ok"
+          ? "bg-ok/15 text-ok-text hover:bg-ok/20"
+          : "bg-ink hover:bg-ink-3",
+  );
+}
+
+function SheetButton({ children, onClick, tone }: { children: React.ReactNode; onClick: () => void; tone?: "danger" | "gold" | "ok" }) {
   return (
-    <button
-      className={`rounded-xl px-3 py-3 text-left font-bold ${danger ? "bg-danger/15 text-danger" : "bg-ink hover:bg-ink-3"}`}
-      onClick={onClick}
-    >
+    <button className={sheetBtn(tone)} onClick={onClick}>
       {children}
     </button>
   );
 }
 
-function Chip({ children, warn }: { children: React.ReactNode; warn?: boolean }) {
-  return <li className={`rounded-full px-2.5 py-1 ${warn ? "bg-warn/20 text-warn" : "bg-ok/15 text-ok"}`}>{children}</li>;
-}
-
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl bg-ink px-2 py-2">
-      <dt className="text-[11px] font-bold uppercase text-txt-dim">{label}</dt>
-      <dd className="text-lg font-black">{value}</dd>
+    <div className="rounded-2xl bg-ink px-2 py-3">
+      <dt className="text-[11px] font-bold uppercase tracking-wide text-txt-dim">{label}</dt>
+      <dd className="mt-0.5 text-xl font-black tabular-nums">{value}</dd>
     </div>
   );
 }
 
 function Center({ children }: { children: React.ReactNode }) {
-  return <main className="flex min-h-dvh flex-col items-center justify-center px-6 text-center">{children}</main>;
+  return <main className="m-fade-in flex min-h-dvh flex-col items-center justify-center bg-ink px-6 text-center">{children}</main>;
 }
 
 /** Round clock + teacher round controls (PLAN §13 phase 2: «neste runde, forleng»). */
@@ -873,37 +1001,54 @@ function RoundBar({
 
   const r = snap.round;
   if (!r || snap.status === "lobby" || snap.status === "ceremony") return null;
+  const status = h.status[snap.status] ?? snap.status;
   if (snap.playlist_done) {
-    return <p className="pointer-events-auto rounded-xl bg-ok px-3 py-2 text-sm font-black text-on-accent">✔ {h.round.done}</p>;
+    return (
+      <div className="host-float m-drop-in pointer-events-auto flex items-center gap-3 rounded-2xl px-4 py-2.5" data-testid="round-bar">
+        <span className="grid size-8 shrink-0 place-items-center rounded-full bg-ok text-sm font-black text-on-accent" aria-hidden>
+          ✔
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-extrabold leading-snug">{h.round.done}</p>
+          <p className="truncate text-xs font-semibold text-txt-dim">
+            {status} · PIN {snap.pin}
+          </p>
+        </div>
+      </div>
+    );
   }
   const left = phaseLeftS(r.phase_ends_at, offset, now);
   const live = snap.status === "live";
+  const paused = snap.status === "paused";
   const between = snap.status === "countdown" || snap.status === "breather";
   const open = (snap.posts ?? []).filter((p) => !p.claimed_by).length;
   const taken = (snap.posts ?? []).filter((p) => p.claimed_by).length;
-  const btn = "rounded-lg border border-line px-3 py-2 text-sm font-black hover:bg-ink-3";
+  const detail =
+    live && r.mode === "posts"
+      ? h.round.posts(open, taken)
+      : live && r.mode === "tag"
+        ? r.variant === "fox"
+          ? h.round.foxCounts(snap.players.filter((p) => p.role === "hunter").length)
+          : h.round.counts(snap.players.filter((p) => p.role === "hunter").length, snap.players.filter((p) => p.role === "prey").length)
+        : live && r.relay
+          ? h.round.relay((snap.teams ?? []).map((t) => `${t.name} ${r.relay?.legs[String(t.n)] ?? 0}`).join(" · "))
+          : null;
+  const sub = [h.round.of(r.idx + 1, r.count), live ? null : status, detail ?? `PIN ${snap.pin}`].filter(Boolean).join(" · ");
+  const btn = "ui-press min-h-12 shrink-0 rounded-xl bg-ink-3 px-2.5 text-sm font-extrabold whitespace-nowrap hover:brightness-95";
   return (
-    <div className="pointer-events-auto flex items-center gap-2 rounded-xl bg-ink-2/95 px-3 py-2 backdrop-blur" data-testid="round-bar">
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-black">
-          {h.round.of(r.idx + 1, r.count)} · {roundName(r)}
-          {snap.status !== "live" ? ` · ${h.status[snap.status]}` : ""}
-        </p>
-        {live && r.mode === "posts" && <p className="text-xs font-bold text-txt-dim">{h.round.posts(open, taken)}</p>}
-        {live && r.mode === "tag" && (
-          <p className="text-xs font-bold text-txt-dim">
-            {r.variant === "fox"
-              ? h.round.foxCounts(snap.players.filter((p) => p.role === "hunter").length)
-              : h.round.counts(snap.players.filter((p) => p.role === "hunter").length, snap.players.filter((p) => p.role === "prey").length)}
-          </p>
-        )}
-        {live && r.relay && (
-          <p className="text-xs font-bold text-txt-dim">
-            {h.round.relay((snap.teams ?? []).map((t) => `${t.name} ${r.relay?.legs[String(t.n)] ?? 0}`).join(" · "))}
-          </p>
-        )}
+    <div
+      className={cx(
+        "host-float pointer-events-auto flex items-center gap-2 rounded-2xl py-1.5 pr-1.5 pl-4 transition-shadow duration-[var(--dur-2)]",
+        paused && "ring-2 ring-warn",
+        snap.status === "gathering" && "ring-2 ring-ok",
+      )}
+      data-testid="round-bar"
+    >
+      <div className="min-w-0 flex-1 py-1">
+        <p className="truncate text-sm font-extrabold leading-tight">{roundName(r)}</p>
+        <p className={cx("truncate text-xs font-semibold", paused ? "text-warn-text" : "text-txt-dim")}>{sub}</p>
       </div>
-      <span className="font-mono text-2xl font-black tabular-nums">{r.frozen ? "⏸" : formatClock(left)}</span>
+      <span className="font-mono text-[1.4rem] font-black tabular-nums">{r.frozen ? "⏸" : formatClock(left)}</span>
       {live && (
         <button className={btn} onClick={() => void act("extend", { seconds: 60 })}>
           {h.round.extend}
@@ -929,14 +1074,13 @@ function RoundBar({
 function CeremonyStart({ onStart }: { onStart: (spread: boolean) => void }) {
   const [spread, setSpread] = useState(true);
   return (
-    <div className="space-y-3">
-      <h2 className="text-2xl font-black">{no.ceremony.start}</h2>
-      <p className="text-sm text-txt-dim">{no.ceremony.introBody}</p>
-      <label className="flex items-center gap-3 rounded-xl bg-ink px-3 py-3 font-bold">
-        <input type="checkbox" className="size-5 accent-[var(--color-gold)]" checked={spread} onChange={(e) => setSpread(e.target.checked)} />
+    <div className="space-y-4">
+      <p className="text-txt-dim">{no.ceremony.introBody}</p>
+      <label className="flex min-h-14 cursor-pointer items-center gap-3 rounded-[var(--radius-ctl)] bg-ink px-4 py-3 font-bold">
+        <input type="checkbox" className="size-5 accent-[var(--color-gold-deep)]" checked={spread} onChange={(e) => setSpread(e.target.checked)} />
         {no.ceremony.spread}
       </label>
-      <button className="w-full rounded-2xl bg-gold py-4 text-lg font-black text-on-accent" onClick={() => onStart(spread)} data-testid="ceremony-start">
+      <button className={buttonClass("primary", "xl", "w-full")} onClick={() => onStart(spread)} data-testid="ceremony-start">
         {no.ceremony.start}
       </button>
     </div>

@@ -570,3 +570,17 @@ Migrasjon 0013 og tvillingen `lib/rules/relay.ts`:
   - DB-tid per tick ca. 5,7 ms med 300 boter, PostgREST og databasen på samme Mac. Uten konkurranse om CPU koster lagvisningen 0,42 ms mot 1,8 ms for 0009-versjonen.
   - 300 spillere er ~150 tick/s, altså ca. 0,6–0,9 kjerne databasetid. **Det tåler ikke Nano.** Skal flere klasser spille samtidig i prod, må Supabase oppgraderes (eiers beslutning).
 - **Testet:** DB-testene er grønne for alle 13 migrasjoner (kjørt to ganger, med vektorer for Sporing, Stafett, 300-taket og slettingen). Sim med 40 boter over HTTP (Stafett + Sporing + Postjakt med spørsmål, hendelser og seremoni): alle krav oppfylt, p95 46 ms.
+
+## ADR-031 — Nytt design: lyst lærertema, mørkt elevtema og bevegelse (2026-11-14)
+Eierens valg 2026-11-14: lys lærerside og mørk elevside, leken bevegelse hos elev og rolig hos lærer, alt i én leveranse. Ingen endring i regler, API eller database.
+- **Tema:** appen er lys («papir») som standard. En side blir mørk når den inneholder `.theme-dark` (`html:has(.theme-dark)`): elevskjermene (`/j`, `/play`, `/q`) og storskjermen. `text-ink` heter nå `text-on-accent` (mørk tekst på gull/rollefarge). Farget tekst bruker `*-text`-tokens for kontrast i begge temaer.
+- **Bevegelse:** ren CSS (`m-*`-klasser i `globals.css`, områdefiler i `app/styles/`) og View Transitions, uten nytt bibliotek. `prefers-reduced-motion` slår av alt globalt.
+- **Delte komponenter:** `lib/client/ui` (Button, Card, Chip, Sheet, Toast, Stepper, Confetti, `useCountUp`, `usePresence`). `classes.ts` er uten `"use client"` så serverkomponenter kan bruke `buttonClass`.
+- **Regel 4 (sikkerhet slår spill):** SOS, alarmer, sonevarsel og signaltap har ingen forsinkelse, ingen exit-animasjon og starter aldri usynlige. Alarmprikker på lærerkartet glir ikke, de hopper til sann posisjon. En flash vises ikke mens SOS-overlegget er oppe.
+- **Flytendringer:**
+  - Lærerkartet: alarmer i én stripe. Alvorligste rad og hver åpne SOS vises alltid, resten bak «+N».
+  - Navnelapper bare fra zoom 17, for valgt elev og for elever som trenger læreren.
+  - «Start seremoni» er hovedknapp når `playlist_done`.
+  - Veiviseren: spillelista er delt i «Runder» og sammenleggbart «Tillegg» (oppdrag, spørsmål).
+  - Elev: kompasspil med avstand til nærmeste post, «Ring lærer» som ikonknapp, gråtonekart (`topograatone`).
+- **Testet:** `npm run check` grønn (154 tester). Lokal sim med 20 boter (Postjakt 60 s + Smittejakt 60 s): alle krav oppfylt, alarmer hos læreren innen fristen. Skjermbilder av alle skjermer i 390x844 og 1280x800. Ikke testet: ekte iPhone, lagrunder og hendelser visuelt, A4-utskrift av QR-poster.

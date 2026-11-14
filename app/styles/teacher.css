@@ -1,1 +1,77 @@
-/* Område-CSS for forside, veiviser, bibliotek, delelenker, personvern. Delte tokens og .m-*-animasjoner ligger i globals.css. */
+/* Område-CSS for forside, veiviser, bibliotek, delelenker, personvern. Delte tokens og .m-*-animasjoner ligger i globals.css.
+   Lærerens flater: rolige, raske overganger (ease-out), ingen sprett. Klassene her har prefikset t-. */
+
+/* ── Forside: kartmotiv ─────────────────────────────────────────────── */
+/* Prikkene i illustrasjonen løper sakte rundt. transform på SVG-elementer bruker
+   viewBox-enheter, så verdiene under er i illustrasjonens koordinater. */
+@keyframes t-run-a {
+  0% { transform: translate(0, 0); }
+  25% { transform: translate(70px, -30px); }
+  50% { transform: translate(120px, 18px); }
+  75% { transform: translate(52px, 54px); }
+  100% { transform: translate(0, 0); }
+}
+@keyframes t-run-b {
+  0% { transform: translate(0, 0); }
+  30% { transform: translate(-60px, 26px); }
+  60% { transform: translate(-24px, 70px); }
+  100% { transform: translate(0, 0); }
+}
+@keyframes t-run-c {
+  0% { transform: translate(0, 0); }
+  35% { transform: translate(48px, 40px); }
+  70% { transform: translate(-30px, 30px); }
+  100% { transform: translate(0, 0); }
+}
+@keyframes t-ping {
+  0% { transform: scale(0.6); opacity: 0.55; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+@keyframes t-draw {
+  from { stroke-dashoffset: 900; }
+  to { stroke-dashoffset: 0; }
+}
+
+.t-run-a { animation: t-run-a 16s var(--ease-in-out) infinite; }
+.t-run-b { animation: t-run-b 13s var(--ease-in-out) infinite; }
+.t-run-c { animation: t-run-c 19s var(--ease-in-out) infinite; }
+.t-ping {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: t-ping 2.6s var(--ease-out) infinite;
+}
+.t-draw {
+  stroke-dasharray: 900;
+  animation: t-draw 1.6s var(--ease-out) 0.15s both;
+}
+
+/* ── Veiviser: steg som glir inn ────────────────────────────────────── */
+@keyframes t-step-next { from { opacity: 0; transform: translateX(18px); } }
+@keyframes t-step-back { from { opacity: 0; transform: translateX(-18px); } }
+.t-step-next { animation: t-step-next var(--dur-2) var(--ease-out) both; }
+.t-step-back { animation: t-step-back var(--dur-2) var(--ease-out) both; }
+
+/* Sammenleggbar seksjon: høyden animeres med grid-rader (0fr ↔ 1fr). Innholdet
+   blir værende montert, slik at redigeringsfelt ikke mister tilstand. */
+.t-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows var(--dur-3) var(--ease-out),
+    opacity var(--dur-2) var(--ease-out);
+}
+.t-collapse[data-open="true"] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+.t-collapse > * {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.t-chevron { transition: transform var(--dur-2) var(--ease-out); }
+[aria-expanded="true"] > .t-chevron { transform: rotate(180deg); }
+
+/* Sjekkliste-kort som skifter tone når de krysses av. */
+.t-check { transition: background-color var(--dur-2) var(--ease-out), border-color var(--dur-2) var(--ease-out); }

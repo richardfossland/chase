@@ -17,6 +17,10 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Delt opplegg — Chase", robots: { index: false, follow: false } };
 
 const s = no.share;
+// Server component: lib/client/ui is a client module, so the card look is spelled out here.
+const card = "rounded-[var(--radius-card)] bg-ink-2 p-5 shadow-[var(--shadow-card)]";
+const backLink =
+  "ui-press inline-flex min-h-12 items-center rounded-[var(--radius-ctl)] border border-line bg-ink-2 px-5 font-extrabold hover:bg-ink-3";
 
 export default async function SharePage({ params }: { params: Promise<{ code: string }> }) {
   const { code: raw } = await params;
@@ -26,10 +30,10 @@ export default async function SharePage({ params }: { params: Promise<{ code: st
 
   if (!share) {
     return (
-      <main className="mx-auto max-w-xl px-4 py-12">
-        <h1 className="text-3xl font-black">{s.title}</h1>
-        <p className="mt-4 rounded-2xl border border-line bg-ink-2 p-4 font-bold">{s.notFound}</p>
-        <Link href="/" className="mt-6 inline-block text-txt-dim underline">
+      <main className="m-rise-in mx-auto flex min-h-dvh max-w-xl flex-col justify-center px-4 py-12">
+        <p className="text-sm font-bold tracking-[0.18em] text-gold-text uppercase">{s.title}</p>
+        <p className={`${card} mt-4 font-bold`}>{s.notFound}</p>
+        <Link href="/" className={`${backLink} mt-6 self-start`}>
           {no.common.home}
         </Link>
       </main>
@@ -39,16 +43,19 @@ export default async function SharePage({ params }: { params: Promise<{ code: st
   const sum = planSummary(share.plan);
   const modes = no.wizard.playlist.modes;
   return (
-    <main className="mx-auto max-w-xl px-4 py-10 pb-24">
-      <p className="text-sm font-bold uppercase tracking-widest text-gold">{s.title}</p>
-      <h1 className="mt-2 text-4xl font-black">{share.name}</h1>
-      <p className="mt-2 text-txt-dim">{s.lead}</p>
+    <main className="mx-auto max-w-xl px-4 pt-10 pb-24">
+      <div className="m-rise-in">
+        <p className="text-sm font-bold tracking-[0.18em] text-gold-text uppercase">{s.title}</p>
+        <h1 className="mt-2 text-4xl font-black tracking-tight break-words">{share.name}</h1>
+        <p className="mt-2 leading-relaxed text-txt-dim">{s.lead}</p>
+      </div>
 
-      <section className="mt-6 rounded-2xl border border-line bg-ink-2 p-4">
+      <div className="m-stagger">
+      <section className={`${card} mt-8`} style={{ "--i": 0 } as React.CSSProperties}>
         <h2 className="font-black">{s.rounds}</h2>
-        <ol className="mt-2 space-y-1">
+        <ol className="mt-3 divide-y divide-line">
           {share.plan.rounds.map((r, i) => (
-            <li key={i} className="flex justify-between gap-3 font-bold">
+            <li key={i} className="flex justify-between gap-3 py-2 font-bold">
               <span>
                 {i + 1}. {r.mode === "tag" ? modes[r.variant ?? "convert"] : modes[r.mode]}
                 {r.team ? ` ${no.wizard.playlist.team}` : ""}
@@ -58,7 +65,7 @@ export default async function SharePage({ params }: { params: Promise<{ code: st
             </li>
           ))}
         </ol>
-        <p className="mt-3 text-sm text-txt-dim">
+        <p className="mt-3 rounded-xl bg-ink px-3 py-2 text-sm font-semibold text-txt-dim">
           {s.total(sum.minutes)}
           {share.plan.teams ? ` · ${s.teams(share.plan.teams)}` : ""}
           {share.plan.event_every_s ? ` · ${s.events(share.plan.event_every_s)}` : ""}
@@ -66,7 +73,7 @@ export default async function SharePage({ params }: { params: Promise<{ code: st
       </section>
 
       {share.plan.missions?.length ? (
-        <section className="mt-4 rounded-2xl border border-line bg-ink-2 p-4">
+        <section className={`${card} mt-4`} style={{ "--i": 1 } as React.CSSProperties}>
           <h2 className="font-black">{s.missions}</h2>
           <ul className="mt-2 list-disc space-y-0.5 pl-5">
             {share.plan.missions.map((m) => (
@@ -77,7 +84,7 @@ export default async function SharePage({ params }: { params: Promise<{ code: st
       ) : null}
 
       {share.plan.quiz?.length ? (
-        <section className="mt-4 rounded-2xl border border-line bg-ink-2 p-4">
+        <section className={`${card} mt-4`} style={{ "--i": 2 } as React.CSSProperties}>
           <h2 className="font-black">{no.quiz.editor}</h2>
           <p className="mt-1 text-sm text-txt-dim">
             {no.quiz.count(share.plan.quiz.length)} · {share.plan.quiz[0].q}
@@ -85,7 +92,7 @@ export default async function SharePage({ params }: { params: Promise<{ code: st
         </section>
       ) : null}
 
-      <section className="mt-4 flex items-center gap-4 rounded-2xl border border-line bg-ink-2 p-4">
+      <section className={`${card} mt-4 flex items-center gap-4`} style={{ "--i": 3 } as React.CSSProperties}>
         {share.area ? (
           <>
             <AreaThumb area={share.area} size={96} />
@@ -98,6 +105,8 @@ export default async function SharePage({ params }: { params: Promise<{ code: st
           <p className="text-sm text-txt-dim">{s.noArea}</p>
         )}
       </section>
+
+      </div>
 
       <ShareActions code={share.code} />
     </main>

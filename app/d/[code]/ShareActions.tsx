@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import { ApiError, api } from "@/lib/client/api";
 import { identity } from "@/lib/client/identity";
+import { buttonClass } from "@/lib/client/ui";
 import { no } from "@/lib/locale/no";
 
 const s = no.share;
@@ -18,7 +19,7 @@ export default function ShareActions({ code }: { code: string }) {
     <div className="mt-6 space-y-3">
       {!done ? (
         <button
-          className="w-full rounded-xl bg-gold px-5 py-4 text-lg font-extrabold text-on-accent transition hover:bg-gold-light disabled:opacity-50"
+          className={buttonClass("primary", "lg", "w-full")}
           disabled={busy}
           onClick={async () => {
             setBusy(true);
@@ -39,20 +40,26 @@ export default function ShareActions({ code }: { code: string }) {
         </button>
       ) : (
         <>
-          <p className="rounded-xl bg-ok px-4 py-3 font-bold text-on-accent">{s.copied}</p>
+          <p className="m-pop rounded-2xl bg-ok/15 px-4 py-3 font-bold text-ok-text" role="status">
+            ✓ {s.copied}
+          </p>
           <Link
             href={`/ny?plan=${done.planId}${done.areaId ? `&area=${done.areaId}` : ""}`}
-            className="block w-full rounded-xl bg-gold px-5 py-4 text-center text-lg font-extrabold text-on-accent"
+            className={buttonClass("primary", "lg", "m-rise-in w-full")}
             data-testid="share-start"
           >
             {s.start}
           </Link>
-          <Link href="/bibliotek" className="block text-center text-txt-dim underline">
+          <Link href="/bibliotek" className={buttonClass("ghost", "md", "w-full text-txt-dim")}>
             {s.library}
           </Link>
         </>
       )}
-      {err && <p className="font-bold text-danger">{err}</p>}
+      {err && (
+        <p className="m-rise-in rounded-2xl bg-danger/10 px-4 py-3 font-bold text-danger-text" role="alert">
+          {err}
+        </p>
+      )}
     </div>
   );
 }

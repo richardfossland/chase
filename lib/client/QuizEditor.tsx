@@ -37,7 +37,9 @@ export function QuizEditor(props: {
     const p = parseQuizText(v);
     props.onChange(p.items.length ? p.items : undefined, p.errors.length === 0);
   };
-  const btn = "rounded-lg border border-line px-2.5 py-1.5 text-xs font-bold transition hover:bg-ink-3 disabled:opacity-40";
+  const btn = "ui-press min-h-12 rounded-[var(--radius-ctl)] border border-line bg-ink-2 px-3 text-sm font-bold hover:bg-ink-3 disabled:opacity-40";
+  const field =
+    "w-full min-h-12 rounded-[var(--radius-ctl)] border border-line bg-ink px-4 py-2.5 outline-none transition-[border-color,box-shadow] duration-[var(--dur-1)] focus:border-gold-deep focus:ring-4 focus:ring-gold/20";
   return (
     <div data-testid="quiz-editor">
       {!props.compact && (
@@ -47,15 +49,15 @@ export function QuizEditor(props: {
         </>
       )}
       <textarea
-        className="mt-2 min-h-28 w-full rounded-xl border border-line bg-ink px-3 py-2 font-mono text-sm outline-none focus:border-gold"
+        className={`${field} mt-2 min-h-32 font-mono text-sm leading-relaxed`}
         placeholder={q.placeholder}
         value={text}
         onChange={(e) => set(e.target.value)}
       />
-      <p className={`text-xs font-bold ${parsed.errors.length ? "text-warn" : "text-txt-dim"}`}>
+      <p className={`mt-1 min-h-4 text-xs font-bold ${parsed.errors.length ? "text-warn-text" : "text-txt-dim"}`} aria-live="polite">
         {parsed.errors.length ? q.errorsAt(parsed.errors) : parsed.items.length ? q.count(parsed.items.length) : ""}
       </p>
-      <div className="mt-1 flex flex-wrap gap-1.5">
+      <div className="mt-2 flex flex-wrap gap-2">
         {props.packs?.map((p) => (
           <button key={p.id} className={btn} onClick={() => set(quizToText(p.items))}>
             {q.fromPack}: {p.name}
@@ -69,7 +71,7 @@ export function QuizEditor(props: {
       </div>
       {naming !== null && props.onSavePack && (
         <form
-          className="mt-2 flex gap-1.5"
+          className="mt-2 flex flex-wrap gap-2"
           onSubmit={async (e) => {
             e.preventDefault();
             if (naming.trim() && (await props.onSavePack!(naming, parsed.items))) {
@@ -79,7 +81,7 @@ export function QuizEditor(props: {
           }}
         >
           <input
-            className="flex-1 rounded-lg border border-line bg-ink px-2 py-1.5 text-sm font-bold outline-none focus:border-gold"
+            className={`${field} min-w-40 flex-1 text-sm font-bold`}
             placeholder={no.library.packName}
             value={naming}
             onChange={(e) => setNaming(e.target.value)}

@@ -14,6 +14,18 @@ import { kartverketStyle } from "@/lib/map/style";
 import { EVENTS } from "@/lib/rules/events";
 import { SAFETY } from "@/lib/rules/safety";
 import { zoneAt, type ZoneState } from "@/lib/rules/zone";
+import { prefersReducedMotion } from "@/lib/client/ui";
+
+/** Name tags only from this zoom (≈ 1 px per metre at our latitudes), plus the
+ * selected pupil and anyone who needs the teacher (rule 4). */
+export const NAME_ZOOM = 17;
+/** Dots glide between polls (the panel polls every 2 s) instead of jumping. */
+const GLIDE_MS = 1900;
+/** Longer jumps than this snap (rejoin, GPS recovered): no slow slide across the map. */
+const GLIDE_MAX_DEG = 0.002;
+
+type LngLat = [number, number];
+type Entry = { marker: Marker; el: HTMLDivElement; from: LngLat; to: LngLat; shown: LngLat; t0: number };
 
 export interface HostMapHandle {
   flyTo: (lat: number, lng: number) => void;
@@ -54,16 +66,20 @@ const HostMap = forwardRef<
     relay?: RelayCourse | null;
     /** 0012 storskjerm: dots only — no names, not clickable. */
     anonymous?: boolean;
+    /** The pupil whose card is open: always named. */
+    selectedId?: string | null;
     onSelect: (id: string) => void;
   }
->(function HostMap({ geo, players, posts, sosPlayers, status, zone, serverNow, eventTarget = null, teams, teamOf, flags = null, hill = null, relay = null, anonymous = false, onSelect }, ref) {
+>(function HostMap({ geo, players, posts, sosPlayers, status, zone, serverNow, eventTarget = null, teams, teamOf, flags = null, hill = null, relay = null, anonymous = false, selectedId = null, onSelect }, ref) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<MlMap | null>(null);
   const lib = useRef<Awaited<ReturnType<typeof loadMapLibre>> | null>(null);
-  const markers = useRef<Map<string, { marker: Marker; el: HTMLDivElement }>>(new Map());
+  const markers = useRef<Map<string, Entry>>(new Map());
+  const raf = useRef(0);
   const selectRef = useRef(onSelect);
   const anonymousRef = useRef(anonymous);
   const [ready, setReady] = useState(false);
+  const [close, setClose] = useState(false);
 
   useEffect(() => {
     selectRef.current = onSelect;
@@ -95,12 +111,15 @@ const HostMap = forwardRef<
         addEventLayer(m);
         addTeamLayer(m);
         addCrowdLayer(m, !anonymousRef.current, (id) => selectRef.current(id));
+        setClose(m.getZoom() >= NAME_ZOOM);
         setReady(true);
       });
+      m.on("zoomend", () => setClose(m.getZoom() >= NAME_ZOOM));
       map.current = m;
     })();
     return () => {
       cancelled = true;
+      cancelAnimationFrame(raf.current);
       owned.forEach(({ marker }) => marker.remove());
       owned.clear();
       map.current?.remove();
@@ -118,6 +137,7 @@ const HostMap = forwardRef<
     // zoomed out); anyone who needs the teacher keeps a named marker (rule 4).
     const crowd = players.length >= CROWD_FROM;
     const dots: GeoJSON.Feature[] = [];
+    let glide = false;
     for (const p of players) {
       if (!p.pos) continue;
       if (crowd) {
@@ -130,36 +150,53 @@ const HostMap = forwardRef<
         }
       }
       seen.add(p.id);
+      const s = dotState(p, sosPlayers.has(p.id), status);
+      const target: LngLat = [p.pos.lng, p.pos.lat];
       let entry = markers.current.get(p.id);
       if (!entry) {
         const el = document.createElement("div");
-        el.className = "flex cursor-pointer flex-col items-center";
+        el.className = "host-marker flex cursor-pointer flex-col items-center";
         el.innerHTML =
-          '<span data-dot class="block size-5 rounded-full border-[3px] shadow-lg"></span>' +
-          '<span data-name class="mt-0.5 rounded bg-black/70 px-1 text-[11px] font-bold leading-tight text-white"></span>';
+          '<span data-dot class="host-dot block size-5 rounded-full border-[3px]"></span>' +
+          '<span data-name class="host-name"></span>';
         if (!anonymous) {
           el.addEventListener("click", (e) => {
             e.stopPropagation();
             selectRef.current(p.id);
           });
         } else el.style.cursor = "default";
-        const marker = new ml.Marker({ element: el, anchor: "top" }).setLngLat([p.pos.lng, p.pos.lat]).addTo(m);
-        entry = { marker, el };
+        // Anchor on the dot's centre so showing/hiding the name never moves the dot.
+        const marker = new ml.Marker({ element: el, anchor: "top", offset: [0, -10] }).setLngLat(target).addTo(m);
+        entry = { marker, el, from: target, to: target, shown: target, t0: 0 };
         markers.current.set(p.id, entry);
       }
-      entry.marker.setLngLat([p.pos.lng, p.pos.lat]);
-      const s = dotState(p, sosPlayers.has(p.id), status);
+      if (entry.to[0] !== target[0] || entry.to[1] !== target[1]) {
+        const far = Math.abs(target[0] - entry.shown[0]) > GLIDE_MAX_DEG || Math.abs(target[1] - entry.shown[1]) > GLIDE_MAX_DEG;
+        // Safety (rule 4): a dot in alarm snaps to its true position, never glides.
+        const snap = far || s.pulse || s.bg === "#ff3b30" || prefersReducedMotion();
+        entry.from = snap ? target : entry.shown;
+        entry.to = target;
+        entry.t0 = performance.now();
+        if (snap) {
+          entry.shown = target;
+          entry.marker.setLngLat(target);
+        } else glide = true;
+      }
       const dot = entry.el.querySelector<HTMLElement>("[data-dot]")!;
       dot.style.background = s.bg;
       dot.style.borderColor = s.ring;
       dot.classList.toggle("animate-ping-slow", s.pulse);
       const still = p.still_s !== null && p.still_s > SAFETY.still_alert_s && status === "live";
+      const alarm = sosPlayers.has(p.id) || p.forbidden || p.geofence >= 2 || p.signal === "lost" || p.signal === "none";
+      const named = !anonymous && (close || p.id === selectedId || alarm || still);
       const name = entry.el.querySelector<HTMLElement>("[data-name]")!;
       name.textContent = anonymous ? "" : `${p.nickname}${still ? " 💤" : ""}`;
-      name.style.display = anonymous ? "none" : "";
+      name.style.display = named ? "" : "none";
       const tc = teams?.find((t) => t.n === teamOf?.[p.id])?.color;
       name.style.background = tc ?? "";
-      name.style.color = tc === "#f5b800" ? "#111827" : "";
+      name.style.color = tc ? (tc === "#f5b800" ? "#111827" : "#ffffff") : "";
+      entry.el.classList.toggle("is-selected", p.id === selectedId);
+      entry.el.style.zIndex = alarm ? "3" : p.id === selectedId ? "2" : "";
       entry.el.setAttribute("aria-label", p.nickname);
     }
     for (const [id, entry] of markers.current) {
@@ -169,7 +206,25 @@ const HostMap = forwardRef<
       }
     }
     m.getSource<GeoJSONSource>("crowd")?.setData({ type: "FeatureCollection", features: dots });
-  }, [ready, players, sosPlayers, status, teams, teamOf, anonymous]);
+
+    // One rAF loop for every gliding marker. We interpolate lng/lat ourselves (no
+    // CSS transition on the transform), so panning/zooming never makes dots sail.
+    if (glide) {
+      cancelAnimationFrame(raf.current);
+      const step = (now: number) => {
+        let moving = false;
+        for (const e of markers.current.values()) {
+          if (e.shown === e.to) continue;
+          const k = Math.min(1, (now - e.t0) / GLIDE_MS);
+          e.shown = k >= 1 ? e.to : [e.from[0] + (e.to[0] - e.from[0]) * k, e.from[1] + (e.to[1] - e.from[1]) * k];
+          e.marker.setLngLat(e.shown);
+          if (k < 1) moving = true;
+        }
+        if (moving) raf.current = requestAnimationFrame(step);
+      };
+      raf.current = requestAnimationFrame(step);
+    }
+  }, [ready, players, sosPlayers, status, teams, teamOf, anonymous, close, selectedId]);
 
   // Flags / hill (0009), colour by owner / holder.
   const teamKey = (flags?.length || hill || relay) && teams?.length
@@ -218,7 +273,7 @@ const HostMap = forwardRef<
   }, [ready, zone, serverNow]);
 
   return (
-    <div className="absolute inset-0">
+    <div className="host-map absolute inset-0">
       <div ref={container} className="h-full w-full" />
     </div>
   );
@@ -257,7 +312,7 @@ function addCrowdLayer(m: MlMap, named: boolean, onSelect: (id: string) => void)
       id: "crowd-name",
       type: "symbol",
       source: "crowd",
-      minzoom: 18,
+      minzoom: NAME_ZOOM,
       filter: ["!", ["has", "point_count"]],
       layout: { "text-field": ["get", "name"], "text-size": 11, "text-offset": [0, 1.3] },
       paint: { "text-color": "#ffffff", "text-halo-color": "#111827", "text-halo-width": 2 },

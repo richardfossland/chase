@@ -7,39 +7,12 @@ import { prefersReducedMotion, usePresence } from "./motion";
 
 export { prefersReducedMotion, useChangeKey, useCountUp, usePresence } from "./motion";
 
-export function cx(...parts: (string | false | null | undefined)[]): string {
-  return parts.filter(Boolean).join(" ");
-}
+import { buttonClass, cx } from "./classes";
+import type { Size, Variant } from "./classes";
+
+export { buttonClass, cx } from "./classes";
 
 /* ── Button ─────────────────────────────────────────────────────────── */
-type Variant = "primary" | "secondary" | "ghost" | "danger" | "hunter" | "ok";
-type Size = "sm" | "md" | "lg" | "xl";
-
-const VARIANT: Record<Variant, string> = {
-  primary: "bg-gold text-on-accent shadow-[var(--shadow-card)] hover:bg-gold-light",
-  secondary: "border border-line bg-ink-2 text-txt hover:bg-ink-3",
-  ghost: "text-txt hover:bg-ink-3",
-  danger: "bg-danger text-white hover:brightness-110",
-  hunter: "bg-hunter text-white hover:brightness-110",
-  ok: "bg-ok text-on-accent hover:brightness-105",
-};
-const SIZE: Record<Size, string> = {
-  sm: "min-h-9 px-3 text-sm font-bold rounded-[0.7rem]",
-  md: "min-h-12 px-5 font-extrabold rounded-[var(--radius-ctl)]",
-  lg: "min-h-14 px-6 text-lg font-extrabold rounded-2xl",
-  xl: "min-h-16 px-6 text-xl font-black rounded-2xl",
-};
-
-/** Class string for button-looking links (<Link>, <a>). */
-export function buttonClass(variant: Variant = "primary", size: Size = "md", extra?: string): string {
-  return cx(
-    "ui-press inline-flex items-center justify-center gap-2 text-center select-none disabled:opacity-40 disabled:pointer-events-none",
-    VARIANT[variant],
-    SIZE[size],
-    extra,
-  );
-}
-
 export function Button({
   variant = "primary",
   size = "md",
@@ -141,7 +114,7 @@ export function Sheet({
       <div
         className={cx(
           "max-h-[82dvh] w-full overflow-y-auto rounded-t-[1.75rem] bg-ink-2 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[var(--shadow-float)] lg:max-w-md lg:rounded-[1.75rem]",
-          leaving ? "m-sheet-out lg:m-scale-out" : "m-sheet-in lg:m-scale-in",
+          leaving ? "ui-sheet-out" : "ui-sheet-in",
         )}
         onClick={(e) => e.stopPropagation()}
         role="dialog"

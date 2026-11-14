@@ -2,10 +2,10 @@
 
 import "maplibre-gl/dist/maplibre-gl.css";
 
-import type { Map as MlMap } from "maplibre-gl";
+import type { Map as MlMap, Marker } from "maplibre-gl";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import { ApiError, api, type PlayerBootstrap, type PostView, type RoundSummary, type TagView, type TickView } from "@/lib/client/api";
 import { cue } from "@/lib/client/feedback";
@@ -30,10 +30,12 @@ import type { Badge } from "@/lib/rules/game";
 import { EventStrip, PowerBar } from "./EventCard";
 import { TeamMsgBar, TeamStrip } from "./TeamCard";
 import { QuizCard } from "./QuizCard";
+import { useTurn } from "./useTurn";
 import { requestMotion, useStepCounter } from "@/lib/client/steps";
 import { TEAMS, type TeamMsgKind } from "@/lib/rules/teams";
 import { CeremonyScreen } from "@/lib/client/Ceremony";
 import { parseQr } from "@/lib/qr";
+import { Button, Toast, buttonClass, cx, prefersReducedMotion, useCountUp } from "@/lib/client/ui";
 
 const t = no.play;
 
@@ -84,7 +86,7 @@ export default function PlayView({ sessionId }: { sessionId: string }) {
     };
   }, [me, sessionId]);
 
-  if (me === undefined) return null;
+  if (me === undefined) return <main className="theme-dark min-h-dvh bg-ink" />;
   if (me === null || fatal === "lost") return <Fullscreen tone="neutral" title={t.sessionLost} link />;
   if (fatal === "kicked") return <Fullscreen tone="neutral" title={t.kicked} link />;
   if (!boot) return <Fullscreen tone="neutral" title={t.gpsSearching} />;
@@ -566,6 +568,25 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
     }
   }
 
+  // «GO!» when a round starts (countdown/breather → live), from the server status.
+  const [prevStatus, setPrevStatus] = useState(status);
+  const [goKey, setGoKey] = useState(0);
+  if (prevStatus !== status) {
+    setPrevStatus(status);
+    if (status === "live" && (prevStatus === "countdown" || prevStatus === "breather")) setGoKey(goKey + 1);
+  }
+  // Points tick up and bump when they rise. Display only: the server value is the truth.
+  const pts = view?.stats.points ?? 0;
+  const shownPts = useCountUp(pts);
+  const [prevPts, setPrevPts] = useState(pts);
+  const [ptsBump, setPtsBump] = useState(0);
+  if (prevPts !== pts) {
+    setPrevPts(pts);
+    if (pts > prevPts) setPtsBump(ptsBump + 1);
+  }
+  const msgToast = useMemo(() => (toast ? { ...toast, label: toast.label ?? t.message } : null), [toast]);
+  const badgeToastView = useMemo(() => (badgeToast ? { ...badgeToast, label: t.newBadge } : null), [badgeToast]);
+
   if (kicked) return <Fullscreen tone="neutral" title={t.kicked} link />;
   if (ended) {
     return <Fullscreen tone="neutral" title={t.ended} body={t.endedBody} link />;
@@ -664,7 +685,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
     title = roundTitle(round ?? { mode });
     body =
       view?.claim ? t.claiming
-      : mode === "posts" && nearest ? t.nearestPost(nearest.m, t.dirs[Math.round(nearest.deg / 45) % 8])
+      : mode === "posts" && nearest ? undefined // the compass below says it
       : left !== null && round && left > round.duration_s - 10 ? t.modeHint[mode]
       : undefined;
   }
@@ -700,28 +721,41 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
     }
   }
 
+  // Safety tones (danger, near the edge) switch instantly: no colour fade, no entrance animation.
+  const safetyTone = tone === "danger" || tone === "edge";
+  const showCompass = status === "live" && mode === "posts" && !!nearest && !view?.claim && !safetyTone;
+
   return (
-    <div className={`relative flex h-dvh flex-col ${TONE_BG[tone]} transition-colors`}>
+    <div className={cx("theme-dark relative flex h-dvh flex-col", TONE_BG[tone], !safetyTone && "m-tone")}>
       <header className="px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3">
         <div className="flex items-center justify-between text-sm font-bold">
           <span>{me.nickname}</span>
           <GpsChip fix={gps.fix} lost={gpsLost} />
         </div>
-        <h1 className="mt-3 text-5xl font-black leading-none tracking-tight" data-testid="play-title">
+        <h1 key={title} className={cx("mt-3 text-5xl font-black leading-none tracking-tight", !safetyTone && "m-rise-in")} data-testid="play-title">
           {title}
         </h1>
         {body && <p className="mt-2 text-lg font-bold opacity-90">{body}</p>}
         {gpsLost && <p className="mt-2 rounded-xl bg-black/30 px-3 py-2 font-bold">{t.gpsLost}</p>}
+        {showCompass && nearest && (
+          <Compass m={nearest.m} deg={nearest.deg} label={t.nearestPost(nearest.m, t.dirs[Math.round(nearest.deg / 45) % 8])} />
+        )}
         {status === "countdown" && left !== null && (
           <p className="mt-2 text-8xl font-black tabular-nums leading-none" data-testid="countdown">
-            {left}
+            <span key={left} className="m-pop inline-block">
+              {left}
+            </span>
           </p>
         )}
         {view && status !== "countdown" && (
           <dl className="mt-3 flex items-end gap-5">
             <div>
               <dt className="text-xs font-bold uppercase opacity-70">{t.points}</dt>
-              <dd className="text-4xl font-black tabular-nums" data-testid="points">{view.stats.points}</dd>
+              <dd className="text-4xl font-black tabular-nums" data-testid="points">
+                <span key={ptsBump} className={cx("inline-block origin-left", ptsBump > 0 && "m-bump")}>
+                  {shownPts}
+                </span>
+              </dd>
             </div>
             {round && (status === "live" || status === "paused" || status === "breather") && (
               <div>
@@ -779,6 +813,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
 
       {evView && (status === "live" || status === "paused") && (
         <EventStrip
+          key={evView.no}
           ev={evView}
           fix={gps.fix}
           offsetMs={offsetMs}
@@ -816,15 +851,25 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
           targetLng={sprintTarget?.lng ?? null}
           live={foxLive ?? tag?.radar_live ?? NO_LIVE}
           teamMap={teamMap}
+          pulseLat={showCompass && nearest ? nearest.lat : null}
+          pulseLng={showCompass && nearest ? nearest.lng : null}
+          activePos={view?.claim ? (posts.find((p) => p.id === view.claim?.post_id)?.pos ?? null) : null}
         />
         {sim && <SimPad sim={sim} />}
+        {goKey > 0 && status === "live" && (
+          <div className="pointer-events-none absolute inset-0 z-[5] grid place-items-center" aria-hidden>
+            <p key={goKey} className="p-go text-[7.5rem] font-black italic leading-none text-white [text-shadow:0_6px_30px_rgb(0_0_0/0.45)]">
+              {t.go}
+            </p>
+          </div>
+        )}
         {summary && (status === "breather" || status === "gathering") && (
           <SummaryCard summary={summary} next={status === "breather" ? (round?.next ?? null) : null} />
         )}
       </div>
 
       {status === "ceremony" && view?.ceremony && (
-        <div className="absolute inset-0 z-10 bg-ink text-txt">
+        <div className="m-fade-in absolute inset-0 z-10 bg-ink pb-[calc(5.5rem+env(safe-area-inset-bottom))] text-txt">
           <CeremonyScreen
             view={view.ceremony}
             voted={votedLocal || !!view.ceremony.voted}
@@ -840,7 +885,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
         <SosButton onFire={sendSos} disabled={!!sosOpen} />
         {isHunter && status === "live" && (
           <button
-            className="flex-1 rounded-2xl border-2 border-white bg-hunter px-4 py-4 text-center text-lg font-black text-white"
+            className="ui-press m-rise-in min-h-14 flex-1 rounded-2xl border-2 border-white bg-hunter px-4 py-4 text-center text-lg font-black text-white shadow-[var(--shadow-card)]"
             onClick={() => {
               unlockAudio();
               setCatching(true);
@@ -852,7 +897,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
         )}
         {isPrey && tag?.code && (
           <button
-            className="flex-1 rounded-2xl border border-white/30 bg-black/30 px-4 py-4 text-center text-lg font-black"
+            className="ui-press m-rise-in min-h-14 flex-1 rounded-2xl border border-white/30 bg-black/30 px-4 py-4 text-center text-lg font-black"
             onClick={() => setShowCode(true)}
             data-testid="show-code"
           >
@@ -861,7 +906,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
         )}
         {round?.qr && status === "live" && mode === "posts" && (
           <button
-            className="flex-1 rounded-2xl border border-white/30 bg-black/30 px-4 py-4 text-center text-lg font-black"
+            className="ui-press m-rise-in min-h-14 flex-1 rounded-2xl border border-white/30 bg-black/30 px-4 py-4 text-center text-lg font-black"
             onClick={() => {
               unlockAudio();
               setScanning(true);
@@ -874,28 +919,19 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
         {boot.teacherPhone && (
           <a
             href={`tel:${boot.teacherPhone}`}
-            className="flex-1 rounded-2xl border border-white/30 bg-black/30 px-4 py-4 text-center text-lg font-black"
+            aria-label={t.callTeacherLabel}
+            className="ui-press grid size-14 flex-none place-items-center rounded-2xl border border-white/30 bg-black/30 text-2xl"
           >
-            {t.callTeacher}
+            <span aria-hidden>📞</span>
           </a>
         )}
       </footer>
 
-      {toast && (
-        <div className="absolute inset-x-3 top-[max(0.75rem,env(safe-area-inset-top))] rounded-2xl border border-gold bg-ink-2 p-4 shadow-2xl" role="status">
-          <p className="text-xs font-bold uppercase text-gold">{toast.label ?? t.message}</p>
-          <p className="mt-1 text-xl font-black">{toast.text}</p>
-        </div>
-      )}
+      <Toast toast={msgToast} />
+      <Toast toast={msgToast ? null : badgeToastView} />
 
-      {badgeToast && !toast && (
-        <div className="absolute inset-x-3 top-[max(0.75rem,env(safe-area-inset-top))] rounded-2xl border border-gold bg-ink-2 p-4 shadow-2xl" role="status">
-          <p className="text-xs font-bold uppercase text-gold">{t.newBadge}</p>
-          <p className="mt-1 text-xl font-black">{badgeToast.text}</p>
-        </div>
-      )}
-
-      {flash && (
+      {/* Never over the SOS screen (safety beats game). */}
+      {flash && !sosOpen && !sosAcked && (
         <div
           key={flash.id}
           className={`pointer-events-none absolute inset-0 z-40 flex flex-col items-center justify-center text-center ${
@@ -904,13 +940,20 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
           role="status"
           data-testid="flash"
         >
-          <p className="text-7xl font-black">{flash.text}</p>
-          {flash.sub && <p className="mt-2 text-2xl font-black">{flash.sub}</p>}
+          {flash.tone !== "dim" && (
+            <div className="absolute inset-0 grid place-items-center overflow-hidden" aria-hidden>
+              <span className="p-ripple col-start-1 row-start-1 block size-[70vmin] rounded-full border-[12px] border-white/70" />
+              <span className="p-ripple-2 col-start-1 row-start-1 block size-[70vmin] rounded-full border-[6px] border-white/50" />
+            </div>
+          )}
+          <p className={cx("relative px-4 text-7xl font-black", flash.tone === "dim" ? "m-shake" : "m-pop")}>{flash.text}</p>
+          {flash.sub && <p className="relative mt-2 px-4 text-2xl font-black">{flash.sub}</p>}
         </div>
       )}
 
       {view?.quiz && (status === "live" || status === "paused") && quizDone !== view.quiz.no && (
         <QuizCard
+          key={view.quiz.no}
           quiz={view.quiz}
           offsetMs={offsetMs}
           now={now}
@@ -941,7 +984,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
       )}
       {showCode && isPrey && tag?.code && (
         <button
-          className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-white p-6 text-center text-on-accent"
+          className="m-scale-in absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-white p-6 text-center text-on-accent"
           onClick={() => setShowCode(false)}
           data-testid="code-sheet"
         >
@@ -1015,6 +1058,9 @@ function PlayerMap({
   targetLng,
   live,
   teamMap,
+  pulseLat = null,
+  pulseLng = null,
+  activePos = null,
 }: {
   boot: PlayerBootstrap;
   fix: Fix | null;
@@ -1032,19 +1078,28 @@ function PlayerMap({
   live: { lat: number; lng: number }[];
   /** 0009: flags / hill / teammates / messages as a JSON string (redraw only on change). */
   teamMap: string | null;
+  /** Presentation only: the nearest post pulses softly; the post being claimed pulses gold. */
+  pulseLat?: number | null;
+  pulseLng?: number | null;
+  activePos?: { lat: number; lng: number } | null;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<MlMap | null>(null);
+  const lib = useRef<Awaited<ReturnType<typeof loadMapLibre>> | null>(null);
+  const pulse = useRef<Marker | null>(null);
+  const shownMe = useRef<[number, number] | null>(null);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const lib = await loadMapLibre();
+      const ml = await loadMapLibre();
       if (cancelled || !container.current) return;
-      const m = new lib.Map({
+      lib.current = ml;
+      const m = new ml.Map({
         container: container.current,
-        style: kartverketStyle("topo"),
+        // Greyscale base map on the phones: the game's own colours (boundary, forbidden zone, posts, me) stand out.
+        style: kartverketStyle("topograatone"),
         bounds: boundsOf(boot.geo),
         fitBoundsOptions: { padding: 30 },
         attributionControl: { compact: true },
@@ -1065,12 +1120,58 @@ function PlayerMap({
       cancelled = true;
       map.current?.remove();
       map.current = null;
+      pulse.current = null;
+      shownMe.current = null;
     };
   }, [boot.geo]);
 
+  // My dot glides from the last GPS point to the new one (display only; ticks use the raw fix).
   useEffect(() => {
-    if (ready && map.current && fix) setMe(map.current, fix.lng, fix.lat);
+    const m = map.current;
+    if (!ready || !m || !fix) return;
+    const to: [number, number] = [fix.lng, fix.lat];
+    const from = shownMe.current;
+    if (!from || prefersReducedMotion() || haversine(from, to) > 150) {
+      shownMe.current = to;
+      setMe(m, to[0], to[1]);
+      return;
+    }
+    const t0 = performance.now();
+    const dur = 900;
+    let raf = 0;
+    const step = (now: number) => {
+      const k = Math.min(1, (now - t0) / dur);
+      const e = 1 - Math.pow(1 - k, 3);
+      const p: [number, number] = [from[0] + (to[0] - from[0]) * e, from[1] + (to[1] - from[1]) * e];
+      shownMe.current = p;
+      setMe(m, p[0], p[1]);
+      if (k < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
   }, [ready, fix]);
+
+  // Soft pulse on the post being claimed, else on the nearest post (HTML marker: CSS transform/opacity only).
+  const pLat = activePos?.lat ?? pulseLat;
+  const pLng = activePos?.lng ?? pulseLng;
+  const pActive = !!activePos;
+  useEffect(() => {
+    const m = map.current;
+    const ml = lib.current;
+    if (!ready || !m || !ml) return;
+    if (pLat === null || pLng === null) {
+      pulse.current?.remove();
+      pulse.current = null;
+      return;
+    }
+    if (!pulse.current) {
+      const el = document.createElement("div");
+      el.className = "p-post-pulse";
+      el.setAttribute("aria-hidden", "true");
+      pulse.current = new ml.Marker({ element: el }).setLngLat([pLng, pLat]).addTo(m);
+    } else pulse.current.setLngLat([pLng, pLat]);
+    pulse.current.getElement().dataset.active = String(pActive);
+  }, [ready, pLat, pLng, pActive]);
 
   useEffect(() => {
     if (ready && map.current) setPosts(map.current, posts, activeId);
@@ -1125,7 +1226,7 @@ function SosButton({ onFire, disabled }: { onFire: () => void; disabled: boolean
     <button
       type="button"
       disabled={disabled}
-      className="relative flex-1 overflow-hidden rounded-2xl border-2 border-white bg-danger px-4 py-4 text-lg font-black text-white select-none disabled:opacity-60"
+      className="relative min-h-14 flex-1 overflow-hidden rounded-2xl border-2 border-white bg-danger px-4 py-4 text-lg font-black text-white select-none disabled:opacity-60"
       onPointerDown={(e) => {
         e.preventDefault();
         setHolding(true);
@@ -1152,64 +1253,100 @@ function SosButton({ onFire, disabled }: { onFire: () => void; disabled: boolean
 
 function ReadyScreen({ name, onReady, error }: { name: string; onReady: () => void; error: string | null }) {
   return (
-    <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center px-5 py-10">
-      <h1 className="text-4xl font-black">{t.readyTitle(name)}</h1>
-      <p className="mt-3 text-lg text-txt-dim">{t.readyBody}</p>
-      <div className="mt-6 rounded-2xl border border-line bg-ink-2 p-4">
-        <p className="text-sm font-extrabold text-gold">{t.rulesTitle}</p>
-        <ul className="mt-2 space-y-2">
-          {t.rules.map((r) => (
-            <li key={r} className="font-semibold">
-              • {r}
-            </li>
-          ))}
-        </ul>
+    <main className="theme-dark mx-auto flex min-h-dvh max-w-md flex-col px-5 pt-[max(2.5rem,env(safe-area-inset-top))] pb-[max(2rem,env(safe-area-inset-bottom))]">
+      <div className="m-stagger flex flex-1 flex-col justify-center">
+        <p className="text-sm font-black uppercase tracking-[0.25em] text-gold-text" style={{ "--i": 0 } as CSSProperties}>
+          {no.brand}
+        </p>
+        <h1 className="mt-2 text-5xl font-black tracking-tight" style={{ "--i": 1 } as CSSProperties}>
+          {t.readyTitle(name)}
+        </h1>
+        <p className="mt-3 text-lg text-txt-dim" style={{ "--i": 2 } as CSSProperties}>
+          {t.readyBody}
+        </p>
+        <div className="mt-8 rounded-[var(--radius-card)] bg-ink-2 p-5 shadow-[var(--shadow-card)]" style={{ "--i": 3 } as CSSProperties}>
+          <p className="text-sm font-extrabold uppercase tracking-wide text-gold-text">{t.rulesTitle}</p>
+          <ul className="mt-3 space-y-3">
+            {t.rules.map((r, i) => (
+              <li key={r} className="flex gap-3 text-lg font-semibold leading-snug">
+                <span className="grid size-7 flex-none place-items-center rounded-full bg-gold/20 text-sm font-black text-gold-text">{i + 1}</span>
+                <span>{r}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        {error === "unsupported" && (
+          <p className="mt-4 rounded-[var(--radius-ctl)] bg-danger/15 px-4 py-3 font-bold text-danger-text" style={{ "--i": 4 } as CSSProperties}>
+            {no.map.noGps}
+          </p>
+        )}
       </div>
-      {error === "unsupported" && <p className="mt-4 font-semibold text-danger">{no.map.noGps}</p>}
-      <button
-        className="mt-6 w-full rounded-2xl bg-gold px-6 py-5 text-2xl font-black text-on-accent active:scale-[0.98]"
-        onClick={onReady}
-        data-testid="ready"
-      >
+      <Button size="xl" className="m-rise-in mt-8 w-full" onClick={onReady} data-testid="ready">
         {t.ready}
-      </button>
+      </Button>
     </main>
   );
 }
 
 function DeniedHelp({ onRetry }: { onRetry: () => void }) {
   return (
-    <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center px-5 py-10">
-      <h1 className="text-3xl font-black">{t.denied.title}</h1>
-      <h2 className="mt-6 font-extrabold">iPhone</h2>
-      <ol className="mt-2 list-decimal space-y-1 pl-5 text-txt-dim">
-        {t.denied.ios.map((s) => (
-          <li key={s}>{s}</li>
-        ))}
-      </ol>
-      <h2 className="mt-5 font-extrabold">Android</h2>
-      <ol className="mt-2 list-decimal space-y-1 pl-5 text-txt-dim">
-        {t.denied.android.map((s) => (
-          <li key={s}>{s}</li>
-        ))}
-      </ol>
-      <button className="mt-6 w-full rounded-2xl bg-gold px-6 py-4 text-xl font-black text-on-accent" onClick={onRetry}>
+    <main className="theme-dark mx-auto flex min-h-dvh max-w-md flex-col px-5 pt-[max(2.5rem,env(safe-area-inset-top))] pb-[max(2rem,env(safe-area-inset-bottom))]">
+      <div className="m-stagger flex flex-1 flex-col justify-center">
+        <h1 className="text-4xl font-black tracking-tight" style={{ "--i": 0 } as CSSProperties}>
+          {t.denied.title}
+        </h1>
+        <div className="mt-7 rounded-[var(--radius-card)] bg-ink-2 p-5 shadow-[var(--shadow-card)]" style={{ "--i": 1 } as CSSProperties}>
+          <h2 className="font-extrabold text-gold-text">iPhone</h2>
+          <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-txt-dim">
+            {t.denied.ios.map((s) => (
+              <li key={s}>{s}</li>
+            ))}
+          </ol>
+        </div>
+        <div className="mt-3 rounded-[var(--radius-card)] bg-ink-2 p-5 shadow-[var(--shadow-card)]" style={{ "--i": 2 } as CSSProperties}>
+          <h2 className="font-extrabold text-gold-text">Android</h2>
+          <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-txt-dim">
+            {t.denied.android.map((s) => (
+              <li key={s}>{s}</li>
+            ))}
+          </ol>
+        </div>
+      </div>
+      <Button size="xl" className="m-rise-in mt-8 w-full" onClick={onRetry}>
         {t.denied.retry}
-      </button>
+      </Button>
     </main>
   );
 }
 
 function Fullscreen({ tone, title, body, link }: { tone: Tone; title: string; body?: string; link?: boolean }) {
   return (
-    <main className={`flex min-h-dvh flex-col items-center justify-center gap-3 px-6 text-center ${TONE_BG[tone]}`}>
-      <h1 className="text-3xl font-black">{title}</h1>
-      {body && <p className="text-lg text-txt-dim">{body}</p>}
-      {link && (
-        <Link href="/j" className="mt-4 rounded-xl bg-gold px-6 py-3 font-extrabold text-on-accent">
-          {t.toJoin}
-        </Link>
-      )}
+    <main className={cx("theme-dark flex min-h-dvh flex-col items-center justify-center px-6 text-center", TONE_BG[tone])}>
+      <div className="m-stagger flex w-full max-w-md flex-col items-center">
+        <p className="text-sm font-black uppercase tracking-[0.25em] text-gold-text" style={{ "--i": 0 } as CSSProperties}>
+          {no.brand}
+        </p>
+        <h1 className="mt-3 text-4xl font-black leading-tight tracking-tight" style={{ "--i": 1 } as CSSProperties}>
+          {title}
+        </h1>
+        {body && (
+          <p className="mt-3 text-lg text-txt-dim" style={{ "--i": 2 } as CSSProperties}>
+            {body}
+          </p>
+        )}
+        {!link && (
+          <div className="mt-8 flex gap-2" style={{ "--i": 2 } as CSSProperties} aria-hidden>
+            {[0, 1, 2].map((i) => (
+              <span key={i} className="size-3 animate-pulse rounded-full bg-gold" style={{ animationDelay: `${i * 160}ms` }} />
+            ))}
+          </div>
+        )}
+        {link && (
+          <Link href="/j" className={buttonClass("primary", "lg", "mt-8 w-full")} style={{ "--i": 3 } as CSSProperties}>
+            {t.toJoin}
+          </Link>
+        )}
+      </div>
     </main>
   );
 }
@@ -1252,37 +1389,58 @@ function SimPad({ sim }: { sim: SimControls }) {
   );
 }
 
-function nearestPost(fix: Fix | null, posts: PostView[]): { m: number; deg: number } | null {
+function nearestPost(fix: Fix | null, posts: PostView[]): { m: number; deg: number; lat: number; lng: number } | null {
   if (!fix || !posts.length) return null;
-  let best: { m: number; deg: number } | null = null;
+  let best: { m: number; deg: number; lat: number; lng: number } | null = null;
   for (const p of posts) {
     const m = haversine([fix.lng, fix.lat], [p.pos.lng, p.pos.lat]);
-    if (!best || m < best.m) best = { m, deg: bearing([fix.lng, fix.lat], [p.pos.lng, p.pos.lat]) };
+    if (!best || m < best.m) best = { m, deg: bearing([fix.lng, fix.lat], [p.pos.lng, p.pos.lat]), lat: p.pos.lat, lng: p.pos.lng };
   }
   return best;
 }
 
+/** «Nærmeste post»: an arrow that turns smoothly towards the post (shortest way round) + the distance in big numbers. */
+function Compass({ m, deg, label }: { m: number; deg: number; label: string }) {
+  const rot = useTurn(deg);
+  return (
+    <div className="m-rise-in mt-3 flex items-center gap-4" role="img" aria-label={label} data-testid="compass">
+      <span className="grid size-[4.5rem] flex-none place-items-center rounded-full bg-black/25 ring-2 ring-white/40">
+        <svg className="p-compass size-11 drop-shadow" style={{ transform: `rotate(${rot}deg)` }} viewBox="0 0 24 24" aria-hidden>
+          <path d="M12 1.5 20 21l-8-4.6L4 21z" fill="currentColor" />
+        </svg>
+      </span>
+      <span>
+        <span className="block text-xs font-black uppercase tracking-wide opacity-80">{t.nearestShort}</span>
+        <span className="block text-5xl font-black leading-none tabular-nums">{t.meters(m)}</span>
+      </span>
+    </div>
+  );
+}
+
 /** Breather / end card: this round's effort (PLAN §13 phase 2 «rundeoppsummering»). */
 function SummaryCard({ summary, next }: { summary: RoundSummary; next: PlanRound | null }) {
-  const cell = "rounded-xl bg-black/30 p-3";
+  const cell = "rounded-xl bg-ink-3 p-3";
   return (
-    <div className="absolute inset-x-3 bottom-3 z-10 rounded-2xl border border-line bg-ink-2/95 p-4 text-txt shadow-2xl backdrop-blur" data-testid="summary">
-      <p className="text-sm font-extrabold text-gold">{t.summary(summary.round + 1)}</p>
-      <dl className="mt-2 grid grid-cols-2 gap-2">
-        <div className={cell}>
-          <dt className="text-xs font-bold uppercase opacity-70">{t.sumPoints}</dt>
+    <div
+      className="m-rise-in absolute inset-x-3 bottom-3 z-10 rounded-[var(--radius-card)] border border-line bg-ink-2/95 p-4 text-txt shadow-[var(--shadow-float)] backdrop-blur"
+      data-testid="summary"
+    >
+      <p className="text-sm font-extrabold text-gold-text">{t.summary(summary.round + 1)}</p>
+      <dl className="m-stagger mt-2 grid grid-cols-2 gap-2">
+        <div className={cell} style={{ "--i": 1 } as CSSProperties}>
+          <dt className="text-xs font-bold uppercase text-txt-dim">{t.sumPoints}</dt>
           <dd className="text-3xl font-black">{summary.points}</dd>
         </div>
-        <div className={cell}>
-          <dt className="text-xs font-bold uppercase opacity-70">{t.sumPosts}</dt>
+        <div className={cell} style={{ "--i": 2 } as CSSProperties}>
+          <dt className="text-xs font-bold uppercase text-txt-dim">{t.sumPosts}</dt>
           <dd className="text-3xl font-black">{summary.posts}</dd>
         </div>
-        <div className={cell}>
-          <dt className="text-xs font-bold uppercase opacity-70">{t.sumDistance}</dt>
+        <div className={cell} style={{ "--i": 3 } as CSSProperties}>
+          <dt className="text-xs font-bold uppercase text-txt-dim">{t.sumDistance}</dt>
           <dd className="text-2xl font-black">{t.meters(summary.distance_m)}</dd>
         </div>
-        <div className={cell}>
-          <dt className="text-xs font-bold uppercase opacity-70">{t.sumActive}</dt>
+        <div className={cell} style={{ "--i": 4 } as CSSProperties}>
+          <dt className="text-xs font-bold uppercase text-txt-dim">{t.sumActive}</dt>
           <dd className="text-2xl font-black">{t.minutes(summary.active_s)}</dd>
         </div>
       </dl>

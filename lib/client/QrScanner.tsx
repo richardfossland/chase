@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { no } from "@/lib/locale/no";
+import { buttonClass } from "@/lib/client/ui";
 
 const t = no.qr;
 
@@ -91,10 +92,10 @@ export function QrScanner({
   }, [onCode]);
 
   return (
-    <div className="absolute inset-0 z-30 flex flex-col bg-ink text-txt" role="dialog" aria-label={title}>
+    <div className="m-fade-in absolute inset-0 z-30 flex flex-col bg-ink text-txt" role="dialog" aria-label={title}>
       <div className="flex items-center justify-between px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3">
         <h2 className="text-2xl font-black">{title}</h2>
-        <button className="rounded-xl border border-line px-4 py-2 font-bold" onClick={onClose}>
+        <button className={buttonClass("secondary", "md")} onClick={onClose}>
           {t.close}
         </button>
       </div>
@@ -105,7 +106,7 @@ export function QrScanner({
           <>
             <video ref={video} className="h-full w-full object-cover" playsInline muted />
             <div className="pointer-events-none absolute inset-0 grid place-items-center">
-              <div className="size-60 rounded-3xl border-4 border-gold/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]" />
+              <div className="m-scale-in size-60 rounded-3xl border-4 border-gold/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]" />
             </div>
           </>
         )}
@@ -125,10 +126,10 @@ export function QrScanner({
           inputMode={numeric ? "numeric" : "text"}
           autoCapitalize="characters"
           autoComplete="off"
-          className="min-w-0 flex-1 rounded-xl border border-line bg-ink-2 px-3 py-3 text-center text-2xl font-black tracking-[0.3em] outline-none focus:border-gold"
+          className="min-h-14 min-w-0 flex-1 rounded-[var(--radius-ctl)] border-2 border-line bg-ink-2 px-3 py-3 text-center text-2xl font-black tracking-[0.3em] outline-none transition-colors focus:border-gold"
           aria-label={codeLabel}
         />
-        <button className="rounded-xl bg-gold px-5 py-3 text-lg font-extrabold text-on-accent disabled:opacity-40" disabled={busy || !typed.trim()}>
+        <button className={buttonClass("primary", "lg")} disabled={busy || !typed.trim()}>
           {t.send}
         </button>
       </form>

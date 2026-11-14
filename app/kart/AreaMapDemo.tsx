@@ -106,10 +106,10 @@ export default function AreaMapDemo() {
         <div ref={container} className="h-full w-full" />
       </div>
       <div className="pointer-events-none absolute inset-x-0 bottom-0 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-        <div className="pointer-events-auto mx-auto max-w-md rounded-2xl border border-line bg-ink-2/95 p-4 shadow-2xl backdrop-blur">
+        <div className="m-sheet-in pointer-events-auto mx-auto max-w-md rounded-[1.75rem] bg-ink-2 p-5 shadow-[var(--shadow-float)]">
           <div className="flex items-baseline justify-between gap-3">
             <h1 className="text-lg font-extrabold">{no.map.circleAroundMe}</h1>
-            <Link href="/" className="text-sm text-txt-dim underline-offset-4 hover:underline">
+            <Link href="/" className="inline-flex min-h-12 items-center text-sm font-bold text-txt-dim underline-offset-4 hover:text-txt hover:underline">
               {no.map.back}
             </Link>
           </div>
@@ -126,15 +126,15 @@ export default function AreaMapDemo() {
               step={10}
               value={radius}
               onChange={(e) => setRadius(Number(e.target.value))}
-              className="mt-2 w-full accent-gold"
+              className="mt-1 h-12 w-full cursor-pointer accent-gold"
             />
           </label>
           {accuracy !== null && (
-            <p className={`mt-2 text-sm font-semibold ${accuracy <= 15 ? "text-ok" : accuracy <= 30 ? "text-warn" : "text-danger"}`}>
+            <p className={`mt-2 text-sm font-semibold ${accuracy <= 15 ? "text-ok-text" : accuracy <= 30 ? "text-warn-text" : "text-danger-text"}`}>
               {no.map.accuracy(accuracy)}
             </p>
           )}
-          {gpsError && <p className="mt-2 text-sm font-semibold text-danger">{no.map.noGps}</p>}
+          {gpsError && <p className="mt-2 rounded-xl bg-danger/10 px-3 py-2 text-sm font-semibold text-danger-text">{no.map.noGps}</p>}
         </div>
       </div>
     </div>

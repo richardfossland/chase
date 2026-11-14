@@ -152,6 +152,13 @@ body {
 .m-pop { animation: m-pop var(--dur-3) var(--ease-spring) both; }
 .m-bump { animation: m-bump var(--dur-3) var(--ease-spring); }
 .m-shake { animation: m-shake var(--dur-3) var(--ease-in-out); }
+/* Sheet: slides up on phones, scales in as a centred card on lg. */
+.ui-sheet-in { animation: m-sheet-in var(--dur-3) var(--ease-out) both; }
+.ui-sheet-out { animation: m-sheet-out var(--dur-2) var(--ease-in-out) both; }
+@media (min-width: 64rem) {
+  .ui-sheet-in { animation: m-scale-in var(--dur-2) var(--ease-out) both; }
+  .ui-sheet-out { animation: m-scale-out var(--dur-1) var(--ease-in-out) both; }
+}
 /* Stagger children: set style={{ "--i": n }} on each. */
 .m-stagger > * { animation: m-rise-in var(--dur-3) var(--ease-out) both; animation-delay: calc(var(--i, 0) * 45ms); }
 

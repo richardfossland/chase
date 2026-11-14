@@ -30,7 +30,7 @@ export function FullscreenToggle() {
 
   return (
     <button
-      className="grid size-11 place-items-center rounded-xl border border-line bg-ink-2 text-lg text-txt"
+      className="ui-press grid size-12 place-items-center rounded-[var(--radius-ctl)] border border-line bg-ink-2 text-lg text-txt shadow-[var(--shadow-card)] hover:bg-ink-3"
       aria-label={isFull ? no.common.exitFullscreen : no.common.fullscreen}
       title={isFull ? no.common.exitFullscreen : no.common.fullscreen}
       onClick={toggle}

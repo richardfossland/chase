@@ -26,7 +26,7 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
     <main className="min-h-dvh bg-white px-4 py-8 text-[#14171e] print:p-0">
       <article className="mx-auto max-w-3xl">
         <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
-          <Link href="/personvern" className="font-bold underline">
+          <Link href="/personvern" className="inline-flex min-h-12 items-center font-bold underline underline-offset-4">
             {l.back}
           </Link>
           <PrintButton label={l.print} />

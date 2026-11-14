@@ -9,6 +9,8 @@ import { useState } from "react";
 import type { HostPlayer, Snapshot } from "@/lib/client/api";
 import { no } from "@/lib/locale/no";
 
+import { buttonClass } from "@/lib/client/ui";
+
 import type { HostSession } from "./useHostSession";
 
 const tt = no.teams;
@@ -31,18 +33,18 @@ export function TeamsChip({ snap, onOpen }: { snap: Snapshot; onOpen: () => void
   } else if (live && r?.hill) obj = th.hill(nameOf(r.hill.holder));
   return (
     <button
-      className="pointer-events-auto w-full rounded-xl bg-ink-2/95 px-2 py-1.5 text-left"
+      className="host-float ui-press m-drop-in pointer-events-auto min-h-12 w-full rounded-2xl px-2.5 py-2 text-left"
       onClick={onOpen}
       data-testid="teams-chip"
     >
       <div className="flex flex-wrap gap-1.5">
         {teams.map((t) => (
-          <span key={t.n} className="rounded-full px-2.5 py-0.5 text-sm font-black tabular-nums" style={{ background: t.color, color: teamText(t.color) }}>
+          <span key={t.n} className="rounded-full px-3 py-1 text-sm font-black tabular-nums shadow-sm" style={{ background: t.color, color: teamText(t.color) }}>
             {t.name} {t.points}
           </span>
         ))}
       </div>
-      {obj && <p className="mt-1 text-xs font-bold text-txt-dim">{obj}</p>}
+      {obj && <p className="mt-1.5 px-1 text-xs font-bold text-txt-dim">{obj}</p>}
     </button>
   );
 }
@@ -64,17 +66,16 @@ export function TeamsSheet({ snap, hs, onSelect }: { snap: Snapshot; hs: HostSes
   const loose = snap.players.filter((p) => teamOf[p.id] === undefined && p.role !== "referee");
   return (
     <div className="space-y-3" data-testid="teams-sheet">
-      <h2 className="text-xl font-black">{th.title}</h2>
       {!teams.length && <p className="text-sm text-txt-dim">{th.notDealt}</p>}
       {canDeal && (
-        <button className="w-full rounded-xl bg-gold py-3 font-black text-on-accent disabled:opacity-50" disabled={busy} onClick={() => void deal()} data-testid="teams-deal">
+        <button className={buttonClass("primary", "lg", "w-full")} disabled={busy} onClick={() => void deal()} data-testid="teams-deal">
           {teams.length ? th.redeal : th.deal}
         </button>
       )}
       <p className="text-xs text-txt-dim">{th.dealHint}</p>
-      {err && <p className="rounded-xl bg-warn px-3 py-2 text-sm font-bold text-on-accent">{err}</p>}
+      {err && <p className="m-drop-in rounded-2xl bg-warn/20 px-4 py-2.5 text-sm font-bold text-warn-text">{err}</p>}
       {teams.map((t) => (
-        <div key={t.n} className="rounded-xl border-2 p-2" style={{ borderColor: t.color }}>
+        <div key={t.n} className="m-rise-in rounded-2xl border border-line bg-ink-2 p-3 shadow-[var(--shadow-card)]" style={{ borderLeft: `6px solid ${t.color}` }}>
           <p className="flex items-center gap-2 font-black">
             <span className="inline-block h-4 w-4 rounded-full" style={{ background: t.color }} aria-hidden />
             {tt.team(t.name)}
@@ -82,11 +83,11 @@ export function TeamsSheet({ snap, hs, onSelect }: { snap: Snapshot; hs: HostSes
               {th.members(t.members)} · {t.points} p
             </span>
           </p>
-          <div className="mt-1.5 flex flex-wrap gap-1.5">
+          <div className="mt-2 flex flex-wrap gap-1.5">
             {snap.players
               .filter((p) => teamOf[p.id] === t.n)
               .map((p) => (
-                <button key={p.id} className="rounded-full bg-ink px-2.5 py-1 text-sm font-bold hover:bg-ink-3" onClick={() => onSelect(p.id)}>
+                <button key={p.id} className="ui-press min-h-10 rounded-full bg-ink px-3 text-sm font-bold hover:bg-ink-3" onClick={() => onSelect(p.id)}>
                   {p.nickname}
                 </button>
               ))}
@@ -107,13 +108,13 @@ export function TeamMoveRow({ p, snap, hs }: { p: HostPlayer; snap: Snapshot; hs
   const mine = snap.team_of?.[p.id];
   return (
     <div data-testid="team-move">
-      <p className="text-xs font-bold uppercase text-txt-dim">{th.move}</p>
-      <div className="mt-1 grid grid-cols-4 gap-1.5">
+      <p className="text-[11px] font-bold uppercase tracking-wide text-txt-dim">{th.move}</p>
+      <div className="mt-1.5 grid grid-cols-4 gap-1.5">
         {teams.map((t) => (
           <button
             key={t.n}
             disabled={t.n === mine}
-            className="rounded-xl py-2 text-sm font-black disabled:ring-4 disabled:ring-white"
+            className="ui-press min-h-12 rounded-xl text-sm font-black shadow-sm disabled:ring-[3px] disabled:ring-txt disabled:ring-offset-2 disabled:ring-offset-ink-2"
             style={{ background: t.color, color: teamText(t.color) }}
             onClick={() => void hs.act("team_set", { player_id: p.id, team: t.n })}
             aria-pressed={t.n === mine}

@@ -1,1 +1,79 @@
-/* Område-CSS for lærerpanelet (/host/*). Delte tokens og .m-*-animasjoner ligger i globals.css. */
+/* Område-CSS for lærerpanelet (/host/*). Delte tokens og .m-*-animasjoner ligger i globals.css.
+   Lærer = rolig og rask: korte, diskrete overganger. Alarmer animeres aldri inn (regel 4). */
+
+/* ── Kartmarkører (HostMap) ───────────────────────────────────────────── */
+.host-dot {
+  box-shadow: 0 1px 3px rgb(20 23 30 / 0.35), 0 0 0 1px rgb(20 23 30 / 0.12);
+  transition: background-color var(--dur-2) var(--ease-out), border-color var(--dur-2) var(--ease-out),
+    transform var(--dur-2) var(--ease-out);
+}
+.host-marker.is-selected .host-dot {
+  transform: scale(1.25);
+}
+.host-name {
+  margin-top: 3px;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #14171e;
+  padding: 1px 7px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.35;
+  white-space: nowrap;
+  box-shadow: 0 1px 2px rgb(20 23 30 / 0.12), 0 4px 10px -4px rgb(20 23 30 / 0.35);
+  animation: m-fade-in var(--dur-2) var(--ease-out) both;
+}
+.host-marker.is-selected .host-name {
+  outline: 2px solid var(--color-gold-deep);
+}
+
+/* ── Flytende kontroller over kartet ──────────────────────────────────── */
+.host-float {
+  background: var(--color-ink-2);
+  box-shadow: var(--shadow-float);
+}
+@supports (backdrop-filter: blur(8px)) {
+  .host-float {
+    background: rgb(255 255 255 / 0.92);
+    backdrop-filter: saturate(1.4) blur(10px);
+  }
+  html:has(.theme-dark) .host-float {
+    background: rgb(22 26 34 / 0.92);
+  }
+}
+
+/* MapLibre-kontrollene får samme myke flate som resten av panelet. */
+.host-map .maplibregl-ctrl-group {
+  border-radius: 0.9rem;
+  box-shadow: var(--shadow-float);
+  overflow: hidden;
+}
+.host-map .maplibregl-ctrl-group button {
+  width: 40px;
+  height: 40px;
+}
+
+/* Ny elev i lobbyen: popper inn én gang (bare nye rader får klassen). */
+@keyframes host-join {
+  0% { opacity: 0; transform: scale(0.92) translateY(6px); }
+  60% { opacity: 1; transform: scale(1.02); }
+  100% { transform: none; }
+}
+.host-join {
+  animation: host-join var(--dur-3) var(--ease-spring) both;
+}
+
+/* Lærerpanelet: zoomknapper og kreditering over bunnlinja, ikke under den. */
+.host-panel .host-map .maplibregl-ctrl-bottom-right {
+  bottom: calc(5.75rem + env(safe-area-inset-bottom));
+}
+
+/* Åpen SOS-rad: pulserende glorie rundt raden. Full dekkevne hele tiden (aldri opacity),
+   så teksten alltid er lesbar over kartet, og ingen forsinkelse (regel 4). */
+@keyframes host-sos {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(255 59 48 / 0.75), 0 10px 30px -10px rgb(255 59 48 / 0.7); }
+  50% { box-shadow: 0 0 0 7px rgb(255 59 48 / 0), 0 10px 30px -10px rgb(255 59 48 / 0.7); }
+}
+.host-sos {
+  animation: host-sos 1.2s ease-in-out infinite;
+}

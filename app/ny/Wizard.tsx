@@ -5,11 +5,12 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import type { GeoJSONSource, Map as MlMap, Marker } from "maplibre-gl";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { ApiError, api, type LibArea, type LibPlan, type Library } from "@/lib/client/api";
 import { AreaThumb } from "@/lib/client/AreaThumb";
 import { QuizEditor } from "@/lib/client/QuizEditor";
+import { Button, Chip, Stepper, cx } from "@/lib/client/ui";
 import { planSummary } from "@/lib/client/planSummary";
 import { normMissions } from "@/lib/rules/library";
 import { STARTER_PACKS, type StarterPack } from "@/lib/starter";
@@ -37,6 +38,7 @@ type AreaMode = "circle" | "draw";
 type DrawTarget = "area" | "forbidden" | null;
 
 const STEPS: Step[] = ["area", "forbidden", "assembly", "playlist", "safety"];
+const ORDER: Step[] = ["intro", "start", ...STEPS];
 const WARN_MAX_M2 = 500_000;
 const WARN_MIN_M2 = 3_000;
 const HARD_MIN_M2 = 500;
@@ -120,6 +122,11 @@ export default function Wizard() {
   const wanted = useRef<{ area: string | null; plan: string | null } | null>(null);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  // Presentation only: slide direction, folded map sheet, folded extras (D).
+  const [dir, setDir] = useState<"next" | "back">("next");
+  const [collapsed, setCollapsed] = useState(false);
+  const [openMissions, setOpenMissions] = useState(false);
+  const [openQuiz, setOpenQuiz] = useState(false);
 
   // First visit: introduce + show the lærernøkkel once. Then the start menu
   // (0010) — or straight to the area when /ny?area=…&plan=… came from the library.
@@ -195,7 +202,7 @@ export default function Wizard() {
           id: "draft-line",
           type: "line",
           source: "draft",
-          paint: { "line-color": "#ffffff", "line-width": 2, "line-dasharray": [2, 1.5] },
+          paint: { "line-color": "#14171e", "line-width": 2.5, "line-dasharray": [2, 1.5] },
         });
         setReady(true);
         geo.trigger();
@@ -322,7 +329,14 @@ export default function Wizard() {
         [Math.min(...lngs), Math.min(...lats)],
         [Math.max(...lngs), Math.max(...lats)],
       ],
-      { padding: { top: 80, left: 40, right: 60, bottom: 340 }, maxZoom: 18, duration: 500 },
+      {
+        // The sheet docks left on wide screens and at the bottom on phones.
+        padding: window.matchMedia("(min-width: 1024px)").matches
+          ? { top: 80, left: 500, right: 80, bottom: 60 }
+          : { top: 90, left: 40, right: 60, bottom: 360 },
+        maxZoom: 18,
+        duration: 500,
+      },
     );
   }, [areaRing]);
 
@@ -353,6 +367,8 @@ export default function Wizard() {
   // ── step navigation ──
   function goTo(next: Step) {
     if (next === "assembly" && !assembly && areaRing) setAssembly(defaultAssembly(areaRing, forbidden));
+    setDir(ORDER.indexOf(next) < ORDER.indexOf(step) ? "back" : "next");
+    setCollapsed(false);
     setStep(next);
     if (next !== "intro" && next !== "start") setTimeout(fitArea, 0);
   }
@@ -416,423 +432,642 @@ export default function Wizard() {
   }
 
   // ── UI ──
-  const sheet = "pointer-events-auto mx-auto max-h-[55dvh] max-w-md overflow-y-auto rounded-2xl border border-line bg-ink-2/95 p-4 shadow-2xl backdrop-blur";
-  const primary =
-    "rounded-xl bg-gold px-5 py-3 text-lg font-extrabold text-on-accent transition hover:bg-gold-light active:scale-[0.98] disabled:opacity-40";
-  const secondary = "rounded-xl border border-line px-4 py-3 font-bold text-txt transition hover:bg-ink-3 disabled:opacity-40";
-  const chip = (on: boolean) =>
-    `flex-1 rounded-xl px-3 py-2.5 text-sm font-extrabold transition disabled:opacity-40 ${on ? "bg-gold text-on-accent" : "border border-line text-txt hover:bg-ink-3"}`;
+  const onMap = step === "area" || step === "forbidden" || step === "assembly";
+  const tall = !onMap;
+  const isCollapsed = onMap && collapsed && !drawTarget;
+  const stepCls = dir === "back" ? "t-step-back" : "t-step-next";
+  const p = t.playlist;
+  const missionCount = plan.missions?.length ?? 0;
+  const missionsBad = missionCount > 0 && normMissions(plan.missions) === null;
+  const quizCount = plan.quiz?.length ?? 0;
+  const allChecked = checks.every(Boolean);
+
+  const head = (title: string) => (
+    <div className="flex items-start gap-3">
+      <h2 className="min-w-0 flex-1 pt-2.5 text-lg leading-snug font-extrabold">{title}</h2>
+      {!drawTarget && (
+        <button
+          type="button"
+          className="ui-press -mt-1 -mr-2 grid size-12 flex-none place-items-center rounded-full text-txt-dim hover:bg-ink-3 hover:text-txt"
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? t.sheetShow : t.sheetHide}
+          onClick={() => setCollapsed((c) => !c)}
+        >
+          <Chevron className="t-chevron rotate-180" />
+        </button>
+      )}
+    </div>
+  );
 
   return (
-    <div className="relative h-dvh w-full">
+    <div className="relative h-dvh w-full overflow-hidden">
       <div className="absolute inset-0">
         <div ref={container} className="h-full w-full" />
       </div>
 
-      {/* top: progress */}
+      {/* top: close + progress */}
       {step !== "intro" && step !== "start" && (
-        <div className="pointer-events-none absolute inset-x-0 top-0 p-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
-          <div className="pointer-events-auto mr-14 flex max-w-md items-center gap-3 rounded-2xl border border-line bg-ink-2/95 px-3 py-2 backdrop-blur">
-            <Link href="/" className="text-sm text-txt-dim" aria-label={no.common.home}>
+        <div className="pointer-events-none absolute inset-x-0 top-0 p-3 pt-[max(0.75rem,env(safe-area-inset-top))] lg:right-auto lg:w-[28rem]">
+          <div className="m-drop-in pointer-events-auto mr-14 flex items-center gap-2 rounded-full bg-ink-2/95 py-1 pr-4 pl-1 shadow-[var(--shadow-float)] backdrop-blur lg:mr-0">
+            <Link
+              href="/"
+              className="ui-press grid size-12 flex-none place-items-center rounded-full text-lg text-txt-dim hover:bg-ink-3 hover:text-txt"
+              aria-label={no.common.home}
+            >
               ✕
             </Link>
-            <ol className="flex flex-1 gap-1.5" aria-label={t.title}>
-              {STEPS.map((s, i) => (
-                <li key={s} className={`h-1.5 flex-1 rounded-full ${i <= idx ? "bg-gold" : "bg-ink-3"}`} />
-              ))}
-            </ol>
-            <span className="text-sm font-bold">{t.steps[idx]}</span>
+            <div className="min-w-0 flex-1 whitespace-nowrap" aria-label={t.title}>
+              <Stepper count={STEPS.length} index={idx} label={t.steps[idx]} />
+            </div>
           </div>
         </div>
       )}
 
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-        {step === "intro" && (
-          <div className={sheet}>
-            <h1 className="text-2xl font-black">{t.intro.title}</h1>
-            <p className="mt-2 text-txt-dim">{t.intro.body}</p>
-            <div className="mt-4 rounded-xl border border-gold/40 bg-ink p-3">
-              <p className="text-sm font-extrabold text-gold">{t.intro.keyTitle}</p>
-              <p className="mt-1 font-mono text-xl font-bold tracking-wider" data-testid="teacher-key">
-                {teacherKey}
-              </p>
-              <p className="mt-2 text-sm text-txt-dim">{t.intro.keyBody}</p>
-            </div>
-            <button
-              className={`${primary} mt-4 w-full`}
-              onClick={() => {
-                identity.markIntroSeen();
-                goTo(wanted.current ? "area" : "start");
-              }}
-            >
-              {t.intro.start}
-            </button>
-          </div>
-        )}
-
-        {step === "start" && (
-          <div className={sheet} data-testid="start-step">
-            {startView === "menu" && (
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:inset-y-0 lg:right-auto lg:flex lg:w-[28rem] lg:flex-col lg:justify-end lg:pt-24">
+        <div
+          className={cx(
+            "m-sheet-in pointer-events-auto mx-auto w-full max-w-md overflow-y-auto overscroll-contain rounded-[1.75rem] bg-ink-2 shadow-[var(--shadow-float)] transition-[max-height] duration-[var(--dur-3)] ease-[var(--ease-out)] lg:max-w-none",
+            tall ? "max-h-[82dvh] lg:max-h-full" : "max-h-[50dvh] lg:max-h-full",
+          )}
+        >
+          <div key={step} className={cx("p-5", stepCls)} data-testid={step === "start" ? "start-step" : undefined}>
+            {step === "intro" && (
               <>
-                <h1 className="text-2xl font-black">{no.start.title}</h1>
-                <div className="mt-3 grid gap-2">
-                  {lastArea && lastPlan && (
-                    <button
-                      className={`${primary} text-left`}
-                      onClick={() => {
-                        applyArea(lastArea);
-                        applyPlan(lastPlan);
-                        goTo("safety");
-                      }}
-                      data-testid="start-reuse"
-                    >
-                      {no.start.reuse}
-                      <span className="block truncate text-sm font-bold opacity-80">{no.start.reuseHint(lastArea.name, planSummary(lastPlan.plan).modes)}</span>
-                    </button>
-                  )}
-                  {library && (library.areas.length > 0 || library.plans.length > 0) && (
-                    <button className={`${secondary} text-left`} onClick={() => setStartView("library")} data-testid="start-library">
-                      {no.start.fromLibrary}
-                    </button>
-                  )}
-                  <button className={`${secondary} text-left`} onClick={() => setStartView("starter")} data-testid="start-starter">
-                    {no.start.starter}
-                  </button>
-                  <button className={`${secondary} text-left`} onClick={() => goTo("area")} data-testid="start-fresh">
-                    {no.start.fresh}
-                  </button>
+                <h1 className="text-2xl font-black">{t.intro.title}</h1>
+                <p className="mt-2 leading-relaxed text-txt-dim">{t.intro.body}</p>
+                <div className="mt-5 rounded-2xl border border-gold/50 bg-gold/10 p-4">
+                  <p className="text-sm font-extrabold text-gold-text">🔑 {t.intro.keyTitle}</p>
+                  <p className="mt-1 font-mono text-xl font-bold tracking-wider break-all" data-testid="teacher-key">
+                    {teacherKey}
+                  </p>
+                  <p className="mt-2 text-sm leading-relaxed text-txt-dim">{t.intro.keyBody}</p>
                 </div>
-                <Link href="/bibliotek" className="mt-3 block text-sm text-txt-dim underline underline-offset-4">
-                  {no.library.title}
-                </Link>
-              </>
-            )}
-            {startView === "starter" && (
-              <>
-                <p className="font-extrabold">{no.start.starter}</p>
-                <p className="mt-1 text-sm text-txt-dim">{no.start.starterLead}</p>
-                <div className="mt-3 grid gap-2">
-                  {STARTER_PACKS.map((pk) => (
-                    <button key={pk.id} className={`${secondary} text-left`} onClick={() => applyStarter(pk)} data-testid={`starter-${pk.id}`}>
-                      <span className="font-extrabold">
-                        {pk.emoji} {pk.name}
-                      </span>
-                      <span className="block text-sm font-normal text-txt-dim">{pk.lead}</span>
-                      <span className="block text-xs font-bold text-gold">
-                        {no.start.radius(pk.radius_m)} · {planSummary(pk.plan).modes}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-                <button className={`${secondary} mt-3`} onClick={() => setStartView("menu")}>
-                  {no.start.back}
-                </button>
-              </>
-            )}
-            {startView === "library" && library && (
-              <>
-                <p className="font-extrabold">{no.start.pickArea}</p>
-                <div className="mt-2 grid gap-1.5">
-                  <button className={`${chip(pickArea === null)} text-left`} onClick={() => setPickArea(null)}>
-                    {no.start.noArea}
-                  </button>
-                  {library.areas.map((a) => (
-                    <button key={a.id} className={`${chip(pickArea === a.id)} flex items-center gap-3 text-left`} onClick={() => setPickArea(a.id)}>
-                      <AreaThumb area={a} size={36} />
-                      <span className="truncate">{a.name}</span>
-                    </button>
-                  ))}
-                </div>
-                <p className="mt-3 font-extrabold">{no.start.pickPlan}</p>
-                <div className="mt-2 grid gap-1.5">
-                  <button className={`${chip(pickPlan === null)} text-left`} onClick={() => setPickPlan(null)}>
-                    {no.start.noPlan}
-                  </button>
-                  {library.plans.map((p) => (
-                    <button key={p.id} className={`${chip(pickPlan === p.id)} text-left`} onClick={() => setPickPlan(p.id)}>
-                      <span className="block truncate">{p.name}</span>
-                      <span className="block truncate text-xs font-bold opacity-75">{planSummary(p.plan).modes}</span>
-                    </button>
-                  ))}
-                </div>
-                <div className="mt-4 flex justify-between">
-                  <button className={secondary} onClick={() => setStartView("menu")}>
-                    {no.start.back}
-                  </button>
-                  <button
-                    className={primary}
-                    onClick={() => {
-                      const a = library.areas.find((x) => x.id === pickArea);
-                      const p = library.plans.find((x) => x.id === pickPlan);
-                      if (a) applyArea(a);
-                      if (p) applyPlan(p);
-                      goTo("area");
-                    }}
-                    data-testid="start-library-go"
-                  >
-                    {no.start.go}
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        )}
-
-        {step === "area" && (
-          <div className={sheet}>
-            <p className="font-extrabold">{t.area.lead}</p>
-            {!drawTarget && (
-              <div className="mt-3 flex gap-2">
-                <button className={chip(areaMode === "circle")} onClick={() => setAreaMode("circle")}>
-                  {t.area.circle}
-                </button>
-                <button
-                  className={chip(areaMode === "draw")}
+                <Button
+                  size="lg"
+                  className="mt-5 w-full"
                   onClick={() => {
-                    setAreaMode("draw");
-                    if (!drawnArea) startDraw("area");
+                    identity.markIntroSeen();
+                    goTo(wanted.current ? "area" : "start");
                   }}
                 >
-                  {t.area.draw}
-                </button>
-              </div>
-            )}
-
-            {areaMode === "circle" && (
-              <>
-                {gpsState === "locating" && !circleCentre && <p className="mt-3 text-sm text-txt-dim">{t.area.locating}</p>}
-                {gpsState === "error" && <p className="mt-3 text-sm font-semibold text-warn">{t.area.noGps}</p>}
-                <label className="mt-3 block">
-                  <span className="flex justify-between text-sm font-semibold">
-                    <span>{t.area.radius(radius)}</span>
-                    <span className="text-txt-dim">{no.map.area(areaM2)}</span>
-                  </span>
-                  <input
-                    type="range"
-                    min={50}
-                    max={400}
-                    step={10}
-                    value={radius}
-                    onChange={(e) => setRadius(Number(e.target.value))}
-                    className="mt-2 w-full accent-gold"
-                  />
-                </label>
-                <button
-                  className="mt-1 text-sm text-txt-dim underline underline-offset-4"
-                  onClick={() => {
-                    const c = map.current?.getCenter();
-                    if (c) setCircleCentre([c.lng, c.lat]);
-                  }}
-                >
-                  {t.area.useMapCentre}
-                </button>
+                  {t.intro.start}
+                </Button>
               </>
             )}
 
-            {areaMode === "draw" && (
-              <DrawControls
-                active={drawTarget === "area"}
-                count={draft.length}
-                error={draftError}
-                onUndo={() => setDraft((d) => d.slice(0, -1))}
-                onClear={() => setDraft([])}
-                onFinish={finishDraw}
-                onCancel={drawnArea ? cancelDraw : undefined}
-                summary={drawnArea && drawTarget !== "area" ? no.map.area(areaM2) : null}
-                onRedraw={() => startDraw("area")}
-              />
-            )}
-
-            {areaWarning && !drawTarget && <p className="mt-3 text-sm font-semibold text-warn">{areaWarning}</p>}
-
-            {!drawTarget && (
-              <div className="mt-4 flex justify-end">
-                <button className={primary} disabled={areaBlocked} onClick={() => goTo("forbidden")}>
-                  {t.next}
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {step === "forbidden" && (
-          <div className={sheet}>
-            <p className="font-extrabold">{t.forbidden.lead}</p>
-            {drawTarget === "forbidden" ? (
-              <DrawControls
-                active
-                count={draft.length}
-                error={draftError}
-                onUndo={() => setDraft((d) => d.slice(0, -1))}
-                onClear={() => setDraft([])}
-                onFinish={finishDraw}
-                onCancel={cancelDraw}
-                summary={null}
-                onRedraw={() => {}}
-              />
-            ) : (
-              <>
-                <ul className="mt-3 space-y-2">
-                  {forbidden.length === 0 && <li className="text-sm text-txt-dim">{t.forbidden.none}</li>}
-                  {forbidden.map((r, i) => (
-                    <li key={i} className="flex items-center justify-between rounded-xl bg-ink px-3 py-2">
-                      <span className="flex items-center gap-2 font-bold">
-                        <span className="size-3 rounded-sm bg-danger" aria-hidden />
-                        {t.forbidden.zone(i + 1)}
-                        <span className="text-sm font-normal text-txt-dim">{no.map.area(ringArea(r))}</span>
-                      </span>
-                      <button
-                        className="text-sm font-bold text-danger"
-                        onClick={() => setForbidden((f) => f.filter((_, j) => j !== i))}
-                      >
-                        {t.forbidden.remove}
+            {step === "start" && (
+              <div key={startView} className="t-step-next" data-testid="start-step">
+                {startView === "menu" && (
+                  <>
+                    <h1 className="text-2xl font-black">{no.start.title}</h1>
+                    <div className="m-stagger mt-4 grid gap-2.5">
+                      {lastArea && lastPlan && (
+                        <button
+                          className={optionGold}
+                          onClick={() => {
+                            applyArea(lastArea);
+                            applyPlan(lastPlan);
+                            goTo("safety");
+                          }}
+                          data-testid="start-reuse"
+                          style={{ "--i": 0 } as React.CSSProperties}
+                        >
+                          {no.start.reuse}
+                          <span className="block w-full truncate text-sm font-bold opacity-75">
+                            {no.start.reuseHint(lastArea.name, planSummary(lastPlan.plan).modes)}
+                          </span>
+                        </button>
+                      )}
+                      {library && (library.areas.length > 0 || library.plans.length > 0) && (
+                        <button className={option} onClick={() => setStartView("library")} data-testid="start-library" style={{ "--i": 1 } as React.CSSProperties}>
+                          {no.start.fromLibrary}
+                        </button>
+                      )}
+                      <button className={option} onClick={() => setStartView("starter")} data-testid="start-starter" style={{ "--i": 2 } as React.CSSProperties}>
+                        {no.start.starter}
                       </button>
-                    </li>
-                  ))}
-                </ul>
-                <button className={`${secondary} mt-3 w-full`} onClick={() => startDraw("forbidden")}>
-                  ＋ {t.forbidden.add}
-                </button>
-                <div className="mt-4 flex justify-between">
-                  <button className={secondary} onClick={() => goTo("area")}>
-                    {t.back}
-                  </button>
-                  <button className={primary} onClick={() => goTo("assembly")}>
-                    {forbidden.length ? t.next : t.skip}
-                  </button>
+                      <button className={option} onClick={() => goTo("area")} data-testid="start-fresh" style={{ "--i": 3 } as React.CSSProperties}>
+                        {no.start.fresh}
+                      </button>
+                    </div>
+                    <Link href="/bibliotek" className="mt-3 inline-flex min-h-12 items-center text-sm font-bold text-txt-dim underline underline-offset-4 hover:text-txt">
+                      {no.library.title}
+                    </Link>
+                  </>
+                )}
+                {startView === "starter" && (
+                  <>
+                    <h1 className="text-xl font-black">{no.start.starter}</h1>
+                    <p className="mt-1 text-sm leading-relaxed text-txt-dim">{no.start.starterLead}</p>
+                    <div className="m-stagger mt-4 grid gap-2.5">
+                      {STARTER_PACKS.map((pk, i) => (
+                        <button
+                          key={pk.id}
+                          className={option}
+                          onClick={() => applyStarter(pk)}
+                          data-testid={`starter-${pk.id}`}
+                          style={{ "--i": i } as React.CSSProperties}
+                        >
+                          <span className="font-extrabold">
+                            {pk.emoji} {pk.name}
+                          </span>
+                          <span className="block text-sm font-normal text-txt-dim">{pk.lead}</span>
+                          <span className="mt-1 block text-xs font-bold text-gold-text">
+                            {no.start.radius(pk.radius_m)} · {planSummary(pk.plan).modes}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                    <Button variant="ghost" className="mt-3" onClick={() => setStartView("menu")}>
+                      ← {no.start.back}
+                    </Button>
+                  </>
+                )}
+                {startView === "library" && library && (
+                  <>
+                    <h2 className="text-sm font-bold tracking-wide text-txt-dim uppercase">{no.start.pickArea}</h2>
+                    <div className="mt-2 grid gap-2">
+                      <button className={choice(pickArea === null, "w-full min-w-0 text-left")} onClick={() => setPickArea(null)}>
+                        {no.start.noArea}
+                      </button>
+                      {library.areas.map((a) => (
+                        <button key={a.id} className={choice(pickArea === a.id, "flex w-full min-w-0 items-center gap-3 py-1.5 text-left")} onClick={() => setPickArea(a.id)}>
+                          <AreaThumb area={a} size={36} />
+                          <span className="truncate">{a.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <h2 className="mt-5 text-sm font-bold tracking-wide text-txt-dim uppercase">{no.start.pickPlan}</h2>
+                    <div className="mt-2 grid gap-2">
+                      <button className={choice(pickPlan === null, "w-full min-w-0 text-left")} onClick={() => setPickPlan(null)}>
+                        {no.start.noPlan}
+                      </button>
+                      {library.plans.map((pl) => (
+                        <button key={pl.id} className={choice(pickPlan === pl.id, "w-full min-w-0 py-2 text-left")} onClick={() => setPickPlan(pl.id)}>
+                          <span className="block truncate">{pl.name}</span>
+                          <span className="block truncate text-xs font-bold opacity-75">{planSummary(pl.plan).modes}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <SheetFooter>
+                      <Button variant="ghost" onClick={() => setStartView("menu")}>
+                        ← {no.start.back}
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          const a = library.areas.find((x) => x.id === pickArea);
+                          const pl = library.plans.find((x) => x.id === pickPlan);
+                          if (a) applyArea(a);
+                          if (pl) applyPlan(pl);
+                          goTo("area");
+                        }}
+                        data-testid="start-library-go"
+                      >
+                        {no.start.go}
+                      </Button>
+                    </SheetFooter>
+                  </>
+                )}
+              </div>
+            )}
+
+            {step === "area" && (
+              <>
+                {head(t.area.lead)}
+                {!isCollapsed && (
+                  <div className="m-fade-in">
+                    {!drawTarget && (
+                      <div className="mt-3 flex gap-2 rounded-[var(--radius-ctl)] bg-ink p-1" role="group">
+                        <button className={segment(areaMode === "circle")} aria-pressed={areaMode === "circle"} onClick={() => setAreaMode("circle")}>
+                          ◎ {t.area.circle}
+                        </button>
+                        <button
+                          className={segment(areaMode === "draw")}
+                          aria-pressed={areaMode === "draw"}
+                          onClick={() => {
+                            setAreaMode("draw");
+                            if (!drawnArea) startDraw("area");
+                          }}
+                        >
+                          ✏️ {t.area.draw}
+                        </button>
+                      </div>
+                    )}
+
+                    {areaMode === "circle" && (
+                      <>
+                        {gpsState === "locating" && !circleCentre && <p className="mt-3 text-sm text-txt-dim">{t.area.locating}</p>}
+                        {gpsState === "error" && <Note tone="warn">{t.area.noGps}</Note>}
+                        <label className="mt-4 block">
+                          <span className="flex items-baseline justify-between text-sm font-bold">
+                            <span>{t.area.radius(radius)}</span>
+                            <span className="font-semibold text-txt-dim">{no.map.area(areaM2)}</span>
+                          </span>
+                          <input
+                            type="range"
+                            min={50}
+                            max={400}
+                            step={10}
+                            value={radius}
+                            onChange={(e) => setRadius(Number(e.target.value))}
+                            className="mt-1 h-12 w-full cursor-pointer accent-gold"
+                          />
+                        </label>
+                        <Button
+                          variant="ghost"
+                          className="-ml-3 text-sm text-txt-dim"
+                          onClick={() => {
+                            const c = map.current?.getCenter();
+                            if (c) setCircleCentre([c.lng, c.lat]);
+                          }}
+                        >
+                          ⌖ {t.area.useMapCentre}
+                        </Button>
+                      </>
+                    )}
+
+                    {areaMode === "draw" && (
+                      <DrawControls
+                        active={drawTarget === "area"}
+                        tone="area"
+                        count={draft.length}
+                        error={draftError}
+                        onUndo={() => setDraft((d) => d.slice(0, -1))}
+                        onClear={() => setDraft([])}
+                        onFinish={finishDraw}
+                        onCancel={
+                          drawnArea
+                            ? cancelDraw
+                            : () => {
+                                // No polygon yet: «Avbryt» goes back to the circle instead of trapping the teacher in draw mode.
+                                cancelDraw();
+                                setAreaMode("circle");
+                              }
+                        }
+                        summary={drawnArea && drawTarget !== "area" ? no.map.area(areaM2) : null}
+                        onRedraw={() => startDraw("area")}
+                      />
+                    )}
+
+                    {areaWarning && !drawTarget && <Note tone="warn">{areaWarning}</Note>}
+                  </div>
+                )}
+                {!drawTarget && (
+                  <div className={cx("flex justify-end", isCollapsed ? "mt-2" : "mt-5")}>
+                    <Button size="lg" className="min-w-36" disabled={areaBlocked} onClick={() => goTo("forbidden")}>
+                      {t.next} →
+                    </Button>
+                  </div>
+                )}
+              </>
+            )}
+
+            {step === "forbidden" && (
+              <>
+                {head(t.forbidden.lead)}
+                {drawTarget === "forbidden" ? (
+                  <DrawControls
+                    active
+                    tone="forbidden"
+                    count={draft.length}
+                    error={draftError}
+                    onUndo={() => setDraft((d) => d.slice(0, -1))}
+                    onClear={() => setDraft([])}
+                    onFinish={finishDraw}
+                    onCancel={cancelDraw}
+                    summary={null}
+                    onRedraw={() => {}}
+                  />
+                ) : (
+                  <>
+                    {!isCollapsed && (
+                      <div className="m-fade-in">
+                        <ul className="mt-3 space-y-2">
+                          {forbidden.length === 0 && (
+                            <li className="rounded-2xl border border-dashed border-line px-4 py-3 text-sm text-txt-dim">{t.forbidden.none}</li>
+                          )}
+                          {forbidden.map((r, i) => (
+                            <li key={i} className="m-rise-in flex min-h-14 items-center justify-between gap-2 rounded-2xl bg-ink pr-1 pl-4">
+                              <span className="flex min-w-0 items-center gap-2.5 font-bold">
+                                <span className="size-3.5 flex-none rounded-[4px] bg-danger" aria-hidden />
+                                {t.forbidden.zone(i + 1)}
+                                <span className="truncate text-sm font-normal text-txt-dim">{no.map.area(ringArea(r))}</span>
+                              </span>
+                              <button
+                                className="ui-press min-h-12 rounded-[var(--radius-ctl)] px-3 text-sm font-bold text-danger-text hover:bg-danger/10"
+                                onClick={() => setForbidden((f) => f.filter((_, j) => j !== i))}
+                              >
+                                {t.forbidden.remove}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                        <Button variant="secondary" className="mt-3 w-full" onClick={() => startDraw("forbidden")}>
+                          ＋ {t.forbidden.add}
+                        </Button>
+                      </div>
+                    )}
+                    <SheetFooter plain={isCollapsed}>
+                      <Button variant="ghost" onClick={() => goTo("area")}>
+                        ← {t.back}
+                      </Button>
+                      <Button size="lg" className="min-w-36" onClick={() => goTo("assembly")}>
+                        {forbidden.length ? `${t.next} →` : t.skip}
+                      </Button>
+                    </SheetFooter>
+                  </>
+                )}
+              </>
+            )}
+
+            {step === "assembly" && (
+              <>
+                {head(t.assembly.lead)}
+                {!isCollapsed && (
+                  <div className="m-fade-in">
+                    <div className="mt-3 flex gap-2">
+                      <button className={choice(false, "flex-1")} disabled={!me} onClick={() => me && setAssembly(me)}>
+                        📍 {t.assembly.here}
+                      </button>
+                      <button className={choice(false, "flex-1")} onClick={() => areaRing && setAssembly(defaultAssembly(areaRing, forbidden))}>
+                        ◎ {t.assembly.centre}
+                      </button>
+                    </div>
+                    {assemblyFar && <Note tone="danger">{t.assembly.far}</Note>}
+                    {assemblyForbidden && <Note tone="danger">{t.assembly.inForbidden}</Note>}
+                  </div>
+                )}
+                <SheetFooter plain={isCollapsed}>
+                  <Button variant="ghost" onClick={() => goTo("forbidden")}>
+                    ← {t.back}
+                  </Button>
+                  <Button size="lg" className="min-w-36" disabled={!assembly || assemblyFar || assemblyForbidden} onClick={() => goTo("playlist")}>
+                    {t.next} →
+                  </Button>
+                </SheetFooter>
+              </>
+            )}
+
+            {step === "playlist" && (
+              <>
+                <h2 className="text-xl font-black">{p.roundsTitle}</h2>
+                <PlaylistEditor plan={plan} onChange={setPlan} choice={choice} />
+
+                {/* (D) Optional extras, folded away by default. Both editors stay
+                    mounted while folded so their text and validity survive. */}
+                <section className="mt-7 border-t border-line pt-5" data-testid="extras">
+                  <h2 className="text-xl font-black">{p.extras}</h2>
+                  <p className="mt-0.5 text-sm text-txt-dim">{p.extrasLead}</p>
+
+                  <Disclosure
+                    title={no.missions.title}
+                    open={openMissions}
+                    onToggle={() => setOpenMissions((o) => !o)}
+                    testId="extras-missions"
+                    badge={
+                      missionsBad ? (
+                        <Chip tone="warn">{p.fix}</Chip>
+                      ) : missionCount ? (
+                        <Chip tone="gold">{p.missionsN(missionCount)}</Chip>
+                      ) : (
+                        <Chip>{p.missionsDefault}</Chip>
+                      )
+                    }
+                  >
+                    <MissionsEditor
+                      plan={plan}
+                      onChange={setPlan}
+                      packs={library?.packs ?? []}
+                      onSavePack={async (name, items) => {
+                        if (!teacherKey) return false;
+                        try {
+                          await api.library.save(teacherKey, "pack", name, { items });
+                          setLibrary(await api.library.get(teacherKey));
+                          return true;
+                        } catch {
+                          return false;
+                        }
+                      }}
+                    />
+                  </Disclosure>
+
+                  <Disclosure
+                    title={p.quizTitle}
+                    open={openQuiz}
+                    onToggle={() => setOpenQuiz((o) => !o)}
+                    testId="extras-quiz"
+                    badge={
+                      !quizValid ? (
+                        <Chip tone="warn">{p.fix}</Chip>
+                      ) : quizCount ? (
+                        <Chip tone="gold">{no.quiz.count(quizCount)}</Chip>
+                      ) : (
+                        <Chip>{p.quizNone}</Chip>
+                      )
+                    }
+                  >
+                    <p className="text-sm leading-relaxed text-txt-dim">{no.quiz.editorLead}</p>
+                    <QuizEditor
+                      compact
+                      items={plan.quiz}
+                      packs={library?.quizzes ?? []}
+                      onChange={(items, valid) => {
+                        setQuizValid(valid);
+                        setPlan((p) => {
+                          const { quiz: _q, ...rest } = p;
+                          void _q;
+                          return items ? { ...rest, quiz: items } : rest;
+                        });
+                      }}
+                      onSavePack={async (name, items) => {
+                        if (!teacherKey) return false;
+                        try {
+                          await api.library.save(teacherKey, "quiz", name, { items });
+                          setLibrary(await api.library.get(teacherKey));
+                          return true;
+                        } catch {
+                          return false;
+                        }
+                      }}
+                    />
+                  </Disclosure>
+                  {plan.quiz?.length && !plan.rounds.some((r) => r.mode === "posts") ? <Note tone="warn">{no.quiz.needsPosts}</Note> : null}
+                </section>
+
+                <SheetFooter>
+                  <Button variant="ghost" onClick={() => goTo("assembly")}>
+                    ← {t.back}
+                  </Button>
+                  <Button size="lg" className="min-w-36" disabled={!normPlan(plan) || !quizValid} onClick={() => goTo("safety")}>
+                    {p.next} →
+                  </Button>
+                </SheetFooter>
+              </>
+            )}
+
+            {step === "safety" && (
+              <>
+                <h2 className="text-xl font-black">{t.safety.lead}</h2>
+
+                <div className="mt-4 flex gap-3 rounded-2xl border border-warn/40 bg-warn/15 p-4 text-warn-text" role="note">
+                  <span className="text-xl leading-none" aria-hidden>
+                    ⚠️
+                  </span>
+                  <p className="text-sm leading-relaxed font-bold">{t.safety.traffic}</p>
                 </div>
+
+                <fieldset className="mt-5">
+                  <legend className="flex w-full items-center justify-between text-sm font-bold">
+                    <span>{t.safety.checklist}</span>
+                    <span className={cx("tabular-nums", allChecked ? "text-ok-text" : "text-txt-dim")}>
+                      {checks.filter(Boolean).length}/{checks.length}
+                    </span>
+                  </legend>
+                  <div className="mt-2 space-y-2">
+                    {t.safety.checks.map((label, i) => (
+                      <label
+                        key={label}
+                        className={cx(
+                          "t-check flex min-h-14 cursor-pointer items-center gap-3 rounded-2xl border px-4 py-2",
+                          checks[i] ? "border-ok/50 bg-ok/10" : "border-line bg-ink-2 hover:bg-ink",
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checks[i]}
+                          onChange={(e) => setChecks((c) => c.map((v, j) => (j === i ? e.target.checked : v)))}
+                          className="size-6 flex-none accent-[var(--color-ok-text)]"
+                        />
+                        <span className="font-semibold">{label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+
+                <label className="mt-5 block">
+                  <span className="text-sm font-bold">{t.safety.phone}</span>
+                  <input
+                    type="tel"
+                    inputMode="tel"
+                    autoComplete="tel"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="912 34 567"
+                    className={cx(field, "mt-1.5 text-lg")}
+                  />
+                  <span className="mt-1.5 block text-xs leading-relaxed text-txt-dim">{t.safety.phoneHint}</span>
+                </label>
+
+                {!allChecked && <p className="mt-4 text-sm text-txt-dim">{t.safety.checkAll}</p>}
+                {createError && (
+                  <Note tone="danger" alert>
+                    {createError}
+                  </Note>
+                )}
+                <SheetFooter>
+                  <Button variant="ghost" onClick={() => goTo("playlist")} disabled={creating}>
+                    ← {t.back}
+                  </Button>
+                  <Button size="lg" className="min-w-0 flex-1 sm:flex-none" disabled={!allChecked || creating} onClick={create}>
+                    {creating ? t.safety.creating : t.safety.create}
+                  </Button>
+                </SheetFooter>
               </>
             )}
           </div>
-        )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
-        {step === "assembly" && (
-          <div className={sheet}>
-            <p className="font-extrabold">{t.assembly.lead}</p>
-            <div className="mt-3 flex gap-2">
-              <button className={chip(false)} disabled={!me} onClick={() => me && setAssembly(me)}>
-                📍 {t.assembly.here}
-              </button>
-              <button
-                className={chip(false)}
-                onClick={() => areaRing && setAssembly(defaultAssembly(areaRing, forbidden))}
-              >
-                {t.assembly.centre}
-              </button>
-            </div>
-            {assemblyFar && <p className="mt-3 text-sm font-semibold text-danger">{t.assembly.far}</p>}
-            {assemblyForbidden && <p className="mt-3 text-sm font-semibold text-danger">{t.assembly.inForbidden}</p>}
-            <div className="mt-4 flex justify-between">
-              <button className={secondary} onClick={() => goTo("forbidden")}>
-                {t.back}
-              </button>
-              <button className={primary} disabled={!assembly || assemblyFar || assemblyForbidden} onClick={() => goTo("playlist")}>
-                {t.next}
-              </button>
-            </div>
-          </div>
-        )}
+/* ── presentation helpers ─────────────────────────────────────────────── */
 
-        {step === "playlist" && (
-          <div className={sheet}>
-            <PlaylistEditor plan={plan} onChange={setPlan} chip={chip} />
-            <MissionsEditor
-              plan={plan}
-              onChange={setPlan}
-              packs={library?.packs ?? []}
-              onSavePack={async (name, items) => {
-                if (!teacherKey) return false;
-                try {
-                  await api.library.save(teacherKey, "pack", name, { items });
-                  setLibrary(await api.library.get(teacherKey));
-                  return true;
-                } catch {
-                  return false;
-                }
-              }}
-            />
-            <div className="mt-4">
-              <QuizEditor
-                items={plan.quiz}
-                packs={library?.quizzes ?? []}
-                onChange={(items, valid) => {
-                  setQuizValid(valid);
-                  setPlan((p) => {
-                    const { quiz: _q, ...rest } = p;
-                    void _q;
-                    return items ? { ...rest, quiz: items } : rest;
-                  });
-                }}
-                onSavePack={async (name, items) => {
-                  if (!teacherKey) return false;
-                  try {
-                    await api.library.save(teacherKey, "quiz", name, { items });
-                    setLibrary(await api.library.get(teacherKey));
-                    return true;
-                  } catch {
-                    return false;
-                  }
-                }}
-              />
-              {plan.quiz?.length && !plan.rounds.some((r) => r.mode === "posts") ? (
-                <p className="mt-1 text-xs font-bold text-warn">{no.quiz.needsPosts}</p>
-              ) : null}
-            </div>
-            <div className="mt-4 flex justify-between gap-2">
-              <button className={secondary} onClick={() => goTo("assembly")}>
-                {t.back}
-              </button>
-              <button className={primary} disabled={!normPlan(plan) || !quizValid} onClick={() => goTo("safety")}>
-                {t.playlist.next}
-              </button>
-            </div>
-          </div>
-        )}
+const field =
+  "w-full min-h-12 rounded-[var(--radius-ctl)] border border-line bg-ink px-4 py-2.5 outline-none transition-[border-color,box-shadow] duration-[var(--dur-1)] focus:border-gold-deep focus:ring-4 focus:ring-gold/20";
+const optionBase = "ui-press flex min-h-14 w-full min-w-0 flex-col items-start justify-center rounded-[var(--radius-ctl)] px-4 py-3 text-left font-extrabold";
+const option = cx(optionBase, "border border-line bg-ink-2 hover:border-gold/60 hover:bg-ink");
+const optionGold = cx(optionBase, "bg-gold text-on-accent shadow-[var(--shadow-card)] hover:bg-gold-light");
 
-        {step === "safety" && (
-          <div className={sheet}>
-            <p className="font-extrabold">{t.safety.lead}</p>
-            <label className="mt-3 block">
-              <span className="text-sm font-semibold">{t.safety.phone}</span>
-              <input
-                type="tel"
-                inputMode="tel"
-                autoComplete="tel"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="912 34 567"
-                className="mt-1 w-full rounded-xl border border-line bg-ink px-3 py-3 text-lg outline-none focus:border-gold"
-              />
-              <span className="mt-1 block text-xs text-txt-dim">{t.safety.phoneHint}</span>
-            </label>
+/** Selectable chip-button (rounds, minutes, pickers). */
+function choice(on: boolean, extra?: string) {
+  return cx(
+    "ui-press min-h-12 rounded-[var(--radius-ctl)] px-3 text-sm font-extrabold disabled:opacity-40",
+    on ? "bg-gold text-on-accent shadow-[var(--shadow-card)]" : "border border-line bg-ink-2 text-txt hover:bg-ink-3",
+    extra,
+  );
+}
+/** One half of a segmented control. */
+function segment(on: boolean) {
+  return cx(
+    "ui-press min-h-12 flex-1 rounded-[0.7rem] px-3 text-sm font-extrabold",
+    on ? "bg-ink-2 text-txt shadow-[var(--shadow-card)]" : "text-txt-dim hover:text-txt",
+  );
+}
 
-            <fieldset className="mt-4">
-              <legend className="text-sm font-semibold">{t.safety.checklist}</legend>
-              {t.safety.checks.map((label, i) => (
-                <label key={label} className="mt-2 flex items-center gap-3 rounded-xl bg-ink px-3 py-2.5">
-                  <input
-                    type="checkbox"
-                    checked={checks[i]}
-                    onChange={(e) => setChecks((c) => c.map((v, j) => (j === i ? e.target.checked : v)))}
-                    className="size-5 accent-gold"
-                  />
-                  <span className="font-semibold">{label}</span>
-                </label>
-              ))}
-            </fieldset>
-            <p className="mt-3 text-xs text-txt-dim">⚠️ {t.safety.traffic}</p>
+function Note({ tone, alert, children }: { tone: "warn" | "danger"; alert?: boolean; children: React.ReactNode }) {
+  return (
+    <p
+      className={cx(
+        "m-rise-in mt-3 rounded-xl px-3.5 py-2.5 text-sm leading-relaxed font-semibold",
+        tone === "warn" ? "bg-warn/15 text-warn-text" : "bg-danger/10 text-danger-text",
+      )}
+      role={alert ? "alert" : undefined}
+    >
+      {children}
+    </p>
+  );
+}
 
-            {createError && <p className="mt-3 text-sm font-semibold text-danger">{createError}</p>}
-            <div className="mt-4 flex justify-between gap-2">
-              <button className={secondary} onClick={() => goTo("playlist")} disabled={creating}>
-                {t.back}
-              </button>
-              <button className={primary} disabled={!checks.every(Boolean) || creating} onClick={create}>
-                {creating ? t.safety.creating : t.safety.create}
-              </button>
-            </div>
-          </div>
-        )}
+/** Back/next row that sticks to the bottom of a scrolling sheet. */
+function SheetFooter({ children, plain }: { children: React.ReactNode; plain?: boolean }) {
+  return (
+    <div
+      className={cx(
+        "flex items-center justify-between gap-2",
+        plain ? "mt-2" : "sticky bottom-0 -mx-5 -mb-5 mt-5 border-t border-line bg-ink-2/95 px-5 py-3 backdrop-blur",
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+function Chevron({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 20 20" width="20" height="20" className={className} aria-hidden>
+      <path d="M5 8l5 5 5-5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function Disclosure(props: {
+  title: string;
+  badge: React.ReactNode;
+  open: boolean;
+  onToggle: () => void;
+  testId: string;
+  children: React.ReactNode;
+}) {
+  const id = useId();
+  return (
+    <div className={cx("mt-3 rounded-2xl border bg-ink-2 transition-colors duration-[var(--dur-2)]", props.open ? "border-gold/50" : "border-line")}>
+      <button
+        type="button"
+        className="ui-press flex min-h-14 w-full items-center gap-3 rounded-2xl px-4 text-left hover:bg-ink"
+        aria-expanded={props.open}
+        aria-controls={id}
+        onClick={props.onToggle}
+        data-testid={props.testId}
+      >
+        <span className="min-w-0 flex-1 font-extrabold">{props.title}</span>
+        {props.badge}
+        <Chevron className="t-chevron flex-none text-txt-dim" />
+      </button>
+      <div id={id} className="t-collapse" data-open={props.open} inert={!props.open}>
+        <div>
+          <div className="px-4 pt-1 pb-4">{props.children}</div>
+        </div>
       </div>
     </div>
   );
@@ -840,6 +1075,7 @@ export default function Wizard() {
 
 function DrawControls(props: {
   active: boolean;
+  tone: "area" | "forbidden";
   count: number;
   error: string | null;
   summary: string | null;
@@ -849,40 +1085,40 @@ function DrawControls(props: {
   onCancel?: () => void;
   onRedraw: () => void;
 }) {
-  const btn = "rounded-xl border border-line px-3 py-2.5 text-sm font-bold transition hover:bg-ink-3 disabled:opacity-40";
+  const btn = "flex-1 px-3 text-sm";
   if (!props.active) {
     return (
-      <div className="mt-3 flex items-center justify-between">
-        <span className="text-sm text-txt-dim">{props.summary}</span>
-        <button className={btn} onClick={props.onRedraw}>
+      <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl bg-ink py-1 pr-1 pl-4">
+        <span className="text-sm font-semibold text-txt-dim">{props.summary}</span>
+        <Button variant="ghost" className="text-sm" onClick={props.onRedraw}>
           ✏️ {t.area.redraw}
-        </button>
+        </Button>
       </div>
     );
   }
   return (
-    <div className="mt-3">
-      <p className="text-sm text-txt-dim">{t.area.drawHint}</p>
-      {props.error && <p className="mt-2 text-sm font-semibold text-danger">{props.error}</p>}
-      <div className="mt-3 flex gap-2">
-        <button className={btn} disabled={props.count === 0} onClick={props.onUndo}>
+    <div className="m-fade-in mt-3">
+      <p className="flex items-start gap-2 text-sm leading-relaxed text-txt-dim">
+        <span className={cx("mt-1 size-2.5 flex-none rounded-full", props.tone === "area" ? "bg-gold" : "bg-danger")} aria-hidden />
+        <span className="flex-1">{t.area.drawHint}</span>
+        <Chip tone={props.count >= 3 ? "ok" : "neutral"}>{t.area.corners(props.count)}</Chip>
+      </p>
+      {props.error && <Note tone="danger">{props.error}</Note>}
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button variant="secondary" className={btn} disabled={props.count === 0} onClick={props.onUndo}>
           ↶ {t.area.undo}
-        </button>
-        <button className={btn} disabled={props.count === 0} onClick={props.onClear}>
+        </Button>
+        <Button variant="secondary" className={btn} disabled={props.count === 0} onClick={props.onClear}>
           {t.area.clear}
-        </button>
+        </Button>
         {props.onCancel && (
-          <button className={btn} onClick={props.onCancel}>
+          <Button variant="ghost" className={btn} onClick={props.onCancel}>
             {no.common.cancel}
-          </button>
+          </Button>
         )}
-        <button
-          className="ml-auto rounded-xl bg-gold px-4 py-2.5 text-sm font-extrabold text-on-accent disabled:opacity-40"
-          disabled={props.count < 3}
-          onClick={props.onFinish}
-        >
+        <Button className={cx(btn, "min-w-24")} disabled={props.count < 3} onClick={props.onFinish}>
           ✓ {t.area.finish}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -895,9 +1131,16 @@ const BREATHERS = [0, 30, 60, 90, 120];
 const EVENT_EVERY = [0, 60, 90, 120] as const;
 const QR_COUNTS = [0, 4, 6, 8, 12];
 
+function Label({ children }: { children: React.ReactNode }) {
+  return <p className="mt-5 text-sm font-bold">{children}</p>;
+}
+function Help({ children }: { children: React.ReactNode }) {
+  return <p className="mt-1.5 text-xs leading-relaxed text-txt-dim">{children}</p>;
+}
+
 /** Playlist step (PLAN §13 phase 2): rounds with mode + length, breather, physical QR cards. */
-function PlaylistEditor(props: { plan: Plan; onChange: (p: Plan) => void; chip: (on: boolean) => string }) {
-  const { plan, onChange, chip } = props;
+function PlaylistEditor(props: { plan: Plan; onChange: (p: Plan) => void; choice: (on: boolean, extra?: string) => string }) {
+  const { plan, onChange, choice } = props;
   const p = t.playlist;
   const setRound = (i: number, patch: Partial<Plan["rounds"][number]>) =>
     onChange({ ...plan, rounds: plan.rounds.map((r, j) => (j === i ? { ...r, ...patch } : r)) });
@@ -906,16 +1149,16 @@ function PlaylistEditor(props: { plan: Plan; onChange: (p: Plan) => void; chip: 
     [rounds[i - 1], rounds[i]] = [rounds[i], rounds[i - 1]];
     onChange({ ...plan, rounds });
   };
-  const iconBtn = "rounded-lg border border-line px-2.5 py-1.5 text-sm font-bold transition hover:bg-ink-3 disabled:opacity-30";
+  const iconBtn = "ui-press grid size-12 place-items-center rounded-[var(--radius-ctl)] text-base font-bold text-txt-dim hover:bg-ink-3 hover:text-txt disabled:opacity-30";
   return (
     <div>
-      <p className="text-sm text-txt-dim">{p.lead}</p>
-      <p className="mt-3 text-sm font-semibold">{p.templates}</p>
-      <div className="mt-2 grid grid-cols-2 gap-1.5">
+      <p className="mt-1 text-sm leading-relaxed text-txt-dim">{p.lead}</p>
+      <Label>{p.templates}</Label>
+      <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
         {(Object.keys(TEMPLATES) as TemplateId[]).map((id) => (
           <button
             key={id}
-            className={chip(JSON.stringify(plan.rounds) === JSON.stringify(TEMPLATES[id].rounds))}
+            className={choice(JSON.stringify(plan.rounds) === JSON.stringify(TEMPLATES[id].rounds), "text-left")}
             onClick={() => onChange(structuredClone(TEMPLATES[id]))}
             data-testid={`template-${id}`}
           >
@@ -923,12 +1166,13 @@ function PlaylistEditor(props: { plan: Plan; onChange: (p: Plan) => void; chip: 
           </button>
         ))}
       </div>
-      <ol className="mt-3 space-y-2">
+      <ol className="mt-4 space-y-3">
         {plan.rounds.map((r, i) => (
-          <li key={i} className="rounded-xl bg-ink p-3">
+          <li key={i} className="m-rise-in rounded-2xl border border-line bg-ink p-3">
             <div className="flex items-center gap-2">
+              <span className="grid size-8 place-items-center rounded-full bg-ink-2 text-sm font-black shadow-[var(--shadow-card)]">{i + 1}</span>
               <span className="font-extrabold">{p.round(i + 1)}</span>
-              <div className="ml-auto flex gap-1.5">
+              <div className="-my-1 ml-auto flex">
                 <button className={iconBtn} disabled={i === 0} onClick={() => move(i)} aria-label={p.up}>
                   ↑
                 </button>
@@ -942,13 +1186,13 @@ function PlaylistEditor(props: { plan: Plan; onChange: (p: Plan) => void; chip: 
                 </button>
               </div>
             </div>
-            <div className="mt-2 grid grid-cols-2 gap-1.5">
+            <div className="mt-2 grid grid-cols-2 gap-2">
               {ROUND_KINDS.map((k) => {
                 const on = r.mode === "tag" ? r.variant === k : r.mode === k;
                 return (
                   <button
                     key={k}
-                    className={chip(on)}
+                    className={choice(on, "text-left")}
                     onClick={() =>
                       setRound(
                         i,
@@ -965,21 +1209,17 @@ function PlaylistEditor(props: { plan: Plan; onChange: (p: Plan) => void; chip: 
                 );
               })}
             </div>
-            <div className="mt-2 flex flex-wrap gap-1.5">
+            <div className="mt-2 flex flex-wrap gap-2">
               {ROUND_MINUTES.map((m) => (
-                <button
-                  key={m}
-                  className={`${chip(r.duration_s === m * 60)} flex-none px-2.5`}
-                  onClick={() => setRound(i, { duration_s: m * 60 })}
-                >
+                <button key={m} className={choice(r.duration_s === m * 60, "min-w-14 flex-1 px-2")} onClick={() => setRound(i, { duration_s: m * 60 })}>
                   {p.minutes(m)}
                 </button>
               ))}
             </div>
             {r.mode !== "flag" && r.mode !== "king" && r.mode !== "relay" && (
-              <div className="mt-2 flex gap-1.5">
+              <div className="mt-2 flex gap-2">
                 <button
-                  className={`${chip(!!r.zone)} flex-1`}
+                  className={choice(!!r.zone, "flex-1")}
                   aria-pressed={!!r.zone}
                   onClick={() => setRound(i, { zone: r.zone ? undefined : true })}
                   data-testid={`zone-${i}`}
@@ -988,7 +1228,7 @@ function PlaylistEditor(props: { plan: Plan; onChange: (p: Plan) => void; chip: 
                 </button>
                 {(r.mode === "posts" || r.mode === "free") && (
                   <button
-                    className={`${chip(!!r.team)} flex-1`}
+                    className={choice(!!r.team, "flex-1")}
                     aria-pressed={!!r.team}
                     onClick={() => setRound(i, { team: r.team ? undefined : true })}
                     data-testid={`team-${i}`}
@@ -1002,42 +1242,47 @@ function PlaylistEditor(props: { plan: Plan; onChange: (p: Plan) => void; chip: 
         ))}
       </ol>
       <button
-        className="mt-2 w-full rounded-xl border border-dashed border-line py-2.5 text-sm font-bold text-txt-dim transition hover:bg-ink-3 disabled:opacity-40"
+        className="ui-press mt-3 min-h-12 w-full rounded-2xl border-2 border-dashed border-line text-sm font-bold text-txt-dim hover:border-gold/60 hover:bg-ink hover:text-txt disabled:opacity-40"
         disabled={plan.rounds.length >= GAME.max_rounds}
         onClick={() => onChange({ ...plan, rounds: [...plan.rounds, { ...plan.rounds[plan.rounds.length - 1] }] })}
       >
         {p.add}
       </button>
 
-      {plan.rounds.some((r) => r.zone) && <p className="mt-2 text-xs text-txt-dim">{p.zoneHint}</p>}
-      {plan.rounds.some((r) => r.mode === "tag" && r.variant === "fox") && <p className="mt-2 text-xs text-txt-dim">{p.foxHint}</p>}
+      {plan.rounds.some((r) => r.zone) && <Help>{p.zoneHint}</Help>}
+      {plan.rounds.some((r) => r.mode === "tag" && r.variant === "fox") && <Help>{p.foxHint}</Help>}
 
       {/* Fase 5 (0009): number of teams when the playlist has a team round. */}
       {plan.rounds.some((r) => isTeamRound(r)) && (
         <>
-          <p className="mt-4 text-sm font-semibold">{p.teams}</p>
-          <div className="mt-2 flex gap-1.5">
+          <Label>{p.teams}</Label>
+          <div className="mt-2 flex gap-2">
             {TEAM_COUNTS.map((n) => (
-              <button key={n} className={chip((plan.teams ?? TEAMS.teams_default) === n)} onClick={() => onChange({ ...plan, teams: n })} data-testid={`teams-${n}`}>
+              <button
+                key={n}
+                className={choice((plan.teams ?? TEAMS.teams_default) === n, "flex-1")}
+                onClick={() => onChange({ ...plan, teams: n })}
+                data-testid={`teams-${n}`}
+              >
                 {p.teamsN(n)}
               </button>
             ))}
           </div>
-          <p className="mt-1 text-xs text-txt-dim">{p.teamsHint}</p>
+          <Help>{p.teamsHint}</Help>
           {plan.rounds.map((r, i) =>
             r.mode === "flag" || r.mode === "king" || r.mode === "relay" ? (
-              <p key={i} className="mt-1 text-xs text-txt-dim">
+              <Help key={i}>
                 {p.round(i + 1)}: {p.modeHint[r.mode]}
-              </p>
+              </Help>
             ) : null,
           )}
         </>
       )}
 
-      <p className="mt-4 text-sm font-semibold">{p.breather}</p>
-      <div className="mt-2 flex gap-1.5">
+      <Label>{p.breather}</Label>
+      <div className="mt-2 flex gap-2">
         {BREATHERS.map((b) => (
-          <button key={b} className={chip(plan.breather_s === b)} onClick={() => onChange({ ...plan, breather_s: b })}>
+          <button key={b} className={choice(plan.breather_s === b, "flex-1 px-1")} onClick={() => onChange({ ...plan, breather_s: b })}>
             {b === 0 ? p.breatherNone : p.breatherS(b)}
           </button>
         ))}
@@ -1045,28 +1290,34 @@ function PlaylistEditor(props: { plan: Plan; onChange: (p: Plan) => void; chip: 
 
       {plan.rounds.some((r) => r.mode === "posts") && (
         <>
-          <p className="mt-4 text-sm font-semibold">{p.qr}</p>
-          <div className="mt-2 flex gap-1.5">
+          <Label>{p.qr}</Label>
+          <div className="mt-2 flex gap-2">
             {QR_COUNTS.map((n) => (
-              <button key={n} className={chip(plan.qr_posts === n)} onClick={() => onChange({ ...plan, qr_posts: n })}>
+              <button key={n} className={choice(plan.qr_posts === n, "flex-1 px-1")} onClick={() => onChange({ ...plan, qr_posts: n })}>
                 {n === 0 ? p.qrNone : n}
               </button>
             ))}
           </div>
-          <p className="mt-1 text-xs text-txt-dim">{p.qrHint}</p>
+          <Help>{p.qrHint}</Help>
         </>
       )}
       {/* Fase 4 (0007): automatic events, wizard default 90 s (ADR-024). */}
-      <p className="mt-4 text-sm font-semibold">{no.events.wizard.label}</p>
-      <div className="mt-2 flex gap-1.5">
+      <Label>{no.events.wizard.label}</Label>
+      <div className="mt-2 flex gap-2">
         {EVENT_EVERY.map((n) => (
-          <button key={n} className={chip((plan.event_every_s ?? 0) === n)} onClick={() => onChange({ ...plan, event_every_s: n || undefined })}>
+          <button
+            key={n}
+            className={choice((plan.event_every_s ?? 0) === n, "flex-1 px-1")}
+            onClick={() => onChange({ ...plan, event_every_s: n || undefined })}
+          >
             {n === 0 ? no.events.wizard.off : no.events.wizard.every(n)}
           </button>
         ))}
       </div>
-      <p className="mt-1 text-xs text-txt-dim">{no.events.wizard.help}</p>
-      <p className="mt-4 text-sm font-bold">{p.total(Math.round(planTotalS(plan) / 60))}</p>
+      <Help>{no.events.wizard.help}</Help>
+      <p className="mt-5 inline-flex rounded-full bg-gold/15 px-3 py-1.5 text-sm font-extrabold text-gold-text">
+        ⏱ {p.total(Math.round(planTotalS(plan) / 60))}
+      </p>
     </div>
   );
 }
@@ -1087,7 +1338,7 @@ function MissionsEditor(props: {
   const lastPlan = useRef(planMissions);
   useEffect(() => {
     if (planMissions !== lastPlan.current && planMissions !== text.split("\n").filter((l) => l.trim()).join("\n")) {
-       
+
       setText(planMissions);
     }
     lastPlan.current = planMissions;
@@ -1102,19 +1353,18 @@ function MissionsEditor(props: {
     void _old;
     props.onChange(ls.length ? { ...rest, missions: ls } : rest);
   };
-  const btn = "rounded-lg border border-line px-2.5 py-1.5 text-xs font-bold transition hover:bg-ink-3 disabled:opacity-40";
+  const btn = "ui-press min-h-12 rounded-[var(--radius-ctl)] border border-line bg-ink-2 px-3 text-sm font-bold hover:bg-ink-3 disabled:opacity-40";
   return (
-    <div className="mt-4" data-testid="missions-editor">
-      <p className="text-sm font-semibold">{m.title}</p>
-      <p className="text-xs text-txt-dim">{m.lead}</p>
+    <div data-testid="missions-editor">
+      <p className="text-sm leading-relaxed text-txt-dim">{m.lead}</p>
       <textarea
-        className="mt-2 min-h-24 w-full rounded-xl border border-line bg-ink px-3 py-2 text-sm font-bold outline-none focus:border-gold"
+        className={cx(field, "mt-2 min-h-28 text-sm font-bold")}
         placeholder={m.field}
         value={text}
         onChange={(e) => set(e.target.value)}
       />
-      {items === null && <p className="text-xs font-bold text-warn">{m.invalid}</p>}
-      <div className="mt-1 flex flex-wrap gap-1.5">
+      {items === null && <p className="mt-1 text-xs font-bold text-warn-text">{m.invalid}</p>}
+      <div className="mt-2 flex flex-wrap gap-2">
         {props.packs.map((p) => (
           <button key={p.id} className={btn} onClick={() => set(p.items.join("\n"))}>
             {m.fromPack}: {p.name}
@@ -1128,7 +1378,7 @@ function MissionsEditor(props: {
       </div>
       {naming !== null && (
         <form
-          className="mt-2 flex gap-1.5"
+          className="mt-2 flex flex-wrap gap-2"
           onSubmit={async (e) => {
             e.preventDefault();
             if (items && naming.trim() && (await props.onSavePack(naming, items))) {
@@ -1138,7 +1388,7 @@ function MissionsEditor(props: {
           }}
         >
           <input
-            className="flex-1 rounded-lg border border-line bg-ink px-2 py-1.5 text-sm font-bold outline-none focus:border-gold"
+            className={cx(field, "min-w-40 flex-1 text-sm font-bold")}
             placeholder={no.library.packName}
             value={naming}
             onChange={(e) => setNaming(e.target.value)}

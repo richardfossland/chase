@@ -15,14 +15,19 @@ import { planSummary } from "@/lib/client/planSummary";
 import { QRCode } from "@/lib/client/QRCode";
 import { QrScanner } from "@/lib/client/QrScanner";
 import { QuizEditor } from "@/lib/client/QuizEditor";
+import { Chip, buttonClass, cx } from "@/lib/client/ui";
 import type { QuizItem } from "@/lib/rules/quiz";
 import { no } from "@/lib/locale/no";
 import { LIBRARY, normMissions, parseTeacherKey, teacherKeyQr } from "@/lib/rules/library";
 
 const t = no.library;
-const btn = "rounded-xl border border-line px-3 py-2 text-sm font-bold transition hover:bg-ink-3 disabled:opacity-40";
-const gold = "rounded-xl bg-gold px-4 py-2.5 font-extrabold text-on-accent transition hover:bg-gold-light disabled:opacity-40";
-const input = "w-full rounded-xl border border-line bg-ink px-3 py-2.5 font-bold outline-none focus:border-gold";
+const btn = buttonClass("secondary", "md", "px-3.5 text-sm font-bold");
+const gold = buttonClass("primary", "md");
+const danger = buttonClass("ghost", "md", "px-3 text-sm font-bold text-danger-text hover:bg-danger/10");
+const quiet = buttonClass("ghost", "md", "px-3 text-sm font-bold text-txt-dim hover:text-txt");
+const input =
+  "w-full min-h-12 rounded-[var(--radius-ctl)] border border-line bg-ink px-4 py-2.5 font-bold outline-none transition-[border-color,box-shadow] duration-[var(--dur-1)] focus:border-gold-deep focus:ring-4 focus:ring-gold/20";
+const card = "rounded-[var(--radius-card)] bg-ink-2 p-4 shadow-[var(--shadow-card)]";
 
 type Confirm = { message: string; danger?: boolean; run: () => void } | null;
 
@@ -77,23 +82,44 @@ export default function LibraryView() {
   const total = libr ? libr.areas.length + libr.plans.length + libr.packs.length : 0;
 
   return (
-    <main className="mx-auto max-w-2xl px-4 py-8 pb-24">
-      <div className="flex items-center justify-between gap-3">
-        <Link href="/" className="text-sm text-txt-dim">
+    <main className="mx-auto max-w-2xl px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-24 sm:px-6">
+      <div className="flex min-h-12 items-center justify-between gap-3">
+        <Link href="/" className={cx(quiet, "-ml-3")}>
           {t.back}
         </Link>
         <Link href="/ny" className={gold}>
           {t.newSession}
         </Link>
       </div>
-      <h1 className="mt-6 text-4xl font-black">{t.title}</h1>
-      <p className="mt-2 text-txt-dim">{t.lead}</p>
-      {err && <p className="mt-4 rounded-xl bg-warn px-3 py-2 font-bold text-on-accent">{err}</p>}
+      <div className="m-rise-in">
+        <h1 className="mt-8 text-4xl font-black tracking-tight sm:text-5xl">{t.title}</h1>
+        <p className="mt-3 max-w-prose leading-relaxed text-txt-dim">{t.lead}</p>
+      </div>
+      {err && (
+        <p className="m-rise-in mt-5 rounded-2xl bg-warn/15 px-4 py-3 font-bold text-warn-text" role="alert">
+          {err}
+        </p>
+      )}
 
       {key && <KeyPanel teacherKey={key} libraryCount={total} onSwitch={(k) => { setKey(k); void load(k); }} />}
 
-      {!libr && !err && <p className="mt-8 text-txt-dim">{t.loading}</p>}
-      {libr && total === 0 && libr.shares.length === 0 && <p className="mt-8 rounded-2xl border border-line bg-ink-2 p-4">{t.empty}</p>}
+      {!libr && !err && (
+        <div className="mt-10 space-y-3" aria-busy="true">
+          <p className="sr-only">{t.loading}</p>
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="h-20 animate-pulse rounded-[var(--radius-card)] bg-ink-3/70" />
+          ))}
+        </div>
+      )}
+      {libr && total === 0 && libr.shares.length === 0 && (
+        <div className="m-rise-in mt-10 flex flex-col items-center rounded-[var(--radius-card)] border-2 border-dashed border-line px-6 py-10 text-center">
+          <EmptyMap />
+          <p className="mt-4 max-w-sm font-bold">{t.empty}</p>
+          <Link href="/ny" className={cx(gold, "mt-5")}>
+            {t.newSession}
+          </Link>
+        </div>
+      )}
 
       {libr && libr.areas.length > 0 && (
         <Section title={t.areas}>
@@ -150,7 +176,7 @@ export default function LibraryView() {
       {libr && libr.shares.length > 0 && (
         <Section title={t.shares}>
           {libr.shares.map((h) => (
-            <li key={h.code} className="flex flex-wrap items-center gap-2 rounded-2xl border border-line bg-ink-2 p-3">
+            <li key={h.code} className={cx(card, "flex flex-wrap items-center gap-2")}>
               <div className="min-w-0 flex-1">
                 <p className="truncate font-extrabold">{h.name}</p>
                 <p className="text-sm text-txt-dim">
@@ -199,18 +225,18 @@ export default function LibraryView() {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="mt-8">
+    <section className="mt-10">
       <h2 className="text-xl font-black">{title}</h2>
-      <ul className="mt-3 space-y-2">{children}</ul>
+      <ul className="m-stagger mt-4 space-y-3">{children}</ul>
     </section>
   );
 }
 
 function KindTag({ kind }: { kind: "recent" | "saved" }) {
   return (
-    <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${kind === "saved" ? "bg-gold text-on-accent" : "bg-ink-3 text-txt-dim"}`}>
+    <Chip tone={kind === "saved" ? "gold" : "neutral"} className="flex-none">
       {kind === "saved" ? t.saved : t.recent}
-    </span>
+    </Chip>
   );
 }
 
@@ -218,13 +244,13 @@ function NameEdit({ name, onSave, onCancel }: { name: string; onSave: (n: string
   const [v, setV] = useState(name);
   return (
     <form
-      className="mt-2 flex w-full gap-2"
+      className="m-fade-in mt-1 flex w-full flex-wrap gap-2"
       onSubmit={(e) => {
         e.preventDefault();
         if (v.trim()) onSave(v);
       }}
     >
-      <input className={input} value={v} maxLength={LIBRARY.name_max} onChange={(e) => setV(e.target.value)} aria-label={t.namePrompt} autoFocus />
+      <input className={cx(input, "min-w-40 flex-1")} value={v} maxLength={LIBRARY.name_max} onChange={(e) => setV(e.target.value)} aria-label={t.namePrompt} autoFocus />
       <button className={gold}>{t.save}</button>
       <button type="button" className={btn} onClick={onCancel}>
         {no.common.cancel}
@@ -236,22 +262,22 @@ function NameEdit({ name, onSave, onCancel }: { name: string; onSave: (n: string
 function AreaRow({ a, onRename, onRemove }: { a: LibArea; onRename: (n: string) => Promise<boolean>; onRemove: () => void }) {
   const [editing, setEditing] = useState(false);
   return (
-    <li className="flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-ink-2 p-3" data-testid="lib-area">
+    <li className={cx(card, "flex flex-wrap items-center gap-x-4 gap-y-3")} data-testid="lib-area">
       <AreaThumb area={a} />
       <div className="min-w-0 flex-1">
-        <p className="flex items-center gap-2 truncate font-extrabold">
-          {a.name} <KindTag kind={a.kind} />
+        <p className="flex items-center gap-2 font-extrabold">
+          <span className="truncate">{a.name}</span> <KindTag kind={a.kind} />
         </p>
         <p className="text-sm text-txt-dim">{no.map.area(a.area_m2)}</p>
       </div>
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex w-full flex-wrap gap-2 sm:w-auto">
         <Link href={`/ny?area=${a.id}`} className={btn}>
           {t.use}
         </Link>
         <button className={btn} onClick={() => setEditing(true)}>
           {a.kind === "recent" ? t.keep : t.rename}
         </button>
-        <button className={btn} onClick={onRemove}>
+        <button className={danger} onClick={onRemove}>
           {t.remove}
         </button>
       </div>
@@ -272,17 +298,17 @@ function PlanRow({ p, onRename, onRemove, onShare }: { p: LibPlan; onRename: (n:
   const [editing, setEditing] = useState(false);
   const s = planSummary(p.plan);
   return (
-    <li className="flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-ink-2 p-3" data-testid="lib-plan">
+    <li className={cx(card, "flex flex-wrap items-center gap-x-4 gap-y-3")} data-testid="lib-plan">
       <div className="min-w-0 flex-1">
-        <p className="flex items-center gap-2 truncate font-extrabold">
-          {p.name} <KindTag kind={p.kind} />
+        <p className="flex items-center gap-2 font-extrabold">
+          <span className="truncate">{p.name}</span> <KindTag kind={p.kind} />
         </p>
         <p className="text-sm text-txt-dim">
           {s.modes} · {t.minutes(s.minutes)}
           {p.plan.missions?.length ? ` · ${t.missionsN(p.plan.missions.length)}` : ""}
         </p>
       </div>
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex w-full flex-wrap gap-2 sm:w-auto">
         <Link href={`/ny?plan=${p.id}`} className={btn}>
           {t.use}
         </Link>
@@ -292,7 +318,7 @@ function PlanRow({ p, onRename, onRemove, onShare }: { p: LibPlan; onRename: (n:
         <button className={btn} onClick={() => setEditing(true)}>
           {p.kind === "recent" ? t.keep : t.rename}
         </button>
-        <button className={btn} onClick={onRemove}>
+        <button className={danger} onClick={onRemove}>
           {t.remove}
         </button>
       </div>
@@ -317,12 +343,12 @@ function PackEditor(props: { isNew?: boolean; name?: string; items?: string[]; o
   if (!open) {
     return props.isNew ? (
       <li>
-        <button className={`${btn} w-full border-dashed py-3`} onClick={() => setOpen(true)}>
+        <button className={buttonClass("ghost", "md", "w-full rounded-[var(--radius-card)] border-2 border-dashed border-line text-sm font-bold text-txt-dim hover:border-gold/60 hover:text-txt")} onClick={() => setOpen(true)}>
           {t.newPack}
         </button>
       </li>
     ) : (
-      <li className="flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-ink-2 p-3">
+      <li className={cx(card, "flex flex-wrap items-center gap-3")}>
         <div className="min-w-0 flex-1">
           <p className="truncate font-extrabold">{props.name}</p>
           <p className="truncate text-sm text-txt-dim">{props.items?.join(" · ")}</p>
@@ -330,17 +356,17 @@ function PackEditor(props: { isNew?: boolean; name?: string; items?: string[]; o
         <button className={btn} onClick={() => setOpen(true)}>
           {t.rename}
         </button>
-        <button className={btn} onClick={props.onRemove}>
+        <button className={danger} onClick={props.onRemove}>
           {t.remove}
         </button>
       </li>
     );
   }
   return (
-    <li className="space-y-2 rounded-2xl border border-gold/50 bg-ink-2 p-3">
+    <li className={cx(card, "m-scale-in space-y-3 ring-2 ring-gold/40")}>
       <input className={input} placeholder={t.packName} value={name} maxLength={LIBRARY.name_max} onChange={(e) => setName(e.target.value)} />
       <textarea className={`${input} min-h-32`} placeholder={t.packItems} value={text} onChange={(e) => setText(e.target.value)} />
-      {!items && text.trim() && <p className="text-sm font-bold text-warn">{t.errors.bad_pack}</p>}
+      {!items && text.trim() && <p className="text-sm font-bold text-warn-text">{t.errors.bad_pack}</p>}
       <div className="flex gap-2">
         <button
           className={gold}
@@ -357,7 +383,7 @@ function PackEditor(props: { isNew?: boolean; name?: string; items?: string[]; o
         >
           {t.save}
         </button>
-        <button className={btn} onClick={() => setOpen(false)}>
+        <button className={quiet} onClick={() => setOpen(false)}>
           {no.common.cancel}
         </button>
       </div>
@@ -385,14 +411,23 @@ function CopyLink({ code }: { code: string }) {
 function ShareSheet({ plan, areas, onClose, onShare }: { plan: LibPlan; areas: LibArea[]; onClose: () => void; onShare: (areaId: string | null) => void }) {
   const [area, setArea] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const chip = (on: boolean) => `w-full rounded-xl px-3 py-2.5 text-left font-bold ${on ? "bg-gold text-on-accent" : "border border-line hover:bg-ink-3"}`;
+  const chip = (on: boolean) =>
+    cx(
+      "ui-press min-h-12 w-full rounded-[var(--radius-ctl)] px-3 py-1.5 text-left font-bold",
+      on ? "bg-gold text-on-accent shadow-[var(--shadow-card)]" : "border border-line bg-ink-2 hover:bg-ink-3",
+    );
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-3 sm:items-center" onClick={onClose}>
-      <div className="max-h-[85dvh] w-full max-w-md overflow-y-auto rounded-2xl border border-line bg-ink-2 p-4" onClick={(e) => e.stopPropagation()}>
+    <div className="m-fade-in fixed inset-0 z-50 flex items-end justify-center bg-black/35 p-3 sm:items-center" onClick={onClose}>
+      <div
+        className="m-sheet-in max-h-[85dvh] w-full max-w-md overflow-y-auto rounded-[1.75rem] bg-ink-2 p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-[var(--shadow-float)]"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+      >
         <h2 className="text-xl font-black">{t.shareTitle(plan.name)}</h2>
         <p className="mt-1 text-sm text-txt-dim">{t.shareLead}</p>
-        <p className="mt-4 text-sm font-semibold">{t.shareArea}</p>
-        <div className="mt-2 space-y-1.5">
+        <p className="mt-5 text-sm font-bold">{t.shareArea}</p>
+        <div className="mt-2 space-y-2">
           <button className={chip(area === null)} onClick={() => setArea(null)}>
             {t.shareAreaNone}
           </button>
@@ -404,8 +439,8 @@ function ShareSheet({ plan, areas, onClose, onShare }: { plan: LibPlan; areas: L
           ))}
         </div>
         {area && <p className="mt-2 text-xs text-txt-dim">{t.shareAreaHint}</p>}
-        <div className="mt-4 flex justify-end gap-2">
-          <button className={btn} onClick={onClose}>
+        <div className="mt-5 flex justify-end gap-2">
+          <button className={quiet} onClick={onClose}>
             {no.common.cancel}
           </button>
           <button
@@ -458,9 +493,10 @@ function KeyPanel({ teacherKey, libraryCount, onSwitch }: { teacherKey: string; 
   }
 
   return (
-    <section className="mt-6 rounded-2xl border border-gold/40 bg-ink-2 p-4">
-      <h2 className="font-black text-gold">{k.title}</h2>
-      <p className="mt-1 text-sm text-txt-dim">{k.lead}</p>
+    <section className={cx(card, "m-rise-in relative mt-8 overflow-hidden p-5")}>
+      <span className="absolute inset-y-0 left-0 w-1.5 bg-gold" aria-hidden />
+      <h2 className="font-black text-gold-text">{k.title}</h2>
+      <p className="mt-1 max-w-prose text-sm leading-relaxed text-txt-dim">{k.lead}</p>
       <div className="mt-3 flex flex-wrap gap-2">
         <button className={btn} onClick={() => setShow((s) => !s)} data-testid="key-show">
           {show ? k.hide : k.show}
@@ -470,17 +506,17 @@ function KeyPanel({ teacherKey, libraryCount, onSwitch }: { teacherKey: string; 
         </button>
       </div>
       {show && (
-        <div className="mt-3 flex flex-col items-center gap-2 rounded-xl bg-ink p-3 text-center">
-          <p className="font-mono text-2xl font-black tracking-wider" data-testid="key-value">
+        <div className="m-scale-in mt-4 flex flex-col items-center gap-3 rounded-2xl bg-ink p-4 text-center">
+          <p className="font-mono text-xl font-black tracking-wider sm:text-2xl" data-testid="key-value">
             {teacherKey}
           </p>
           <QRCode value={teacherKeyQr(teacherKey)} size={180} />
-          <p className="text-xs font-bold text-warn">{k.warn}</p>
+          <p className="max-w-xs text-xs font-bold text-warn-text">{k.warn}</p>
         </div>
       )}
       {importing && (
         <form
-          className="mt-3 space-y-2"
+          className="m-fade-in mt-4 space-y-2"
           onSubmit={(e) => {
             e.preventDefault();
             void tryKey(typed);
@@ -498,7 +534,7 @@ function KeyPanel({ teacherKey, libraryCount, onSwitch }: { teacherKey: string; 
           </button>
         </form>
       )}
-      {msg && <p className="mt-2 text-sm font-bold">{msg}</p>}
+      {msg && <p className="m-fade-in mt-3 text-sm font-bold" role="status">{msg}</p>}
       {scan && (
         <QrScanner
           title={k.scanTitle}
@@ -537,12 +573,12 @@ function QuizPackRow(props: { isNew?: boolean; name?: string; items?: QuizItem[]
   if (!open) {
     return props.isNew ? (
       <li>
-        <button className={`${btn} w-full border-dashed py-3`} onClick={() => setOpen(true)}>
+        <button className={buttonClass("ghost", "md", "w-full rounded-[var(--radius-card)] border-2 border-dashed border-line text-sm font-bold text-txt-dim hover:border-gold/60 hover:text-txt")} onClick={() => setOpen(true)}>
           {no.quiz.newPack}
         </button>
       </li>
     ) : (
-      <li className="flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-ink-2 p-3">
+      <li className={cx(card, "flex flex-wrap items-center gap-3")}>
         <div className="min-w-0 flex-1">
           <p className="truncate font-extrabold">{props.name}</p>
           <p className="truncate text-sm text-txt-dim">{no.quiz.count(props.items?.length ?? 0)} · {props.items?.[0]?.q}</p>
@@ -550,14 +586,14 @@ function QuizPackRow(props: { isNew?: boolean; name?: string; items?: QuizItem[]
         <button className={btn} onClick={() => setOpen(true)}>
           {t.rename}
         </button>
-        <button className={btn} onClick={props.onRemove}>
+        <button className={danger} onClick={props.onRemove}>
           {t.remove}
         </button>
       </li>
     );
   }
   return (
-    <li className="space-y-2 rounded-2xl border border-gold/50 bg-ink-2 p-3">
+    <li className={cx(card, "m-scale-in space-y-3 ring-2 ring-gold/40")}>
       <input className={input} placeholder={t.packName} value={name} maxLength={LIBRARY.name_max} onChange={(e) => setName(e.target.value)} />
       <QuizEditor compact items={items} onChange={(it, ok) => { setItems(it); setValid(ok); }} />
       <div className="flex gap-2">
@@ -576,10 +612,22 @@ function QuizPackRow(props: { isNew?: boolean; name?: string; items?: QuizItem[]
         >
           {t.save}
         </button>
-        <button className={btn} onClick={() => setOpen(false)}>
+        <button className={quiet} onClick={() => setOpen(false)}>
           {no.common.cancel}
         </button>
       </div>
     </li>
+  );
+}
+
+/** Quiet illustration for the empty library: a folded map with a gold area. */
+function EmptyMap() {
+  return (
+    <svg width="120" height="84" viewBox="0 0 120 84" aria-hidden>
+      <path d="M8 14 L40 6 L80 14 L112 6 L112 70 L80 78 L40 70 L8 78 Z" fill="var(--color-ink-2)" stroke="var(--color-line)" strokeWidth="2" strokeLinejoin="round" />
+      <path d="M40 6 L40 70 M80 14 L80 78" stroke="var(--color-line)" strokeWidth="2" />
+      <path d="M30 30 L62 22 L88 38 L76 60 L40 58 Z" fill="#ebb84b" fillOpacity="0.18" stroke="#d4a23a" strokeWidth="2.5" strokeDasharray="5 4" strokeLinejoin="round" />
+      <circle cx="56" cy="44" r="5" fill="#4fd18b" stroke="#fff" strokeWidth="2" />
+    </svg>
   );
 }

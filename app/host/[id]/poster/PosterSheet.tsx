@@ -8,6 +8,7 @@ import { identity } from "@/lib/client/identity";
 import { QRCode } from "@/lib/client/QRCode";
 import { no } from "@/lib/locale/no";
 import { qrUrl } from "@/lib/qr";
+import { buttonClass } from "@/lib/client/ui";
 
 const p = no.host.poster;
 
@@ -34,28 +35,28 @@ export default function PosterSheet({ sessionId }: { sessionId: string }) {
   }, [sessionId]);
 
   return (
-    <main className="min-h-dvh bg-white px-4 py-6 text-[#14171e] print:p-0">
-      <div className="mx-auto max-w-4xl print:hidden">
-        <h1 className="text-3xl font-black">{p.title}</h1>
-        <p className="mt-2 max-w-2xl">{p.lead}</p>
-        <div className="mt-4 flex gap-3">
-          <button className="rounded-xl bg-[#14171e] px-5 py-3 font-extrabold text-white" onClick={() => window.print()} disabled={!cards?.length}>
+    <main className="min-h-dvh bg-ink px-4 py-8 text-txt print:bg-white print:p-0 print:text-[#14171e]">
+      <div className="m-rise-in mx-auto max-w-4xl rounded-[var(--radius-card)] bg-ink-2 p-6 shadow-[var(--shadow-card)] print:hidden">
+        <h1 className="text-3xl font-black tracking-tight">{p.title}</h1>
+        <p className="mt-2 max-w-2xl text-txt-dim">{p.lead}</p>
+        <div className="mt-5 flex flex-wrap gap-3">
+          <button className={buttonClass("primary", "md")} onClick={() => window.print()} disabled={!cards?.length}>
             🖨 {p.print}
           </button>
-          <Link href={`/host/${sessionId}`} className="rounded-xl border border-[#14171e] px-5 py-3 font-bold">
+          <Link href={`/host/${sessionId}`} className={buttonClass("secondary", "md")}>
             {p.back}
           </Link>
         </div>
-        {error && <p className="mt-4 font-bold text-red-700">{no.host.noToken}</p>}
+        {error && <p className="mt-4 font-bold text-danger-text">{no.host.noToken}</p>}
         {cards && !cards.length && <p className="mt-4 font-bold">{p.none}</p>}
       </div>
 
       {cards && origin && (
-        <section className="mx-auto mt-6 grid max-w-4xl grid-cols-2 gap-4 print:mt-0 print:gap-0">
+        <section className="m-fade-in mx-auto mt-6 grid max-w-4xl grid-cols-2 gap-4 print:mt-0 print:gap-0 print:[animation:none]">
           {cards.map((c) => (
             <article
               key={c.code}
-              className="flex break-inside-avoid flex-col items-center justify-center rounded-2xl border-4 border-dashed border-[#14171e] p-4 text-center print:h-[33vh] print:rounded-none print:border-2"
+              className="flex break-inside-avoid flex-col items-center justify-center rounded-2xl border-4 border-dashed border-[#14171e] bg-white p-4 text-center text-[#14171e] print:h-[33vh] print:rounded-none print:border-2"
             >
               <p className="text-4xl font-black">{p.card(c.n)}</p>
               <QRCode value={qrUrl(origin, sessionId, c.code)} size={200} />

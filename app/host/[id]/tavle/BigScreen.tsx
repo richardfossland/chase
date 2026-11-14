@@ -59,12 +59,12 @@ export default function BigScreen({ sessionId }: { sessionId: string }) {
     const last = c.revealed[c.revealed.length - 1];
     return (
       <Full>
-        <p className="text-2xl font-black uppercase tracking-widest text-gold">{no.ceremony.title}</p>
+        <p className="text-2xl font-black uppercase tracking-[0.3em] text-gold-text">{no.ceremony.title}</p>
         {c.step === 0 || !last ? (
-          <p className="mt-10 text-8xl font-black">{no.ceremony.intro}</p>
+          <p className="m-rise-in mt-10 text-8xl font-black tracking-tight">{no.ceremony.intro}</p>
         ) : (
-          <div key={c.step} className="mt-8 w-full max-w-3xl animate-[flash_0.6s_ease-out]">
-            <p className="mb-4 text-center text-2xl font-bold opacity-70">{no.ceremony.of(Math.min(c.step, c.total), c.total)}</p>
+          <div key={c.step} className="m-scale-in mt-8 w-full max-w-3xl">
+            <p className="mb-4 text-center text-2xl font-bold text-txt-dim">{no.ceremony.of(Math.min(c.step, c.total), c.total)}</p>
             <PodiumCard podium={last} big />
           </div>
         )}
@@ -75,16 +75,28 @@ export default function BigScreen({ sessionId }: { sessionId: string }) {
   if (snap.status === "lobby") {
     return (
       <Full>
-        <p className="text-3xl font-black text-gold">{sc.title}</p>
-        <p className="mt-6 font-mono text-[9rem] font-black leading-none tracking-[0.15em]">{snap.pin}</p>
-        {origin && <div className="mt-6 rounded-3xl bg-white p-4"><QRCode value={`${origin}/j/${snap.pin}`} size={320} /></div>}
-        <p className="mt-6 text-4xl font-black">{sc.players(snap.players.length)}</p>
+        <div className="m-rise-in flex flex-col items-center">
+          <p className="text-3xl font-black uppercase tracking-[0.25em] text-gold-text">{sc.title}</p>
+          <div className="mt-10 flex flex-wrap items-center justify-center gap-14">
+            {origin && (
+              <div className="rounded-[2rem] bg-white p-5 shadow-[var(--shadow-float)]">
+                <QRCode value={`${origin}/j/${snap.pin}`} size={320} />
+              </div>
+            )}
+            <div className="text-left">
+              <p className="text-2xl font-bold uppercase tracking-[0.2em] text-txt-dim">{no.host.pin}</p>
+              <p className="font-mono text-[9rem] font-black leading-none tracking-[0.12em]">{snap.pin}</p>
+              <span className="mt-4 block h-2 w-28 rounded-full bg-gold" aria-hidden />
+            </div>
+          </div>
+          <p key={snap.players.length} className="m-pop mt-12 text-5xl font-black tabular-nums">{sc.players(snap.players.length)}</p>
+        </div>
       </Full>
     );
   }
 
   return (
-    <div className="grid h-dvh w-full grid-cols-[1fr_28rem] bg-ink text-txt" data-testid="big-screen">
+    <div className="theme-dark m-fade-in grid h-dvh w-full grid-cols-[1fr_30rem] bg-ink text-txt" data-testid="big-screen">
       <div className="relative">
         <HostMap
           geo={hs.geo}
@@ -104,40 +116,44 @@ export default function BigScreen({ sessionId }: { sessionId: string }) {
           onSelect={() => {}}
         />
       </div>
-      <aside className="flex flex-col gap-6 border-l border-line bg-ink-2 p-6">
-        <div>
-          <p className="text-xl font-bold opacity-70">{no.host.status[snap.status] ?? snap.status}</p>
-          {r && <p className="text-3xl font-black">{no.host.round.of(r.idx + 1, r.count)} · {roundName}</p>}
-          <p className="mt-2 font-mono text-[7rem] font-black leading-none tabular-nums">{formatClock(left)}</p>
+      <aside className="flex flex-col gap-8 border-l border-line bg-ink-2 p-8">
+        <div key={`${snap.status}-${r?.idx ?? -1}`} className="m-fade-in">
+          <p className="text-xl font-bold uppercase tracking-[0.2em] text-txt-dim">{no.host.status[snap.status] ?? snap.status}</p>
+          {r && <p className="mt-1 text-3xl font-black">{no.host.round.of(r.idx + 1, r.count)} · {roundName}</p>}
+          {snap.playlist_done ? (
+            <p className="mt-6 text-4xl font-black leading-tight">✔ {no.host.round.done}</p>
+          ) : (
+            <p className="mt-3 font-mono text-[7.5rem] font-black leading-none tabular-nums">{formatClock(left)}</p>
+          )}
         </div>
         {ev && (
-          <div className="rounded-2xl bg-gold px-4 py-3 text-on-accent">
+          <div key={ev.kind} className="m-drop-in rounded-[1.5rem] bg-gold px-5 py-4 text-on-accent shadow-[var(--shadow-float)]">
             <p className="text-3xl font-black">{no.events.kinds[ev.kind]}</p>
             {ev.mission_text && <p className="mt-1 text-xl font-bold">{ev.mission_text}</p>}
           </div>
         )}
         {teams.length >= 2 && (
           <div>
-            <p className="text-xl font-bold opacity-70">{sc.teams}</p>
-            <div className="mt-2 space-y-2">
+            <p className="text-xl font-bold uppercase tracking-[0.2em] text-txt-dim">{sc.teams}</p>
+            <div className="mt-3 space-y-2.5">
               {teams.map((t) => (
-                <div key={t.n} className="flex items-center justify-between rounded-2xl px-4 py-3 text-3xl font-black" style={{ background: t.color, color: t.color === "#f5b800" ? "#111827" : "#fff" }}>
+                <div key={t.n} className="flex items-center justify-between rounded-[1.25rem] px-5 py-3.5 text-3xl font-black transition-transform duration-[var(--dur-3)]" style={{ background: t.color, color: t.color === "#f5b800" ? "#111827" : "#fff" }}>
                   <span>{t.name}</span>
                   <span className="tabular-nums">
                     {r?.relay && <span className="mr-3 text-xl opacity-80">{no.relay.legs(r.relay.legs[String(t.n)] ?? 0)}</span>}
-                    {t.points}
+                    <span key={t.points} className="m-bump inline-block">{t.points}</span>
                   </span>
                 </div>
               ))}
             </div>
           </div>
         )}
-        <p className="mt-auto text-2xl font-black opacity-80">{sc.join(snap.pin)}</p>
+        <p className="mt-auto text-2xl font-black text-txt-dim">{sc.join(snap.pin)}</p>
       </aside>
     </div>
   );
 }
 
 function Full({ children }: { children: React.ReactNode }) {
-  return <main className="flex h-dvh w-full flex-col items-center justify-center bg-ink p-8 text-center text-txt">{children}</main>;
+  return <main className="theme-dark flex h-dvh w-full flex-col items-center justify-center bg-ink p-8 text-center text-txt">{children}</main>;
 }

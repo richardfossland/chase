@@ -23,8 +23,8 @@ export function AreaThumb({ area, size = 64 }: { area: AreaGeo; size?: number })
   };
   const a = to([area.assembly.lng, area.assembly.lat]).split(",").map(Number);
   return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="flex-none rounded-lg bg-ink" aria-hidden>
-      <polygon points={ring.map(to).join(" ")} fill="#ebb84b33" stroke="#ebb84b" strokeWidth={2} />
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="flex-none rounded-xl bg-ink ring-1 ring-line" aria-hidden>
+      <polygon points={ring.map(to).join(" ")} fill="#ebb84b33" stroke="#d4a23a" strokeWidth={2} />
       {area.forbidden?.coordinates.map((poly, i) => (
         <polygon key={i} points={poly[0].map(to).join(" ")} fill="#ff3b3066" stroke="#ff3b30" strokeWidth={1} />
       ))}

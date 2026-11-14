@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 
 import { ApiError, api, type QrResult } from "@/lib/client/api";
 import { identity } from "@/lib/client/identity";
 import { no } from "@/lib/locale/no";
 import { parseQr } from "@/lib/qr";
+import { buttonClass, cx } from "@/lib/client/ui";
 
 const t = no.play;
 const q = no.qr.page;
@@ -39,24 +40,53 @@ export default function QrClaim({ sessionId, code }: { sessionId: string; code: 
 
   const ok = state.kind === "ok" && !state.r.already;
   return (
-    <main className={`flex min-h-dvh flex-col items-center justify-center gap-3 px-6 text-center ${ok ? "bg-ok text-on-accent" : "bg-ink text-txt"}`}>
-      <p className="text-sm font-bold uppercase opacity-70">{q.title}</p>
-      {state.kind === "working" && <p className="text-3xl font-black">…</p>}
-      {state.kind === "noPlayer" && <p className="text-xl font-bold">{q.noPlayer}</p>}
-      {state.kind === "error" && <p className="text-2xl font-black">{state.text}</p>}
-      {state.kind === "ok" && (
-        <>
-          <p className="text-2xl font-black">{t.qrPost(state.r.n)}</p>
-          <p className="text-7xl font-black">{state.r.already ? "✔" : t.qrOk(state.r.value, state.r.first)}</p>
-          {state.r.already && <p className="text-lg font-bold">{t.qrAlready}</p>}
-        </>
+    <main
+      className={cx(
+        "theme-dark m-tone relative flex min-h-dvh flex-col items-center justify-center overflow-hidden px-6 pt-[max(2rem,env(safe-area-inset-top))] pb-[max(2rem,env(safe-area-inset-bottom))] text-center",
+        ok ? "bg-ok text-on-accent" : "bg-ink text-txt",
       )}
-      <Link
-        href={state.kind === "noPlayer" ? "/j" : `/play/${sessionId}`}
-        className="mt-6 rounded-2xl bg-gold px-8 py-4 text-xl font-black text-on-accent"
-      >
-        {state.kind === "noPlayer" ? t.toJoin : q.toGame}
-      </Link>
+    >
+      {ok && (
+        <div className="pointer-events-none absolute inset-0 grid place-items-center" aria-hidden>
+          <span className="p-ripple col-start-1 row-start-1 block size-[70vmin] rounded-full border-[10px] border-white/70" />
+          <span className="p-ripple-2 col-start-1 row-start-1 block size-[70vmin] rounded-full border-[6px] border-white/50" />
+        </div>
+      )}
+      <div className="relative flex w-full max-w-md flex-col items-center">
+        <p className="m-fade-in text-sm font-black uppercase tracking-[0.25em] opacity-70">{q.title}</p>
+        {state.kind === "working" && (
+          <div className="mt-8 flex gap-2" role="status" aria-label="…">
+            {[0, 1, 2].map((i) => (
+              <span key={i} className="size-4 animate-pulse rounded-full bg-gold" style={{ animationDelay: `${i * 160}ms` }} />
+            ))}
+          </div>
+        )}
+        {state.kind === "noPlayer" && <p className="m-rise-in mt-6 text-2xl font-black leading-tight">{q.noPlayer}</p>}
+        {state.kind === "error" && (
+          <p className="m-shake mt-6 rounded-[var(--radius-card)] bg-danger/15 px-5 py-4 text-2xl font-black text-danger-text">{state.text}</p>
+        )}
+        {state.kind === "ok" && (
+          <div className="m-stagger mt-4 flex flex-col items-center">
+            <p className="text-2xl font-black" style={{ "--i": 0 } as CSSProperties}>
+              {t.qrPost(state.r.n)}
+            </p>
+            <div style={{ "--i": 1 } as CSSProperties}>
+              <p className="m-pop mt-2 text-7xl font-black leading-none">{state.r.already ? "✔" : t.qrOk(state.r.value, state.r.first)}</p>
+            </div>
+            {state.r.already && (
+              <p className="mt-4 text-lg font-bold text-txt-dim" style={{ "--i": 2 } as CSSProperties}>
+                {t.qrAlready}
+              </p>
+            )}
+          </div>
+        )}
+        <Link
+          href={state.kind === "noPlayer" ? "/j" : `/play/${sessionId}`}
+          className={buttonClass(ok ? "secondary" : "primary", "xl", "m-rise-in mt-10 w-full")}
+        >
+          {state.kind === "noPlayer" ? t.toJoin : q.toGame}
+        </Link>
+      </div>
     </main>
   );
 }

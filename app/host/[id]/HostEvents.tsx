@@ -11,6 +11,8 @@ import { no } from "@/lib/locale/no";
 import { formatClock } from "@/lib/rules/game";
 import type { EventKind } from "@/lib/rules/events";
 
+import { buttonClass, cx } from "@/lib/client/ui";
+
 import type { HostSession } from "./useHostSession";
 
 const e = no.events;
@@ -38,7 +40,7 @@ export function EventChip({ snap, onOpen }: { snap: Snapshot; onOpen: () => void
   if ((!ev || ev.done) && !pending) return null;
   return (
     <button
-      className="pointer-events-auto flex w-full items-center justify-between gap-2 rounded-xl bg-gold px-3 py-2 text-left text-sm font-black text-on-accent"
+      className="ui-press m-drop-in pointer-events-auto flex min-h-12 w-full items-center justify-between gap-2 rounded-2xl bg-gold px-4 py-2 text-left text-sm font-black text-on-accent shadow-[var(--shadow-float)] hover:bg-gold-light"
       onClick={onOpen}
       data-testid="event-chip"
     >
@@ -46,7 +48,7 @@ export function EventChip({ snap, onOpen }: { snap: Snapshot; onOpen: () => void
         {ev && !ev.done ? `${e.kinds[ev.kind]} · ${e.entries(ev.entries.filter((x) => x.state !== "pending").length)}` : e.pendingTitle(pending)}
       </span>
       {ev && !ev.done && <span className="font-mono tabular-nums">{formatClock(left)}</span>}
-      {pending > 0 && ev && !ev.done && <span className="rounded-full bg-ink px-2 text-gold">{pending}</span>}
+      {pending > 0 && ev && !ev.done && <span className="rounded-full bg-white/80 px-2 py-0.5 text-on-accent">{pending}</span>}
     </button>
   );
 }
@@ -69,23 +71,23 @@ export function EventSheet({ snap, hs }: { snap: Snapshot; hs: HostSession }) {
 
   return (
     <div className="space-y-3" data-testid="event-sheet">
-      <h2 className="text-xl font-black">{e.title}</h2>
-      {err && <p className="rounded-xl bg-warn px-3 py-2 text-sm font-bold text-on-accent">{err}</p>}
+      {err && <p className="m-drop-in rounded-2xl bg-warn/20 px-4 py-2.5 text-sm font-bold text-warn-text">{err}</p>}
 
       {running ? (
         <RunningEvent ev={running} serverNow={snap.server_now} onStop={() => void run("event_stop")} />
       ) : kinds.length ? (
-        <div className="grid gap-2">
-          {kinds.map((k: EventKind) => (
+        <div className="m-stagger grid gap-2">
+          {kinds.map((k: EventKind, i) => (
             <button
               key={k}
               disabled={busy}
-              className="rounded-2xl bg-ink px-4 py-3 text-left hover:bg-ink-3 disabled:opacity-50"
+              style={{ "--i": i } as React.CSSProperties}
+              className="ui-press min-h-14 rounded-2xl bg-ink px-4 py-3 text-left hover:bg-ink-3 disabled:opacity-50"
               onClick={() => void run("event_start", { kind: k })}
               data-testid={`event-${k}`}
             >
               <span className="block text-lg font-black">{e.kinds[k]}</span>
-              <span className="block text-sm text-txt-dim">{e.hostDesc[k]}</span>
+              <span className="mt-0.5 block text-sm text-txt-dim">{e.hostDesc[k]}</span>
             </button>
           ))}
         </div>
@@ -94,18 +96,18 @@ export function EventSheet({ snap, hs }: { snap: Snapshot; hs: HostSession }) {
       )}
 
       {pending.length > 0 && (
-        <div className="rounded-2xl border border-gold/50 p-3">
+        <div className="m-rise-in rounded-2xl border border-gold/60 bg-gold/10 p-3">
           <div className="flex items-center justify-between gap-2">
             <p className="font-black">{e.pendingTitle(pending.length)}</p>
-            <button className="rounded-lg bg-gold px-3 py-2 text-sm font-black text-on-accent" onClick={() => void run("mission_confirm")} data-testid="confirm-all">
+            <button className={buttonClass("primary", "sm", "min-h-12")} onClick={() => void run("mission_confirm")} data-testid="confirm-all">
               {e.confirmAll}
             </button>
           </div>
-          <ul className="mt-2 space-y-1">
+          <ul className="mt-2 space-y-1.5">
             {pending.map((p) => (
-              <li key={p.player_id} className="flex items-center justify-between rounded-xl bg-ink px-3 py-2">
-                <span className="font-bold">{p.nickname}</span>
-                <button className="rounded-lg bg-ok px-3 py-1 text-sm font-black text-on-accent" onClick={() => void run("mission_confirm", { player_id: p.player_id })}>
+              <li key={p.player_id} className="host-join flex items-center justify-between gap-2 rounded-xl bg-ink-2 py-1.5 pr-1.5 pl-3">
+                <span className="truncate font-bold">{p.nickname}</span>
+                <button className={buttonClass("ok", "sm", "min-h-11")} onClick={() => void run("mission_confirm", { player_id: p.player_id })}>
                   {e.confirm}
                 </button>
               </li>
@@ -115,9 +117,9 @@ export function EventSheet({ snap, hs }: { snap: Snapshot; hs: HostSession }) {
       )}
 
       {snap.events_every_s > 0 && (
-        <div className="flex items-center justify-between gap-2 rounded-xl bg-ink px-3 py-2">
+        <div className="flex items-center justify-between gap-2 rounded-2xl bg-ink py-1.5 pr-1.5 pl-4">
           <span className="text-sm font-bold">{e.autoState(snap.events_auto, snap.events_every_s)}</span>
-          <button className="rounded-lg border border-line px-3 py-1 text-sm font-black" onClick={() => void run("events_auto", { on: !snap.events_auto })}>
+          <button className={buttonClass("secondary", "sm", "min-h-11")} onClick={() => void run("events_auto", { on: !snap.events_auto })}>
             {snap.events_auto ? e.autoOff : e.autoOn}
           </button>
         </div>
@@ -130,26 +132,26 @@ function RunningEvent({ ev, serverNow, onStop }: { ev: HostEventView; serverNow:
   const left = useLeftS(ev.ends_at, serverNow);
   const made = ev.entries.filter((x) => x.state !== "pending");
   return (
-    <div className="rounded-2xl bg-ink p-3">
+    <div className="m-rise-in rounded-2xl bg-ink p-4">
       <div className="flex items-center justify-between">
         <p className="text-lg font-black">{e.kinds[ev.kind]}</p>
         <p className="font-mono text-2xl font-black tabular-nums">{formatClock(left)}</p>
       </div>
       {ev.kind === "mission" && (ev.mission_text || ev.mission !== null) && (
-        <p className="mt-1 font-bold text-gold">{ev.mission_text ?? e.missions[ev.mission!]}</p>
+        <p className="mt-1 font-bold text-gold-text">{ev.mission_text ?? e.missions[ev.mission!]}</p>
       )}
       <p className="mt-1 text-sm text-txt-dim">{e.hostDesc[ev.kind]}</p>
       {made.length > 0 && (
-        <ol className="mt-2 space-y-1 text-sm">
+        <ol className="mt-3 space-y-1 text-sm">
           {made.map((x) => (
-            <li key={x.player_id} className="flex justify-between rounded-lg bg-ink-2 px-2 py-1">
+            <li key={x.player_id} className="host-join flex justify-between gap-2 rounded-xl bg-ink-2 px-3 py-1.5">
               <span className="font-bold">{x.place ? `${x.place}. ` : ""}{x.nickname}</span>
-              <span>+{x.points}{x.powerup ? ` · ${e.powerups[x.powerup]}` : ""}</span>
+              <span className="font-bold text-ok-text tabular-nums">+{x.points}{x.powerup ? ` · ${e.powerups[x.powerup]}` : ""}</span>
             </li>
           ))}
         </ol>
       )}
-      <button className="mt-3 w-full rounded-xl bg-danger/15 py-2 font-black text-danger" onClick={onStop}>
+      <button className={cx("ui-press mt-4 min-h-12 w-full rounded-[var(--radius-ctl)] bg-danger/10 font-black text-danger-text hover:bg-danger/15")} onClick={onStop}>
         {e.stop}
       </button>
     </div>

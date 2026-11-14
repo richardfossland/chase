@@ -187,7 +187,7 @@ export default function SimPanel() {
     <main className="grid min-h-dvh gap-3 p-3 lg:grid-cols-[24rem_1fr]">
       <section className="space-y-3 text-sm">
         <h1 className="text-xl font-black">
-          <span className="text-gold">Chase</span> · GPS-simulator
+          <span className="text-gold-text">Chase</span> · GPS-simulator
         </h1>
 
         <fieldset className="space-y-2 rounded-xl border border-line p-3">
@@ -250,8 +250,8 @@ export default function SimPanel() {
               alarmer sett {summary.alarms.seen}/{summary.alarms.expected}
               {summary.alarms.maxDelayS !== null ? ` · verst ${summary.alarms.maxDelayS.toFixed(1)} s` : ""}
             </p>
-            {summary.alarms.pending.length > 0 && <p className="text-warn">venter: {summary.alarms.pending.join(", ")}</p>}
-            {Object.keys(summary.errors).length > 0 && <p className="text-danger">feil {JSON.stringify(summary.errors)}</p>}
+            {summary.alarms.pending.length > 0 && <p className="text-warn-text">venter: {summary.alarms.pending.join(", ")}</p>}
+            {Object.keys(summary.errors).length > 0 && <p className="text-danger-text">feil {JSON.stringify(summary.errors)}</p>}
           </div>
         )}
 
@@ -267,7 +267,7 @@ export default function SimPanel() {
           <div ref={mapEl} className="h-full w-full" />
         </div>
         {!mapReady && <p className="absolute inset-0 grid place-items-center text-txt-dim">Kartet vises når svermen er i gang.</p>}
-        <ul className="absolute right-2 bottom-8 rounded-lg bg-ink-2/90 p-2 text-xs">
+        <ul className="absolute right-2 bottom-8 rounded-lg bg-ink-2/90 p-2 text-xs shadow-[var(--shadow-card)]">
           {Object.entries(KIND_COLOUR).map(([k, c]) => (
             <li key={k} className="flex items-center gap-1.5">
               <span className="size-2.5 rounded-full" style={{ background: c }} />
