@@ -6,6 +6,7 @@ import { useState } from "react";
 import { ApiError, api } from "@/lib/client/api";
 import { identity } from "@/lib/client/identity";
 import { buttonClass } from "@/lib/client/ui";
+import { IconCheck, IconDownload, IconPlay } from "@/lib/client/ui/icons";
 import { no } from "@/lib/locale/no";
 
 const s = no.share;
@@ -16,7 +17,7 @@ export default function ShareActions({ code }: { code: string }) {
   const [done, setDone] = useState<{ planId: string; areaId: string | null } | null>(null);
   const [err, setErr] = useState<string | null>(null);
   return (
-    <div className="mt-6 space-y-3">
+    <div className="mt-8 space-y-3">
       {!done ? (
         <button
           className={buttonClass("primary", "lg", "w-full")}
@@ -36,18 +37,21 @@ export default function ShareActions({ code }: { code: string }) {
           }}
           data-testid="share-copy"
         >
+          <IconDownload size={22} />
           {busy ? s.copying : s.copy}
         </button>
       ) : (
         <>
-          <p className="m-pop rounded-2xl bg-ok/15 px-4 py-3 font-bold text-ok-text" role="status">
-            ✓ {s.copied}
+          <p className="m-pop flex items-center gap-2 rounded-2xl bg-ok/15 px-4 py-3 font-bold text-ok-text" role="status">
+            <IconCheck size={20} />
+            {s.copied}
           </p>
           <Link
             href={`/ny?plan=${done.planId}${done.areaId ? `&area=${done.areaId}` : ""}`}
             className={buttonClass("primary", "lg", "m-rise-in w-full")}
             data-testid="share-start"
           >
+            <IconPlay size={20} />
             {s.start}
           </Link>
           <Link href="/bibliotek" className={buttonClass("ghost", "md", "w-full text-txt-dim")}>

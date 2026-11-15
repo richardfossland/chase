@@ -10,6 +10,8 @@ import { no } from "@/lib/locale/no";
 import { bearing, haversine } from "@/lib/geo";
 import { TEAM_MSGS, captureLeftS, type TeamMsgKind } from "@/lib/rules/teams";
 import type { Fix } from "@/lib/client/gps";
+import { IconArrowUp, IconCheck, IconCrown, IconFlag } from "@/lib/client/ui/icons";
+import { IconBaton, TEAM_MSG_ICONS, type Icon } from "./icons";
 import { useTurn } from "./useTurn";
 
 const tt = no.teams;
@@ -90,16 +92,17 @@ export function TeamStrip({
     : live && round?.hill ? hillLine(team, round.hill, fix, offsetMs, now)
     : live && round?.relay ? relayLine(team, round.relay, relay, fix)
     : null;
+  const ObjIcon: Icon = live && round?.flags?.length ? IconFlag : live && round?.hill ? IconCrown : IconBaton;
   const turn = useTurn(obj?.dir?.deg ?? 0);
   return (
     <div
-      className="m-drop-in mx-4 mb-2 rounded-xl border-2 bg-black/45 px-3 py-2 text-white shadow-[var(--shadow-card)]"
+      className="m-drop-in mx-4 mb-2 rounded-2xl border-2 bg-black/50 px-4 py-3 text-white shadow-[var(--shadow-card)]"
       style={{ borderColor: team.color }}
       role="status"
       data-testid="team-strip"
     >
       <div className="flex items-center gap-2 text-sm font-black">
-        <span className="inline-block h-4 w-4 flex-none rounded-full border-2 border-white/70" style={{ background: team.color }} aria-hidden />
+        <span className="inline-block size-4 flex-none rounded-full border-2 border-white/70" style={{ background: team.color }} aria-hidden />
         <span>{tt.team(team.name)}</span>
         <span className="opacity-80">· {tt.place(team.rank, team.of)}</span>
         <span key={team.points} className="m-bump ml-auto inline-block tabular-nums opacity-90">
@@ -107,19 +110,19 @@ export function TeamStrip({
         </span>
       </div>
       {obj && (
-        <div className="mt-1 flex items-center gap-3">
-          {obj.dir && (
-            <span className="p-compass inline-block text-3xl leading-none" style={{ transform: `rotate(${turn}deg)` }} aria-hidden>
-              ↑
-            </span>
+        <div className="mt-2 flex items-center gap-3">
+          {obj.dir ? (
+            <IconArrowUp size={36} strokeWidth={3} className="p-compass flex-none" style={{ transform: `rotate(${turn}deg)` }} />
+          ) : (
+            <ObjIcon size={30} className="flex-none" />
           )}
           <div className="min-w-0 flex-1">
-            <p key={obj.head} className="m-rise-in text-lg font-black leading-tight">
+            <p key={obj.head} className="m-rise-in text-xl font-black leading-tight">
               {obj.head}
             </p>
-            {obj.status && <p className="text-sm font-bold opacity-90">{obj.status}</p>}
+            {obj.status && <p className="text-sm font-bold opacity-85">{obj.status}</p>}
           </div>
-          {obj.near && <p className="text-right text-sm font-black tabular-nums">{obj.near}</p>}
+          {obj.near && <p className="flex-none text-right text-base font-black tabular-nums">{obj.near}</p>}
         </div>
       )}
     </div>
@@ -129,18 +132,24 @@ export function TeamStrip({
 /** Four one-tap messages to my team (team rounds only). */
 export function TeamMsgBar({ busy, onSend }: { busy: boolean; onSend: (k: TeamMsgKind) => void }) {
   return (
-    <div className="m-rise-in flex gap-1.5 px-4 pb-2" data-testid="team-msgs">
+    <div className="m-rise-in flex gap-2 px-4 pb-2" data-testid="team-msgs">
       {TEAM_MSGS.map((k) => (
         <button
           key={k}
           disabled={busy}
-          className="ui-press min-h-11 flex-1 rounded-full border border-white/40 bg-black/35 px-1 py-2 text-xs font-black text-white disabled:opacity-40"
+          className="ui-press flex min-h-12 flex-1 flex-col items-center justify-center gap-0.5 rounded-2xl border border-white/40 bg-black/35 px-1 py-1.5 text-xs font-black text-white disabled:opacity-40"
           onClick={() => onSend(k)}
           data-testid={`team-msg-${k}`}
         >
-          {tt.msgs[k]}
+          <MsgIcon k={k} />
+          {tt.msgsPlain[k] ?? tt.msgs[k]}
         </button>
       ))}
     </div>
   );
+}
+
+function MsgIcon({ k }: { k: string }) {
+  const I = TEAM_MSG_ICONS[k] ?? IconCheck;
+  return <I size={18} />;
 }

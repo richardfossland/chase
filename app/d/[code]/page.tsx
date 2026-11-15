@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { IconArrowLeft } from "@/lib/client/ui/icons";
 import { AreaThumb } from "@/lib/client/AreaThumb";
 import type { SharePreview } from "@/lib/client/api";
 import { planSummary } from "@/lib/client/planSummary";
@@ -18,7 +19,7 @@ export const metadata: Metadata = { title: "Delt opplegg — Chase", robots: { i
 
 const s = no.share;
 // Server component: lib/client/ui is a client module, so the card look is spelled out here.
-const card = "rounded-[var(--radius-card)] bg-ink-2 p-5 shadow-[var(--shadow-card)]";
+const card = "rounded-[var(--radius-card)] bg-ink-2 p-6 shadow-[var(--shadow-card)]";
 const backLink =
   "ui-press inline-flex min-h-12 items-center rounded-[var(--radius-ctl)] border border-line bg-ink-2 px-5 font-extrabold hover:bg-ink-3";
 
@@ -34,6 +35,7 @@ export default async function SharePage({ params }: { params: Promise<{ code: st
         <p className="text-sm font-bold tracking-[0.18em] text-gold-text uppercase">{s.title}</p>
         <p className={`${card} mt-4 font-bold`}>{s.notFound}</p>
         <Link href="/" className={`${backLink} mt-6 self-start`}>
+          <IconArrowLeft size={18} className="mr-2" />
           {no.common.home}
         </Link>
       </main>
@@ -47,15 +49,15 @@ export default async function SharePage({ params }: { params: Promise<{ code: st
       <div className="m-rise-in">
         <p className="text-sm font-bold tracking-[0.18em] text-gold-text uppercase">{s.title}</p>
         <h1 className="mt-2 text-4xl font-black tracking-tight break-words">{share.name}</h1>
-        <p className="mt-2 leading-relaxed text-txt-dim">{s.lead}</p>
+        <p className="mt-2 text-lg text-txt-dim">{s.lead}</p>
       </div>
 
       <div className="m-stagger">
-      <section className={`${card} mt-8`} style={{ "--i": 0 } as React.CSSProperties}>
+      <section className={`${card} mt-10`} style={{ "--i": 0 } as React.CSSProperties}>
         <h2 className="font-black">{s.rounds}</h2>
         <ol className="mt-3 divide-y divide-line">
           {share.plan.rounds.map((r, i) => (
-            <li key={i} className="flex justify-between gap-3 py-2 font-bold">
+            <li key={i} className="flex justify-between gap-3 py-3 font-bold">
               <span>
                 {i + 1}. {r.mode === "tag" ? modes[r.variant ?? "convert"] : modes[r.mode]}
                 {r.team ? ` ${no.wizard.playlist.team}` : ""}
@@ -92,7 +94,7 @@ export default async function SharePage({ params }: { params: Promise<{ code: st
         </section>
       ) : null}
 
-      <section className={`${card} mt-4 flex items-center gap-4`} style={{ "--i": 3 } as React.CSSProperties}>
+      <section className={`${card} mt-4 flex min-h-12 items-center gap-4`} style={{ "--i": 3 } as React.CSSProperties}>
         {share.area ? (
           <>
             <AreaThumb area={share.area} size={96} />

@@ -51,7 +51,7 @@
 .t-step-next { animation: t-step-next var(--dur-2) var(--ease-out) both; }
 .t-step-back { animation: t-step-back var(--dur-2) var(--ease-out) both; }
 
-/* Sammenleggbar seksjon: høyden animeres med grid-rader (0fr ↔ 1fr). Innholdet
+/* Sammenleggbar seksjon: høyden animeres med grid-rader (0fr til 1fr). Innholdet
    blir værende montert, slik at redigeringsfelt ikke mister tilstand. */
 .t-collapse {
   display: grid;

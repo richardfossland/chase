@@ -11,6 +11,7 @@ import { no } from "@/lib/locale/no";
 
 import { buttonClass } from "@/lib/client/ui";
 
+import { InfoNote } from "./InfoNote";
 import type { HostSession } from "./useHostSession";
 
 const tt = no.teams;
@@ -65,17 +66,21 @@ export function TeamsSheet({ snap, hs, onSelect }: { snap: Snapshot; hs: HostSes
   };
   const loose = snap.players.filter((p) => teamOf[p.id] === undefined && p.role !== "referee");
   return (
-    <div className="space-y-3" data-testid="teams-sheet">
-      {!teams.length && <p className="text-sm text-txt-dim">{th.notDealt}</p>}
-      {canDeal && (
-        <button className={buttonClass("primary", "lg", "w-full")} disabled={busy} onClick={() => void deal()} data-testid="teams-deal">
-          {teams.length ? th.redeal : th.deal}
-        </button>
-      )}
-      <p className="text-xs text-txt-dim">{th.dealHint}</p>
+    <div className="space-y-4 pb-2" data-testid="teams-sheet">
+      {!teams.length && <p className="text-txt-dim">{th.notDealt}</p>}
+      <div className="flex items-start gap-2">
+        {canDeal ? (
+          <button className={buttonClass("primary", "lg", "flex-1")} disabled={busy} onClick={() => void deal()} data-testid="teams-deal">
+            {teams.length ? th.redeal : th.deal}
+          </button>
+        ) : (
+          <p className="flex min-h-12 flex-1 items-center text-sm font-bold text-txt-dim">{th.locked}</p>
+        )}
+        <InfoNote className="shrink-0">{th.dealHint}</InfoNote>
+      </div>
       {err && <p className="m-drop-in rounded-2xl bg-warn/20 px-4 py-2.5 text-sm font-bold text-warn-text">{err}</p>}
       {teams.map((t) => (
-        <div key={t.n} className="m-rise-in rounded-2xl border border-line bg-ink-2 p-3 shadow-[var(--shadow-card)]" style={{ borderLeft: `6px solid ${t.color}` }}>
+        <div key={t.n} className="m-rise-in rounded-2xl border border-line bg-ink-2 p-4 shadow-[var(--shadow-card)]" style={{ borderLeft: `6px solid ${t.color}` }}>
           <p className="flex items-center gap-2 font-black">
             <span className="inline-block h-4 w-4 rounded-full" style={{ background: t.color }} aria-hidden />
             {tt.team(t.name)}
@@ -83,11 +88,11 @@ export function TeamsSheet({ snap, hs, onSelect }: { snap: Snapshot; hs: HostSes
               {th.members(t.members)} · {t.points} p
             </span>
           </p>
-          <div className="mt-2 flex flex-wrap gap-1.5">
+          <div className="mt-3 flex flex-wrap gap-1.5">
             {snap.players
               .filter((p) => teamOf[p.id] === t.n)
               .map((p) => (
-                <button key={p.id} className="ui-press min-h-10 rounded-full bg-ink px-3 text-sm font-bold hover:bg-ink-3" onClick={() => onSelect(p.id)}>
+                <button key={p.id} className="ui-press min-h-12 rounded-full bg-ink px-4 text-sm font-bold hover:bg-ink-3" onClick={() => onSelect(p.id)}>
                   {p.nickname}
                 </button>
               ))}
@@ -95,7 +100,9 @@ export function TeamsSheet({ snap, hs, onSelect }: { snap: Snapshot; hs: HostSes
         </div>
       ))}
       {teams.length > 0 && loose.length > 0 && (
-        <p className="text-xs text-txt-dim">{loose.map((p) => p.nickname).join(", ")}</p>
+        <p className="text-sm text-txt-dim">
+          <span className="font-bold">{th.noTeam}:</span> {loose.map((p) => p.nickname).join(", ")}
+        </p>
       )}
     </div>
   );

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { IconArrowLeft } from "@/lib/client/ui/icons";
 import { LEGAL, legalDoc } from "@/lib/legal";
 import { no } from "@/lib/locale/no";
 
@@ -26,7 +27,8 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
     <main className="min-h-dvh bg-white px-4 py-8 text-[#14171e] print:p-0">
       <article className="mx-auto max-w-3xl">
         <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
-          <Link href="/personvern" className="inline-flex min-h-12 items-center font-bold underline underline-offset-4">
+          <Link href="/personvern" className="inline-flex min-h-12 items-center gap-1.5 font-bold">
+            <IconArrowLeft size={16} />
             {l.back}
           </Link>
           <PrintButton label={l.print} />

@@ -65,7 +65,7 @@
 
 /* Lærerpanelet: zoomknapper og kreditering over bunnlinja, ikke under den. */
 .host-panel .host-map .maplibregl-ctrl-bottom-right {
-  bottom: calc(5.75rem + env(safe-area-inset-bottom));
+  bottom: calc(6.5rem + env(safe-area-inset-bottom));
 }
 
 /* Åpen SOS-rad: pulserende glorie rundt raden. Full dekkevne hele tiden (aldri opacity),

@@ -44,16 +44,16 @@ export function ConfirmDialog({
       onClick={onCancel}
     >
       <div className="m-scale-in w-full max-w-sm rounded-[var(--radius-card)] bg-ink-2 p-6 text-center shadow-[var(--shadow-float)]" onClick={(e) => e.stopPropagation()}>
-        <p className="text-lg font-bold">{message}</p>
-        <div className="mt-5 flex justify-center gap-3">
+        <p className="text-xl font-bold leading-snug">{message}</p>
+        <div className="mt-6 flex justify-center gap-3">
           <button
-            className={`ui-press min-h-12 rounded-[var(--radius-ctl)] px-5 font-extrabold ${danger ? "bg-danger text-white" : "bg-gold text-on-accent"}`}
+            className={`ui-press min-h-14 flex-1 rounded-[var(--radius-ctl)] px-5 text-lg font-extrabold ${danger ? "bg-danger text-white" : "bg-gold text-on-accent"}`}
             autoFocus
             onClick={onConfirm}
           >
             {confirmLabel}
           </button>
-          <button className="ui-press min-h-12 rounded-[var(--radius-ctl)] border border-line px-5 font-bold text-txt hover:bg-ink-3" onClick={onCancel}>
+          <button className="ui-press min-h-14 flex-1 rounded-[var(--radius-ctl)] border border-line px-5 text-lg font-bold text-txt hover:bg-ink-3" onClick={onCancel}>
             {cancelLabel}
           </button>
         </div>

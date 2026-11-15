@@ -5,7 +5,7 @@
 // to the lærernøkkel in localStorage; the server only sees its hash.
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ComponentType } from "react";
 
 import { AreaThumb } from "@/lib/client/AreaThumb";
 import { ApiError, api, type LibArea, type LibKind, type LibPlan, type Library } from "@/lib/client/api";
@@ -16,6 +16,23 @@ import { QRCode } from "@/lib/client/QRCode";
 import { QrScanner } from "@/lib/client/QrScanner";
 import { QuizEditor } from "@/lib/client/QuizEditor";
 import { Chip, buttonClass, cx } from "@/lib/client/ui";
+import {
+  IconArrowLeft,
+  IconCamera,
+  IconChevronRight,
+  IconClock,
+  IconCopy,
+  IconEye,
+  IconEyeOff,
+  IconKey,
+  IconLink,
+  IconMore,
+  IconPencil,
+  IconPlus,
+  IconShare,
+  IconTrash,
+  type IconProps,
+} from "@/lib/client/ui/icons";
 import type { QuizItem } from "@/lib/rules/quiz";
 import { no } from "@/lib/locale/no";
 import { LIBRARY, normMissions, parseTeacherKey, teacherKeyQr } from "@/lib/rules/library";
@@ -23,11 +40,11 @@ import { LIBRARY, normMissions, parseTeacherKey, teacherKeyQr } from "@/lib/rule
 const t = no.library;
 const btn = buttonClass("secondary", "md", "px-3.5 text-sm font-bold");
 const gold = buttonClass("primary", "md");
-const danger = buttonClass("ghost", "md", "px-3 text-sm font-bold text-danger-text hover:bg-danger/10");
 const quiet = buttonClass("ghost", "md", "px-3 text-sm font-bold text-txt-dim hover:text-txt");
 const input =
   "w-full min-h-12 rounded-[var(--radius-ctl)] border border-line bg-ink px-4 py-2.5 font-bold outline-none transition-[border-color,box-shadow] duration-[var(--dur-1)] focus:border-gold-deep focus:ring-4 focus:ring-gold/20";
-const card = "rounded-[var(--radius-card)] bg-ink-2 p-4 shadow-[var(--shadow-card)]";
+const card = "rounded-[var(--radius-card)] bg-ink-2 p-4 shadow-[var(--shadow-card)] sm:p-5";
+const iconBtn = "ui-press inline-flex size-12 flex-none items-center justify-center rounded-full text-txt-dim transition-colors hover:bg-ink-3 hover:text-txt";
 
 type Confirm = { message: string; danger?: boolean; run: () => void } | null;
 
@@ -84,16 +101,17 @@ export default function LibraryView() {
   return (
     <main className="mx-auto max-w-2xl px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-24 sm:px-6">
       <div className="flex min-h-12 items-center justify-between gap-3">
-        <Link href="/" className={cx(quiet, "-ml-3")}>
-          {t.back}
+        <Link href="/" className={cx(iconBtn, "-ml-3")} aria-label={t.back}>
+          <IconArrowLeft size={22} />
         </Link>
-        <Link href="/ny" className={gold}>
+        <Link href="/ny" className={cx(gold, "gap-2")}>
+          <IconPlus size={18} />
           {t.newSession}
         </Link>
       </div>
       <div className="m-rise-in">
         <h1 className="mt-8 text-4xl font-black tracking-tight sm:text-5xl">{t.title}</h1>
-        <p className="mt-3 max-w-prose leading-relaxed text-txt-dim">{t.lead}</p>
+        <p className="mt-2 text-txt-dim">{t.lead}</p>
       </div>
       {err && (
         <p className="m-rise-in mt-5 rounded-2xl bg-warn/15 px-4 py-3 font-bold text-warn-text" role="alert">
@@ -101,10 +119,8 @@ export default function LibraryView() {
         </p>
       )}
 
-      {key && <KeyPanel teacherKey={key} libraryCount={total} onSwitch={(k) => { setKey(k); void load(k); }} />}
-
       {!libr && !err && (
-        <div className="mt-10 space-y-3" aria-busy="true">
+        <div className="mt-12 space-y-3" aria-busy="true">
           <p className="sr-only">{t.loading}</p>
           {[0, 1, 2].map((i) => (
             <div key={i} className="h-20 animate-pulse rounded-[var(--radius-card)] bg-ink-3/70" />
@@ -112,10 +128,11 @@ export default function LibraryView() {
         </div>
       )}
       {libr && total === 0 && libr.shares.length === 0 && (
-        <div className="m-rise-in mt-10 flex flex-col items-center rounded-[var(--radius-card)] border-2 border-dashed border-line px-6 py-10 text-center">
+        <div className="m-rise-in mt-10 flex flex-col items-center rounded-[var(--radius-card)] border-2 border-dashed border-line px-6 py-12 text-center">
           <EmptyMap />
           <p className="mt-4 max-w-sm font-bold">{t.empty}</p>
-          <Link href="/ny" className={cx(gold, "mt-5")}>
+          <Link href="/ny" className={cx(gold, "mt-6 gap-2")}>
+            <IconPlus size={18} />
             {t.newSession}
           </Link>
         </div>
@@ -176,25 +193,34 @@ export default function LibraryView() {
       {libr && libr.shares.length > 0 && (
         <Section title={t.shares}>
           {libr.shares.map((h) => (
-            <li key={h.code} className={cx(card, "flex flex-wrap items-center gap-2")}>
+            <li key={h.code} className={cx(card, "flex items-center gap-3")}>
+              <span className="flex size-12 flex-none items-center justify-center rounded-xl bg-ink text-txt-dim ring-1 ring-line">
+                <IconLink size={22} />
+              </span>
               <div className="min-w-0 flex-1">
                 <p className="truncate font-extrabold">{h.name}</p>
-                <p className="text-sm text-txt-dim">
-                  /d/{h.code}
-                  {h.has_area ? ` · ${t.withArea}` : ""} · {t.copies(h.copies)}
+                <p className="truncate text-sm text-txt-dim">
+                  {t.copies(h.copies)}
+                  {h.has_area ? ` · ${t.withArea}` : ""}
                 </p>
               </div>
               <CopyLink code={h.code} />
-              <button
-                className={btn}
-                onClick={() => setConfirm({ message: t.revokeConfirm, danger: true, run: () => void act(() => api.library.revoke(key!, h.code)) })}
-              >
-                {t.revoke}
-              </button>
+              <MoreMenu
+                items={[
+                  {
+                    label: t.revoke,
+                    icon: IconTrash,
+                    danger: true,
+                    onClick: () => setConfirm({ message: t.revokeConfirm, danger: true, run: () => void act(() => api.library.revoke(key!, h.code)) }),
+                  },
+                ]}
+              />
             </li>
           ))}
         </Section>
       )}
+
+      {key && <KeyPanel teacherKey={key} libraryCount={total} onSwitch={(k) => { setKey(k); void load(k); }} />}
 
       {sharing && libr && key && (
         <ShareSheet
@@ -225,16 +251,67 @@ export default function LibraryView() {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="mt-10">
-      <h2 className="text-xl font-black">{title}</h2>
+    <section className="mt-12">
+      <h2 className="text-lg font-black">{title}</h2>
       <ul className="m-stagger mt-4 space-y-3">{children}</ul>
     </section>
+  );
+}
+
+type MenuItem = { label: string; icon: ComponentType<IconProps>; onClick: () => void; danger?: boolean };
+
+/** One «Mer» button with a small popover menu (closes on outside click and Escape). */
+function MoreMenu({ items }: { items: MenuItem[] }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const down = (e: PointerEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("pointerdown", down);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("pointerdown", down);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [open]);
+  return (
+    <div ref={ref} className="relative flex-none">
+      <button type="button" className={iconBtn} aria-label={t.more} aria-expanded={open} aria-haspopup="menu" onClick={() => setOpen((o) => !o)}>
+        <IconMore size={22} />
+      </button>
+      {open && (
+        <div role="menu" className="m-scale-in absolute right-0 top-full z-20 mt-1 min-w-48 rounded-2xl bg-ink-2 p-1.5 shadow-[var(--shadow-float)] ring-1 ring-line">
+          {items.map((it) => (
+            <button
+              key={it.label}
+              type="button"
+              role="menuitem"
+              className={cx(
+                "ui-press flex min-h-12 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-bold hover:bg-ink-3",
+                it.danger ? "text-danger-text" : "text-txt",
+              )}
+              onClick={() => {
+                setOpen(false);
+                it.onClick();
+              }}
+            >
+              <it.icon size={18} />
+              {it.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
 function KindTag({ kind }: { kind: "recent" | "saved" }) {
   return (
     <Chip tone={kind === "saved" ? "gold" : "neutral"} className="flex-none">
+      {kind === "recent" && <IconClock size={12} />}
       {kind === "saved" ? t.saved : t.recent}
     </Chip>
   );
@@ -244,7 +321,7 @@ function NameEdit({ name, onSave, onCancel }: { name: string; onSave: (n: string
   const [v, setV] = useState(name);
   return (
     <form
-      className="m-fade-in mt-1 flex w-full flex-wrap gap-2"
+      className="m-fade-in flex w-full basis-full flex-wrap gap-2"
       onSubmit={(e) => {
         e.preventDefault();
         if (v.trim()) onSave(v);
@@ -259,28 +336,31 @@ function NameEdit({ name, onSave, onCancel }: { name: string; onSave: (n: string
   );
 }
 
+const UseLink = ({ href }: { href: string }) => (
+  <Link href={href} className={cx(btn, "flex-none")}>
+    {t.use}
+  </Link>
+);
+
 function AreaRow({ a, onRename, onRemove }: { a: LibArea; onRename: (n: string) => Promise<boolean>; onRemove: () => void }) {
   const [editing, setEditing] = useState(false);
   return (
     <li className={cx(card, "flex flex-wrap items-center gap-x-4 gap-y-3")} data-testid="lib-area">
-      <AreaThumb area={a} />
+      <AreaThumb area={a} size={64} />
       <div className="min-w-0 flex-1">
-        <p className="flex items-center gap-2 font-extrabold">
-          <span className="truncate">{a.name}</span> <KindTag kind={a.kind} />
+        <p className="truncate font-extrabold">{a.name}</p>
+        <p className="mt-1 flex items-center gap-2 text-sm text-txt-dim">
+          <KindTag kind={a.kind} />
+          <span className="truncate">{no.map.area(a.area_m2)}</span>
         </p>
-        <p className="text-sm text-txt-dim">{no.map.area(a.area_m2)}</p>
       </div>
-      <div className="flex w-full flex-wrap gap-2 sm:w-auto">
-        <Link href={`/ny?area=${a.id}`} className={btn}>
-          {t.use}
-        </Link>
-        <button className={btn} onClick={() => setEditing(true)}>
-          {a.kind === "recent" ? t.keep : t.rename}
-        </button>
-        <button className={danger} onClick={onRemove}>
-          {t.remove}
-        </button>
-      </div>
+      <UseLink href={`/ny?area=${a.id}`} />
+      <MoreMenu
+        items={[
+          { label: a.kind === "recent" ? t.keep : t.rename, icon: IconPencil, onClick: () => setEditing(true) },
+          { label: t.remove, icon: IconTrash, danger: true, onClick: onRemove },
+        ]}
+      />
       {editing && (
         <NameEdit
           name={a.kind === "recent" ? "" : a.name}
@@ -297,31 +377,24 @@ function AreaRow({ a, onRename, onRemove }: { a: LibArea; onRename: (n: string) 
 function PlanRow({ p, onRename, onRemove, onShare }: { p: LibPlan; onRename: (n: string) => Promise<boolean>; onRemove: () => void; onShare: () => void }) {
   const [editing, setEditing] = useState(false);
   const s = planSummary(p.plan);
+  const meta = [t.rounds(p.plan.rounds.length), t.minutes(s.minutes), p.plan.missions?.length ? t.missionsN(p.plan.missions.length) : null].filter(Boolean).join(" · ");
   return (
     <li className={cx(card, "flex flex-wrap items-center gap-x-4 gap-y-3")} data-testid="lib-plan">
       <div className="min-w-0 flex-1">
-        <p className="flex items-center gap-2 font-extrabold">
-          <span className="truncate">{p.name}</span> <KindTag kind={p.kind} />
-        </p>
-        <p className="text-sm text-txt-dim">
-          {s.modes} · {t.minutes(s.minutes)}
-          {p.plan.missions?.length ? ` · ${t.missionsN(p.plan.missions.length)}` : ""}
+        <p className="truncate font-extrabold">{p.name}</p>
+        <p className="mt-1 flex items-center gap-2 text-sm text-txt-dim">
+          <KindTag kind={p.kind} />
+          <span className="truncate">{meta}</span>
         </p>
       </div>
-      <div className="flex w-full flex-wrap gap-2 sm:w-auto">
-        <Link href={`/ny?plan=${p.id}`} className={btn}>
-          {t.use}
-        </Link>
-        <button className={btn} onClick={onShare}>
-          🔗 {t.share}
-        </button>
-        <button className={btn} onClick={() => setEditing(true)}>
-          {p.kind === "recent" ? t.keep : t.rename}
-        </button>
-        <button className={danger} onClick={onRemove}>
-          {t.remove}
-        </button>
-      </div>
+      <UseLink href={`/ny?plan=${p.id}`} />
+      <MoreMenu
+        items={[
+          { label: t.share, icon: IconShare, onClick: onShare },
+          { label: p.kind === "recent" ? t.keep : t.rename, icon: IconPencil, onClick: () => setEditing(true) },
+          { label: t.remove, icon: IconTrash, danger: true, onClick: onRemove },
+        ]}
+      />
       {editing && (
         <NameEdit
           name={p.kind === "recent" ? "" : p.name}
@@ -343,22 +416,23 @@ function PackEditor(props: { isNew?: boolean; name?: string; items?: string[]; o
   if (!open) {
     return props.isNew ? (
       <li>
-        <button className={buttonClass("ghost", "md", "w-full rounded-[var(--radius-card)] border-2 border-dashed border-line text-sm font-bold text-txt-dim hover:border-gold/60 hover:text-txt")} onClick={() => setOpen(true)}>
+        <button className={buttonClass("ghost", "md", "w-full gap-2 rounded-[var(--radius-card)] border-2 border-dashed border-line text-sm font-bold text-txt-dim hover:border-gold/60 hover:text-txt")} onClick={() => setOpen(true)}>
+          <IconPlus size={18} />
           {t.newPack}
         </button>
       </li>
     ) : (
-      <li className={cx(card, "flex flex-wrap items-center gap-3")}>
+      <li className={cx(card, "flex items-center gap-3")}>
         <div className="min-w-0 flex-1">
           <p className="truncate font-extrabold">{props.name}</p>
           <p className="truncate text-sm text-txt-dim">{props.items?.join(" · ")}</p>
         </div>
-        <button className={btn} onClick={() => setOpen(true)}>
-          {t.rename}
-        </button>
-        <button className={danger} onClick={props.onRemove}>
-          {t.remove}
-        </button>
+        <MoreMenu
+          items={[
+            { label: t.edit, icon: IconPencil, onClick: () => setOpen(true) },
+            { label: t.remove, icon: IconTrash, danger: true, onClick: () => props.onRemove?.() },
+          ]}
+        />
       </li>
     );
   }
@@ -395,7 +469,7 @@ function CopyLink({ code }: { code: string }) {
   const [done, setDone] = useState(false);
   return (
     <button
-      className={btn}
+      className={cx(btn, "flex-none gap-2")}
       onClick={() => {
         void navigator.clipboard?.writeText(`${window.location.origin}/d/${code}`).then(() => {
           setDone(true);
@@ -403,6 +477,7 @@ function CopyLink({ code }: { code: string }) {
         });
       }}
     >
+      <IconCopy size={16} />
       {done ? t.copied : t.copyLink}
     </button>
   );
@@ -426,7 +501,7 @@ function ShareSheet({ plan, areas, onClose, onShare }: { plan: LibPlan; areas: L
       >
         <h2 className="text-xl font-black">{t.shareTitle(plan.name)}</h2>
         <p className="mt-1 text-sm text-txt-dim">{t.shareLead}</p>
-        <p className="mt-5 text-sm font-bold">{t.shareArea}</p>
+        <p className="mt-6 text-sm font-bold">{t.shareArea}</p>
         <div className="mt-2 space-y-2">
           <button className={chip(area === null)} onClick={() => setArea(null)}>
             {t.shareAreaNone}
@@ -439,7 +514,7 @@ function ShareSheet({ plan, areas, onClose, onShare }: { plan: LibPlan; areas: L
           ))}
         </div>
         {area && <p className="mt-2 text-xs text-txt-dim">{t.shareAreaHint}</p>}
-        <div className="mt-5 flex justify-end gap-2">
+        <div className="mt-6 flex justify-end gap-2">
           <button className={quiet} onClick={onClose}>
             {no.common.cancel}
           </button>
@@ -493,30 +568,34 @@ function KeyPanel({ teacherKey, libraryCount, onSwitch }: { teacherKey: string; 
   }
 
   return (
-    <section className={cx(card, "m-rise-in relative mt-8 overflow-hidden p-5")}>
-      <span className="absolute inset-y-0 left-0 w-1.5 bg-gold" aria-hidden />
-      <h2 className="font-black text-gold-text">{k.title}</h2>
-      <p className="mt-1 max-w-prose text-sm leading-relaxed text-txt-dim">{k.lead}</p>
-      <div className="mt-3 flex flex-wrap gap-2">
-        <button className={btn} onClick={() => setShow((s) => !s)} data-testid="key-show">
+    <section className="m-rise-in mt-16 border-t border-line pt-8">
+      <h2 className="flex items-center gap-2 text-lg font-black">
+        <IconKey size={20} />
+        {k.title}
+      </h2>
+      <p className="mt-1 text-sm text-txt-dim">{k.lead}</p>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button className={cx(btn, "gap-2")} onClick={() => setShow((s) => !s)} data-testid="key-show">
+          {show ? <IconEyeOff size={18} /> : <IconEye size={18} />}
           {show ? k.hide : k.show}
         </button>
-        <button className={btn} onClick={() => setImporting((s) => !s)}>
+        <button className={cx(btn, "gap-2")} onClick={() => setImporting((s) => !s)}>
+          <IconChevronRight size={18} className={importing ? "rotate-90" : undefined} />
           {k.import}
         </button>
       </div>
       {show && (
-        <div className="m-scale-in mt-4 flex flex-col items-center gap-3 rounded-2xl bg-ink p-4 text-center">
+        <div className="m-scale-in mt-4 flex flex-col items-center gap-4 rounded-2xl bg-ink-2 p-6 text-center">
           <p className="font-mono text-xl font-black tracking-wider sm:text-2xl" data-testid="key-value">
             {teacherKey}
           </p>
           <QRCode value={teacherKeyQr(teacherKey)} size={180} />
-          <p className="max-w-xs text-xs font-bold text-warn-text">{k.warn}</p>
+          <p className="text-sm text-txt-dim">{k.warn}</p>
         </div>
       )}
       {importing && (
         <form
-          className="m-fade-in mt-4 space-y-2"
+          className="m-fade-in mt-4 space-y-3"
           onSubmit={(e) => {
             e.preventDefault();
             void tryKey(typed);
@@ -525,7 +604,8 @@ function KeyPanel({ teacherKey, libraryCount, onSwitch }: { teacherKey: string; 
           <p className="text-sm text-txt-dim">{k.importLead}</p>
           <div className="flex gap-2">
             <input className={`${input} font-mono uppercase`} placeholder={k.importField} value={typed} onChange={(e) => setTyped(e.target.value)} autoCapitalize="characters" autoComplete="off" />
-            <button type="button" className={btn} onClick={() => setScan(true)}>
+            <button type="button" className={cx(btn, "flex-none gap-2")} onClick={() => setScan(true)}>
+              <IconCamera size={18} />
               {k.scan}
             </button>
           </div>
@@ -573,22 +653,23 @@ function QuizPackRow(props: { isNew?: boolean; name?: string; items?: QuizItem[]
   if (!open) {
     return props.isNew ? (
       <li>
-        <button className={buttonClass("ghost", "md", "w-full rounded-[var(--radius-card)] border-2 border-dashed border-line text-sm font-bold text-txt-dim hover:border-gold/60 hover:text-txt")} onClick={() => setOpen(true)}>
+        <button className={buttonClass("ghost", "md", "w-full gap-2 rounded-[var(--radius-card)] border-2 border-dashed border-line text-sm font-bold text-txt-dim hover:border-gold/60 hover:text-txt")} onClick={() => setOpen(true)}>
+          <IconPlus size={18} />
           {no.quiz.newPack}
         </button>
       </li>
     ) : (
-      <li className={cx(card, "flex flex-wrap items-center gap-3")}>
+      <li className={cx(card, "flex items-center gap-3")}>
         <div className="min-w-0 flex-1">
           <p className="truncate font-extrabold">{props.name}</p>
           <p className="truncate text-sm text-txt-dim">{no.quiz.count(props.items?.length ?? 0)} · {props.items?.[0]?.q}</p>
         </div>
-        <button className={btn} onClick={() => setOpen(true)}>
-          {t.rename}
-        </button>
-        <button className={danger} onClick={props.onRemove}>
-          {t.remove}
-        </button>
+        <MoreMenu
+          items={[
+            { label: t.edit, icon: IconPencil, onClick: () => setOpen(true) },
+            { label: t.remove, icon: IconTrash, danger: true, onClick: () => props.onRemove?.() },
+          ]}
+        />
       </li>
     );
   }

@@ -36,6 +36,29 @@ import { TEAMS, type TeamMsgKind } from "@/lib/rules/teams";
 import { CeremonyScreen } from "@/lib/client/Ceremony";
 import { parseQr } from "@/lib/qr";
 import { Button, Toast, buttonClass, cx, prefersReducedMotion, useCountUp } from "@/lib/client/ui";
+import {
+  IconAlert,
+  IconArrowRight,
+  IconArrowUp,
+  IconBan,
+  IconCamera,
+  IconCheck,
+  IconClock,
+  IconEye,
+  IconFlag,
+  IconLocate,
+  IconMapPin,
+  IconMove,
+  IconPause,
+  IconPhone,
+  IconQr,
+  IconShape,
+  IconShrink,
+  IconCrown,
+  IconTarget,
+  IconUsers,
+} from "@/lib/client/ui/icons";
+import { BADGE_ICONS, IconBaton, IconDrop, IconFox, IconMedal, IconSteps, type Icon } from "./icons";
 
 const t = no.play;
 
@@ -215,7 +238,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
       setFlash({ id: Date.now(), text: t.caughtYou, sub: t.nowHunter, tone: "dim" });
     }
     if (view.tag?.hunter_near && !p?.tag?.hunter_near) cue("danger");
-    // 0013 Sporing: I caught the fox → I am the fox now.
+    // 0013 Revejakt: I caught the fox → I am the fox now.
     if (!storm && view.tag?.fox && p && p.status === "live" && view.status === "live" && p.role === "hunter" && view.role === "prey") {
       cue("golden");
       setFlash({ id: Date.now(), text: no.fox.became, tone: "gold" });
@@ -646,7 +669,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
         msgs: (team.msgs ?? []).filter((m) => !m.me).map((m) => ({ label: `${m.nickname}: ${no.teams.msgsPlain[m.kind] ?? ""}`, pos: m.pos })),
       })
     : null;
-  // 0013 Sporing: the fox sees the hunters near it (same dots as the radar power-up).
+  // 0013 Revejakt: the fox sees the hunters near it (same dots as the radar power-up).
   const foxLive = isPrey && tag?.fox ? (tag.hunter_pos ?? []).map((h) => h.pos) : null;
   const sprintTarget = evView && !evView.done && evView.kind === "sprint" && !evView.me ? evView.target : null;
   const zoneEdge = zn && zoneState && gps.fix
@@ -658,31 +681,38 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
   let tone: Tone = "neutral";
   let title: string = t.lobby;
   let body: string | undefined = t.lobbyHint;
+  let TitleIcon: Icon | null = IconClock;
   if (status === "countdown" && round) {
     tone = "warn";
+    TitleIcon = null;
     title = t.countdown;
     body = `${t.roundOf(round.idx + 1, round.count)} · ${roundTitle(round)}`;
   }
   if (status === "live" && isHunter && tag?.fox) {
-    // 0013 Sporing: everybody hunts the one fox.
+    // 0013 Revejakt: everybody hunts the one fox.
     tone = "hunter";
     title = no.fox.hunt;
+    TitleIcon = IconFox;
     body = tag.prey_near ? t.preyNear(tag.prey_near) : tag.radar?.length ? no.fox.seen(Math.min(...tag.radar.map((r) => r.age_s))) : t.modeHint.fox;
   } else if (status === "live" && isPrey && tag?.fox) {
     tone = "live";
     title = no.fox.you;
+    TitleIcon = IconFox;
     body = immuneLeft ? t.immune(immuneLeft) : tag.hunter_pos?.length ? no.fox.hunters(tag.hunter_pos.length) : no.fox.noHunters;
   } else if (status === "live" && isHunter && tag) {
     tone = "hunter";
     title = t.hunter;
+    TitleIcon = IconTarget;
     body = tag.prey_near ? t.preyNear(tag.prey_near) : t.hunterHint;
   } else if (status === "live" && isPrey && tag) {
     tone = "live";
     title = t.prey;
+    TitleIcon = IconMove;
     body = immuneLeft ? t.immune(immuneLeft) : tag.hunter_near ? t.hunterNear : t.preyHint;
   } else if (status === "live") {
     tone = "live";
     title = roundTitle(round ?? { mode });
+    TitleIcon = MODE_ICONS[mode] ?? IconMove;
     body =
       view?.claim ? t.claiming
       : mode === "posts" && nearest ? undefined // the compass below says it
@@ -693,16 +723,19 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
     tone = "pause";
     title = t.breather;
     body = t.breatherBody;
+    TitleIcon = IconDrop;
   }
   if (status === "paused") {
     tone = "pause";
     title = t.paused;
     body = t.pausedBody;
+    TitleIcon = IconPause;
   }
   if (status === "gathering" && view?.gather) {
     tone = view.gather.checked_in ? "ok" : "warn";
     title = view.gather.checked_in ? t.checkedIn : playlistDone ? t.done : t.gather;
     body = view.gather.checked_in ? undefined : t.gatherBody(view.gather.distance_m);
+    TitleIcon = view.gather.checked_in ? IconCheck : playlistDone ? IconFlag : IconMapPin;
   }
   if (view && status !== "lobby") {
     if (view.safety.geofence === 1 && tone !== "warn") {
@@ -713,11 +746,13 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
       tone = "danger";
       title = t.outside;
       body = t.outsideBody;
+      TitleIcon = IconAlert;
     }
     if (view.safety.forbidden) {
       tone = "danger";
       title = t.forbidden;
       body = t.forbiddenBody;
+      TitleIcon = IconBan;
     }
   }
 
@@ -727,31 +762,39 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
 
   return (
     <div className={cx("theme-dark relative flex h-dvh flex-col", TONE_BG[tone], !safetyTone && "m-tone")}>
-      <header className="px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3">
-        <div className="flex items-center justify-between text-sm font-bold">
-          <span>{me.nickname}</span>
+      <header className="px-5 pt-[max(0.75rem,env(safe-area-inset-top))] pb-4">
+        <div className="flex items-center justify-between gap-3 text-sm font-bold">
+          <span className="min-w-0 truncate opacity-90">{me.nickname}</span>
           <GpsChip fix={gps.fix} lost={gpsLost} />
         </div>
-        <h1 key={title} className={cx("mt-3 text-5xl font-black leading-none tracking-tight", !safetyTone && "m-rise-in")} data-testid="play-title">
-          {title}
-        </h1>
-        {body && <p className="mt-2 text-lg font-bold opacity-90">{body}</p>}
-        {gpsLost && <p className="mt-2 rounded-xl bg-black/30 px-3 py-2 font-bold">{t.gpsLost}</p>}
+        <div key={title} className={cx("mt-4 flex items-center gap-3", !safetyTone && "m-rise-in")}>
+          {TitleIcon && <TitleIcon size={44} strokeWidth={2.5} className="flex-none" />}
+          <h1 className="min-w-0 text-5xl font-black leading-none tracking-tight" data-testid="play-title">
+            {title}
+          </h1>
+        </div>
+        {body && <p className="mt-2 text-xl font-bold leading-snug opacity-90">{body}</p>}
+        {gpsLost && (
+          <p className="mt-3 flex items-center gap-2 rounded-xl bg-black/40 px-4 py-3 text-lg font-black" role="alert">
+            <IconAlert size={24} className="flex-none" />
+            {t.gpsLost}
+          </p>
+        )}
         {showCompass && nearest && (
           <Compass m={nearest.m} deg={nearest.deg} label={t.nearestPost(nearest.m, t.dirs[Math.round(nearest.deg / 45) % 8])} />
         )}
         {status === "countdown" && left !== null && (
-          <p className="mt-2 text-8xl font-black tabular-nums leading-none" data-testid="countdown">
+          <p className="mt-3 text-8xl font-black tabular-nums leading-none" data-testid="countdown">
             <span key={left} className="m-pop inline-block">
               {left}
             </span>
           </p>
         )}
         {view && status !== "countdown" && (
-          <dl className="mt-3 flex items-end gap-5">
+          <dl className="mt-4 flex items-end gap-6">
             <div>
-              <dt className="text-xs font-bold uppercase opacity-70">{t.points}</dt>
-              <dd className="text-4xl font-black tabular-nums" data-testid="points">
+              <dt className="text-xs font-black uppercase tracking-wider opacity-75">{t.points}</dt>
+              <dd className="text-5xl font-black leading-none tabular-nums" data-testid="points">
                 <span key={ptsBump} className={cx("inline-block origin-left", ptsBump > 0 && "m-bump")}>
                   {shownPts}
                 </span>
@@ -759,17 +802,20 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
             </div>
             {round && (status === "live" || status === "paused" || status === "breather") && (
               <div>
-                <dt className="text-xs font-bold uppercase opacity-70">{status === "breather" ? t.breather : t.timeLeft}</dt>
-                <dd className="text-4xl font-black tabular-nums" data-testid="clock">{formatClock(left)}</dd>
+                <dt className="text-xs font-black uppercase tracking-wider opacity-75">{status === "breather" ? t.breather : t.timeLeft}</dt>
+                <dd className="text-5xl font-black leading-none tabular-nums" data-testid="clock">{formatClock(left)}</dd>
               </div>
             )}
-            <div className="ml-auto text-right text-sm font-bold opacity-90">
-              <p>{t.meters(view.stats.distance_m)}</p>
-              <p>{t.minutes(view.stats.active_s)} {t.active.toLowerCase()}</p>
-              {view.stats.posts > 0 && <p>{t.postsN(view.stats.posts)}</p>}
+            <div className="ml-auto space-y-1 text-right text-sm font-bold opacity-85">
+              <p className="flex items-center justify-end gap-1.5">
+                <IconMove size={16} />
+                {t.meters(view.stats.distance_m)}
+              </p>
               {stepsOn && (view.stats.steps ?? 0) > 0 && (
-                <p>
-                  {view.stats.steps} {no.steps.label.toLowerCase()}
+                <p className="flex items-center justify-end gap-1.5">
+                  <IconSteps size={16} />
+                  <span className="tabular-nums">{view.stats.steps}</span>
+                  <span className="sr-only">{no.steps.label}</span>
                 </p>
               )}
             </div>
@@ -778,28 +824,26 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
       </header>
 
       {tag && (
-        <div className="flex items-center justify-between gap-2 px-4 pb-2 text-sm font-bold">
-          <span className="opacity-90">{tag.fox ? no.host.round.foxCounts(tag.hunters) : t.counts(tag.hunters, tag.prey)}</span>
-          {isPrey && tag.code && (
-            <button className="rounded-full bg-black/30 px-3 py-1 font-mono font-black tracking-widest" onClick={() => setShowCode(true)}>
-              {t.yourCode} {tag.code}
-            </button>
-          )}
-          {isHunter && tag.blackout ? <span className="opacity-90">{no.events.blackout}</span>
-            : isHunter && tag.radar?.length ? <span className="opacity-80">{t.radarAge(Math.min(...tag.radar.map((r) => r.age_s)))}</span> : null}
+        <div className="flex items-center justify-between gap-3 px-5 pb-3 text-sm font-bold opacity-90">
+          <span className="flex items-center gap-1.5">
+            <IconUsers size={16} />
+            {tag.fox ? no.host.round.foxCounts(tag.hunters) : t.counts(tag.hunters, tag.prey)}
+          </span>
+          {isHunter && tag.blackout ? <span>{no.events.blackout}</span>
+            : isHunter && tag.radar?.length ? <span>{t.radarAge(Math.min(...tag.radar.map((r) => r.age_s)))}</span> : null}
         </div>
       )}
 
       {zn && status === "live" && (zoneOut || zn.warn) && (
         <div
-          className={`mx-4 mb-2 flex items-center gap-3 rounded-xl px-3 py-2 font-black ${zoneOut ? "bg-danger text-white" : "bg-black/40"}`}
+          className={`mx-4 mb-2 flex items-center gap-3 rounded-xl px-4 py-3 text-lg font-black ${zoneOut ? "bg-danger text-white" : "bg-black/40"}`}
           role="status"
           data-testid="zone-strip"
         >
-          {zoneOut && zoneEdge && (
-            <span className="inline-block text-3xl leading-none" style={{ transform: `rotate(${zoneEdge.deg}deg)` }} aria-hidden>
-              ↑
-            </span>
+          {zoneOut && zoneEdge ? (
+            <IconArrowUp size={32} strokeWidth={3} className="flex-none" style={{ transform: `rotate(${zoneEdge.deg}deg)` }} />
+          ) : (
+            <IconShrink size={28} className="flex-none" />
           )}
           <span className="flex-1">{zoneOut ? t.zoneOut : t.zoneShrinkIn(zn.next?.inS ?? 0)}</span>
           {zoneOut && zoneEdge && <span className="tabular-nums">{t.zoneTo(zoneEdge.m)}</span>}
@@ -881,50 +925,57 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
         </div>
       )}
 
-      <footer className="relative z-[15] flex items-center gap-3 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-        <SosButton onFire={sendSos} disabled={!!sosOpen} />
+      <footer className="relative z-[15] space-y-3 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        {/* One main action, big, above the safety row. */}
         {isHunter && status === "live" && (
           <button
-            className="ui-press m-rise-in min-h-14 flex-1 rounded-2xl border-2 border-white bg-hunter px-4 py-4 text-center text-lg font-black text-white shadow-[var(--shadow-card)]"
+            className="ui-press m-rise-in flex min-h-16 w-full items-center justify-center gap-3 rounded-2xl border-2 border-white bg-hunter px-5 text-2xl font-black text-white shadow-[var(--shadow-card)]"
             onClick={() => {
               unlockAudio();
               setCatching(true);
             }}
             data-testid="catch"
           >
+            <IconCamera size={30} strokeWidth={2.5} />
             {t.catchBtn}
           </button>
         )}
         {isPrey && tag?.code && (
           <button
-            className="ui-press m-rise-in min-h-14 flex-1 rounded-2xl border border-white/30 bg-black/30 px-4 py-4 text-center text-lg font-black"
+            className="ui-press m-rise-in flex min-h-16 w-full items-center justify-center gap-3 rounded-2xl border-2 border-white/60 bg-black/35 px-5 text-xl font-black"
             onClick={() => setShowCode(true)}
             data-testid="show-code"
           >
+            <IconQr size={28} />
             {t.showCode}
+            <span className="font-mono tracking-widest opacity-80">{tag.code}</span>
           </button>
         )}
         {round?.qr && status === "live" && mode === "posts" && (
           <button
-            className="ui-press m-rise-in min-h-14 flex-1 rounded-2xl border border-white/30 bg-black/30 px-4 py-4 text-center text-lg font-black"
+            className="ui-press m-rise-in flex min-h-16 w-full items-center justify-center gap-3 rounded-2xl border-2 border-white/60 bg-black/35 px-5 text-2xl font-black"
             onClick={() => {
               unlockAudio();
               setScanning(true);
             }}
             data-testid="scan"
           >
+            <IconQr size={30} />
             {t.scan}
           </button>
         )}
-        {boot.teacherPhone && (
-          <a
-            href={`tel:${boot.teacherPhone}`}
-            aria-label={t.callTeacherLabel}
-            className="ui-press grid size-14 flex-none place-items-center rounded-2xl border border-white/30 bg-black/30 text-2xl"
-          >
-            <span aria-hidden>📞</span>
-          </a>
-        )}
+        <div className="flex items-center gap-3">
+          <SosButton onFire={sendSos} disabled={!!sosOpen} />
+          {boot.teacherPhone && (
+            <a
+              href={`tel:${boot.teacherPhone}`}
+              aria-label={t.callTeacherLabel}
+              className="ui-press grid size-14 flex-none place-items-center rounded-2xl border-2 border-white/40 bg-black/30"
+            >
+              <IconPhone size={26} />
+            </a>
+          )}
+        </div>
       </footer>
 
       <Toast toast={msgToast} />
@@ -964,7 +1015,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
             try {
               const r = await api.quizAnswer(sessionId, { playerId: me.playerId, token: me.token, choice: i });
               cue(r.right ? "claim" : "lost");
-              setFlash({ id: Date.now(), text: r.right ? no.quiz.right : "✗", sub: r.right ? undefined : no.quiz.wrong(r.answer ?? ""), tone: r.right ? "gold" : "dim" });
+              setFlash({ id: Date.now(), text: r.right ? no.quiz.right : t.quizWrong, sub: r.right ? undefined : no.quiz.wrong(r.answer ?? ""), tone: r.right ? "gold" : "dim" });
               queueBadges(r.newBadges);
             } catch (e) {
               const c = e instanceof ApiError ? e.code : "";
@@ -1002,17 +1053,18 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
           role="alertdialog"
           data-testid="sos-overlay"
         >
-          <p className="text-6xl">{sosAcked ? "✔" : "🆘"}</p>
+          {sosAcked ? <IconCheck size={88} strokeWidth={3} /> : <IconAlert size={88} strokeWidth={2.5} />}
           <p className="text-4xl font-black">{sosAcked ? t.sosAcked : t.sosSent}</p>
           {!sosAcked && <p className="text-xl font-bold">{t.sosWaiting}</p>}
           {boot.teacherPhone && (
-            <a href={`tel:${boot.teacherPhone}`} className="mt-4 rounded-2xl bg-white px-8 py-5 text-2xl font-black text-on-accent">
+            <a href={`tel:${boot.teacherPhone}`} className="mt-4 flex items-center gap-3 rounded-2xl bg-white px-8 py-5 text-2xl font-black text-on-accent">
+              <IconPhone size={28} />
               {t.callTeacher}
             </a>
           )}
           {sosAcked && view?.sos && (
-            <button className="mt-2 rounded-2xl border-2 border-on-accent px-8 py-3 text-xl font-black" onClick={() => setSosDismissed(view.sos!.id)}>
-              OK
+            <button className="mt-2 min-h-14 rounded-2xl border-2 border-on-accent px-10 py-3 text-xl font-black" onClick={() => setSosDismissed(view.sos!.id)}>
+              {t.sosOk}
             </button>
           )}
         </div>
@@ -1034,11 +1086,19 @@ const TONE_BG: Record<Tone, string> = {
 };
 
 function GpsChip({ fix, lost }: { fix: Fix | null; lost: boolean }) {
-  if (!fix || lost) return <span className="rounded-full bg-black/30 px-2.5 py-1">{t.gpsSearching}</span>;
+  if (!fix || lost) {
+    return (
+      <span className="flex items-center gap-1.5 rounded-full bg-black/35 px-3 py-1.5">
+        <IconLocate size={16} className="animate-pulse" />
+        {t.gpsSearching}
+      </span>
+    );
+  }
   const weak = fix.acc > SAFETY.uncertain_acc_m;
   return (
-    <span className={`rounded-full px-2.5 py-1 ${weak ? "bg-danger text-white" : "bg-black/30"}`}>
-      {weak ? `${t.gpsWeak} · ` : ""}
+    <span className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 ${weak ? "bg-danger text-white" : "bg-black/35"}`}>
+      <IconLocate size={16} />
+      {weak ? `${t.gpsWeak} ` : ""}
       {t.gps(fix.acc)}
     </span>
   );
@@ -1246,42 +1306,50 @@ function SosButton({ onFire, disabled }: { onFire: () => void; disabled: boolean
         style={{ width: holding ? "100%" : "0%", transition: holding ? `width ${SOS_HOLD_MS}ms linear` : "none" }}
         aria-hidden
       />
-      <span className="relative">🆘 {holding ? t.sosHolding : t.sosHold}</span>
+      <span className="relative flex items-center justify-center gap-2">
+        <IconAlert size={24} strokeWidth={2.5} />
+        {holding ? t.sosHolding : t.sosHold}
+      </span>
     </button>
   );
 }
 
+const RULE_ICONS: Icon[] = [IconEye, IconShape, IconBan];
+
 function ReadyScreen({ name, onReady, error }: { name: string; onReady: () => void; error: string | null }) {
   return (
-    <main className="theme-dark mx-auto flex min-h-dvh max-w-md flex-col px-5 pt-[max(2.5rem,env(safe-area-inset-top))] pb-[max(2rem,env(safe-area-inset-bottom))]">
+    <main className="theme-dark mx-auto flex min-h-dvh max-w-md flex-col px-6 pt-[max(3rem,env(safe-area-inset-top))] pb-[max(2rem,env(safe-area-inset-bottom))]">
       <div className="m-stagger flex flex-1 flex-col justify-center">
         <p className="text-sm font-black uppercase tracking-[0.25em] text-gold-text" style={{ "--i": 0 } as CSSProperties}>
           {no.brand}
         </p>
-        <h1 className="mt-2 text-5xl font-black tracking-tight" style={{ "--i": 1 } as CSSProperties}>
+        <h1 className="mt-3 text-5xl font-black leading-[1.05] tracking-tight" style={{ "--i": 1 } as CSSProperties}>
           {t.readyTitle(name)}
         </h1>
-        <p className="mt-3 text-lg text-txt-dim" style={{ "--i": 2 } as CSSProperties}>
-          {t.readyBody}
-        </p>
-        <div className="mt-8 rounded-[var(--radius-card)] bg-ink-2 p-5 shadow-[var(--shadow-card)]" style={{ "--i": 3 } as CSSProperties}>
-          <p className="text-sm font-extrabold uppercase tracking-wide text-gold-text">{t.rulesTitle}</p>
-          <ul className="mt-3 space-y-3">
-            {t.rules.map((r, i) => (
-              <li key={r} className="flex gap-3 text-lg font-semibold leading-snug">
-                <span className="grid size-7 flex-none place-items-center rounded-full bg-gold/20 text-sm font-black text-gold-text">{i + 1}</span>
+        <ul className="mt-10 space-y-5" aria-label={t.rulesTitle} style={{ "--i": 2 } as CSSProperties}>
+          {t.rules.map((r, i) => {
+            const RuleIcon = RULE_ICONS[i] ?? IconCheck;
+            return (
+              <li key={r} className="flex items-center gap-4 text-xl font-bold leading-snug">
+                <span className={cx("grid size-12 flex-none place-items-center rounded-2xl", i === 2 ? "bg-danger/20 text-danger-text" : "bg-gold/15 text-gold-text")}>
+                  <RuleIcon size={26} />
+                </span>
                 <span>{r}</span>
               </li>
-            ))}
-          </ul>
-        </div>
+            );
+          })}
+        </ul>
         {error === "unsupported" && (
-          <p className="mt-4 rounded-[var(--radius-ctl)] bg-danger/15 px-4 py-3 font-bold text-danger-text" style={{ "--i": 4 } as CSSProperties}>
+          <p className="mt-6 rounded-[var(--radius-ctl)] bg-danger/15 px-4 py-3 font-bold text-danger-text" style={{ "--i": 3 } as CSSProperties}>
             {no.map.noGps}
           </p>
         )}
       </div>
-      <Button size="xl" className="m-rise-in mt-8 w-full" onClick={onReady} data-testid="ready">
+      <p className="mt-8 flex items-center justify-center gap-2 text-center text-base font-semibold text-txt-dim">
+        <IconLocate size={18} className="flex-none" />
+        {t.readyBody}
+      </p>
+      <Button size="xl" className="m-rise-in mt-3 w-full py-5" onClick={onReady} data-testid="ready">
         {t.ready}
       </Button>
     </main>
@@ -1289,30 +1357,30 @@ function ReadyScreen({ name, onReady, error }: { name: string; onReady: () => vo
 }
 
 function DeniedHelp({ onRetry }: { onRetry: () => void }) {
+  const steps = (title: string, list: readonly string[], i: number) => (
+    <div className="rounded-[var(--radius-card)] bg-ink-2 p-5 shadow-[var(--shadow-card)]" style={{ "--i": i } as CSSProperties}>
+      <h2 className="text-lg font-black text-gold-text">{title}</h2>
+      <ol className="mt-3 space-y-2.5">
+        {list.map((st, n) => (
+          <li key={st} className="flex gap-3 text-base font-semibold leading-snug text-txt-dim">
+            <span className="grid size-6 flex-none place-items-center rounded-full bg-ink-3 text-sm font-black text-txt">{n + 1}</span>
+            <span>{st}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
   return (
-    <main className="theme-dark mx-auto flex min-h-dvh max-w-md flex-col px-5 pt-[max(2.5rem,env(safe-area-inset-top))] pb-[max(2rem,env(safe-area-inset-bottom))]">
-      <div className="m-stagger flex flex-1 flex-col justify-center">
-        <h1 className="text-4xl font-black tracking-tight" style={{ "--i": 0 } as CSSProperties}>
-          {t.denied.title}
-        </h1>
-        <div className="mt-7 rounded-[var(--radius-card)] bg-ink-2 p-5 shadow-[var(--shadow-card)]" style={{ "--i": 1 } as CSSProperties}>
-          <h2 className="font-extrabold text-gold-text">iPhone</h2>
-          <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-txt-dim">
-            {t.denied.ios.map((s) => (
-              <li key={s}>{s}</li>
-            ))}
-          </ol>
+    <main className="theme-dark mx-auto flex min-h-dvh max-w-md flex-col px-6 pt-[max(3rem,env(safe-area-inset-top))] pb-[max(2rem,env(safe-area-inset-bottom))]">
+      <div className="m-stagger flex flex-1 flex-col justify-center gap-4">
+        <div className="flex items-center gap-3" style={{ "--i": 0 } as CSSProperties}>
+          <IconLocate size={40} className="flex-none text-gold-text" />
+          <h1 className="text-4xl font-black tracking-tight">{t.denied.title}</h1>
         </div>
-        <div className="mt-3 rounded-[var(--radius-card)] bg-ink-2 p-5 shadow-[var(--shadow-card)]" style={{ "--i": 2 } as CSSProperties}>
-          <h2 className="font-extrabold text-gold-text">Android</h2>
-          <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-txt-dim">
-            {t.denied.android.map((s) => (
-              <li key={s}>{s}</li>
-            ))}
-          </ol>
-        </div>
+        {steps("iPhone", t.denied.ios, 1)}
+        {steps("Android", t.denied.android, 2)}
       </div>
-      <Button size="xl" className="m-rise-in mt-8 w-full" onClick={onRetry}>
+      <Button size="xl" className="m-rise-in mt-8 w-full py-5" onClick={onRetry}>
         {t.denied.retry}
       </Button>
     </main>
@@ -1326,7 +1394,7 @@ function Fullscreen({ tone, title, body, link }: { tone: Tone; title: string; bo
         <p className="text-sm font-black uppercase tracking-[0.25em] text-gold-text" style={{ "--i": 0 } as CSSProperties}>
           {no.brand}
         </p>
-        <h1 className="mt-3 text-4xl font-black leading-tight tracking-tight" style={{ "--i": 1 } as CSSProperties}>
+        <h1 className="mt-4 text-4xl font-black leading-tight tracking-tight" style={{ "--i": 1 } as CSSProperties}>
           {title}
         </h1>
         {body && (
@@ -1335,14 +1403,14 @@ function Fullscreen({ tone, title, body, link }: { tone: Tone; title: string; bo
           </p>
         )}
         {!link && (
-          <div className="mt-8 flex gap-2" style={{ "--i": 2 } as CSSProperties} aria-hidden>
+          <div className="mt-10 flex gap-2" style={{ "--i": 2 } as CSSProperties} aria-hidden>
             {[0, 1, 2].map((i) => (
               <span key={i} className="size-3 animate-pulse rounded-full bg-gold" style={{ animationDelay: `${i * 160}ms` }} />
             ))}
           </div>
         )}
         {link && (
-          <Link href="/j" className={buttonClass("primary", "lg", "mt-8 w-full")} style={{ "--i": 3 } as CSSProperties}>
+          <Link href="/j" className={buttonClass("primary", "xl", "mt-10 w-full")} style={{ "--i": 3 } as CSSProperties}>
             {t.toJoin}
           </Link>
         )}
@@ -1371,11 +1439,11 @@ function SimPad({ sim }: { sim: SimControls }) {
       <p className="font-bold text-gold">{t.sim.title}</p>
       <div className="mt-1 grid grid-cols-3 gap-1">
         <span />
-        <button className={b} onClick={() => sim.move(0, 10)} aria-label="Nord">↑</button>
+        <button className={b} onClick={() => sim.move(0, 10)} aria-label={t.dirs[0]}><IconArrowUp size={18} /></button>
         <span />
-        <button className={b} onClick={() => sim.move(-10, 0)} aria-label="Vest">←</button>
-        <button className={b} onClick={() => sim.move(0, -10)} aria-label="Sør">↓</button>
-        <button className={b} onClick={() => sim.move(10, 0)} aria-label="Øst">→</button>
+        <button className={b} onClick={() => sim.move(-10, 0)} aria-label={t.dirs[6]}><IconArrowUp size={18} className="-rotate-90" /></button>
+        <button className={b} onClick={() => sim.move(0, -10)} aria-label={t.dirs[4]}><IconArrowUp size={18} className="rotate-180" /></button>
+        <button className={b} onClick={() => sim.move(10, 0)} aria-label={t.dirs[2]}><IconArrowUp size={18} className="rotate-90" /></button>
       </div>
       <label className="mt-2 block">
         {t.sim.acc(sim.acc)}
@@ -1417,38 +1485,75 @@ function Compass({ m, deg, label }: { m: number; deg: number; label: string }) {
   );
 }
 
-/** Breather / end card: this round's effort (PLAN §13 phase 2 «rundeoppsummering»). */
+/** Breather / end card: this round's effort (PLAN §13 phase 2 «rundeoppsummering»). One big number, three small. */
 function SummaryCard({ summary, next }: { summary: RoundSummary; next: PlanRound | null }) {
-  const cell = "rounded-xl bg-ink-3 p-3";
+  const cell = "rounded-2xl bg-ink-3 px-3 py-3";
   return (
     <div
-      className="m-rise-in absolute inset-x-3 bottom-3 z-10 rounded-[var(--radius-card)] border border-line bg-ink-2/95 p-4 text-txt shadow-[var(--shadow-float)] backdrop-blur"
+      className="m-rise-in absolute inset-x-3 bottom-3 z-10 rounded-[var(--radius-card)] border border-line bg-ink-2/95 p-5 text-txt shadow-[var(--shadow-float)] backdrop-blur"
       data-testid="summary"
     >
-      <p className="text-sm font-extrabold text-gold-text">{t.summary(summary.round + 1)}</p>
-      <dl className="m-stagger mt-2 grid grid-cols-2 gap-2">
+      <div className="flex items-end justify-between gap-4">
+        <div>
+          <p className="text-sm font-black uppercase tracking-wider text-gold-text">{t.summary(summary.round + 1)}</p>
+          <p className="mt-1 text-6xl font-black leading-none tabular-nums">{summary.points}</p>
+          <p className="mt-1 text-sm font-bold text-txt-dim">
+            {t.sumPoints}
+            {summary.move_pts > 0 && ` · ${t.sumMove(summary.move_pts)}`}
+          </p>
+        </div>
+      </div>
+      <dl className="m-stagger mt-4 grid grid-cols-3 gap-2">
         <div className={cell} style={{ "--i": 1 } as CSSProperties}>
-          <dt className="text-xs font-bold uppercase text-txt-dim">{t.sumPoints}</dt>
-          <dd className="text-3xl font-black">{summary.points}</dd>
+          <dt className="flex items-center gap-1 text-xs font-bold uppercase text-txt-dim">
+            <IconMapPin size={14} />
+            {t.sumPosts}
+          </dt>
+          <dd className="mt-1 text-2xl font-black tabular-nums">{summary.posts}</dd>
         </div>
         <div className={cell} style={{ "--i": 2 } as CSSProperties}>
-          <dt className="text-xs font-bold uppercase text-txt-dim">{t.sumPosts}</dt>
-          <dd className="text-3xl font-black">{summary.posts}</dd>
+          <dt className="flex items-center gap-1 text-xs font-bold uppercase text-txt-dim">
+            <IconMove size={14} />
+            {t.sumDistance}
+          </dt>
+          <dd className="mt-1 text-2xl font-black tabular-nums">{t.meters(summary.distance_m)}</dd>
         </div>
         <div className={cell} style={{ "--i": 3 } as CSSProperties}>
-          <dt className="text-xs font-bold uppercase text-txt-dim">{t.sumDistance}</dt>
-          <dd className="text-2xl font-black">{t.meters(summary.distance_m)}</dd>
-        </div>
-        <div className={cell} style={{ "--i": 4 } as CSSProperties}>
-          <dt className="text-xs font-bold uppercase text-txt-dim">{t.sumActive}</dt>
-          <dd className="text-2xl font-black">{t.minutes(summary.active_s)}</dd>
+          <dt className="flex items-center gap-1 text-xs font-bold uppercase text-txt-dim">
+            <IconClock size={14} />
+            {t.sumActive}
+          </dt>
+          <dd className="mt-1 text-2xl font-black tabular-nums">{t.minutes(summary.active_s)}</dd>
         </div>
       </dl>
-      {summary.move_pts > 0 && <p className="mt-2 text-sm font-bold">{t.sumMove(summary.move_pts)}</p>}
       {summary.badges.length > 0 && (
-        <p className="mt-1 text-sm font-bold">{summary.badges.map((b) => t.badges[b] ?? b).join(" · ")}</p>
+        <ul className="mt-3 flex flex-wrap gap-2">
+          {summary.badges.map((b) => {
+            const BadgeIcon = BADGE_ICONS[b] ?? IconMedal;
+            return (
+              <li key={b} className="flex items-center gap-1.5 rounded-full bg-gold/15 px-3 py-1.5 text-sm font-black text-gold-text">
+                <BadgeIcon size={16} />
+                {t.badges[b] ?? b}
+              </li>
+            );
+          })}
+        </ul>
       )}
-      {next && <p className="mt-3 font-extrabold">{t.next(roundTitle(next), Math.round(next.duration_s / 60))}</p>}
+      {next && (
+        <p className="mt-4 flex items-center gap-2 text-lg font-black">
+          <IconArrowRight size={20} className="flex-none text-gold-text" />
+          {t.next(roundTitle(next), Math.round(next.duration_s / 60))}
+        </p>
+      )}
     </div>
   );
 }
+
+const MODE_ICONS: Record<string, Icon> = {
+  posts: IconMapPin,
+  free: IconMove,
+  tag: IconTarget,
+  flag: IconFlag,
+  king: IconCrown,
+  relay: IconBaton,
+};

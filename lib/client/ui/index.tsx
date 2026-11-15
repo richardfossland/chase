@@ -8,6 +8,7 @@ import { prefersReducedMotion, usePresence } from "./motion";
 export { prefersReducedMotion, useChangeKey, useCountUp, usePresence } from "./motion";
 
 import { buttonClass, cx } from "./classes";
+import { IconX } from "./icons";
 import type { Size, Variant } from "./classes";
 
 export { buttonClass, cx } from "./classes";
@@ -123,8 +124,8 @@ export function Sheet({
         <div className="mx-auto mb-2 h-1 w-10 rounded-full bg-ink-3 lg:hidden" aria-hidden />
         <div className="mb-3 flex items-center justify-between gap-3">
           <div className="text-lg font-black">{title}</div>
-          <button type="button" className="ui-press rounded-full px-2 py-1 text-sm font-bold text-txt-dim hover:bg-ink-3" onClick={onClose}>
-            {closeLabel} ✕
+          <button type="button" className="ui-press -mr-2 grid size-12 place-items-center rounded-full text-txt-dim hover:bg-ink-3 hover:text-txt" aria-label={closeLabel} onClick={onClose}>
+            <IconX />
           </button>
         </div>
         {item}

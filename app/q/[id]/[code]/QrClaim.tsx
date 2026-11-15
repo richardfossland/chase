@@ -8,6 +8,7 @@ import { identity } from "@/lib/client/identity";
 import { no } from "@/lib/locale/no";
 import { parseQr } from "@/lib/qr";
 import { buttonClass, cx } from "@/lib/client/ui";
+import { IconAlert, IconCheck, IconQr } from "@/lib/client/ui/icons";
 
 const t = no.play;
 const q = no.qr.page;
@@ -53,7 +54,10 @@ export default function QrClaim({ sessionId, code }: { sessionId: string; code: 
         </div>
       )}
       <div className="relative flex w-full max-w-md flex-col items-center">
-        <p className="m-fade-in text-sm font-black uppercase tracking-[0.25em] opacity-70">{q.title}</p>
+        <p className="m-fade-in flex items-center gap-2 text-sm font-black uppercase tracking-[0.25em] opacity-70">
+          <IconQr size={18} />
+          {q.title}
+        </p>
         {state.kind === "working" && (
           <div className="mt-8 flex gap-2" role="status" aria-label="…">
             {[0, 1, 2].map((i) => (
@@ -61,9 +65,12 @@ export default function QrClaim({ sessionId, code }: { sessionId: string; code: 
             ))}
           </div>
         )}
-        {state.kind === "noPlayer" && <p className="m-rise-in mt-6 text-2xl font-black leading-tight">{q.noPlayer}</p>}
+        {state.kind === "noPlayer" && <p className="m-rise-in mt-8 text-2xl font-black leading-tight">{q.noPlayer}</p>}
         {state.kind === "error" && (
-          <p className="m-shake mt-6 rounded-[var(--radius-card)] bg-danger/15 px-5 py-4 text-2xl font-black text-danger-text">{state.text}</p>
+          <p className="m-shake mt-8 flex items-center gap-3 rounded-[var(--radius-card)] bg-danger/15 px-5 py-5 text-left text-2xl font-black text-danger-text">
+            <IconAlert size={32} className="flex-none" />
+            {state.text}
+          </p>
         )}
         {state.kind === "ok" && (
           <div className="m-stagger mt-4 flex flex-col items-center">
@@ -71,7 +78,11 @@ export default function QrClaim({ sessionId, code }: { sessionId: string; code: 
               {t.qrPost(state.r.n)}
             </p>
             <div style={{ "--i": 1 } as CSSProperties}>
-              <p className="m-pop mt-2 text-7xl font-black leading-none">{state.r.already ? "✔" : t.qrOk(state.r.value, state.r.first)}</p>
+              {state.r.already ? (
+                <IconCheck size={96} strokeWidth={3} className="m-pop mt-4" />
+              ) : (
+                <p className="m-pop mt-2 text-7xl font-black leading-none">{t.qrOk(state.r.value, state.r.first)}</p>
+              )}
             </div>
             {state.r.already && (
               <p className="mt-4 text-lg font-bold text-txt-dim" style={{ "--i": 2 } as CSSProperties}>

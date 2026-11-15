@@ -1,6 +1,6 @@
 "use client";
 
-// Teacher's ⚡ (0007, PLAN §4/§6): start an event in two taps (⚡ → kind),
+// Teacher's «Overraskelse» (0007, PLAN §4/§6): start one in two taps (button, then kind),
 // follow it (countdown, who made it), stop it, confirm missions, and switch
 // the automatic events on/off. The server decides what fits the round.
 
@@ -12,6 +12,7 @@ import { formatClock } from "@/lib/rules/game";
 import type { EventKind } from "@/lib/rules/events";
 
 import { buttonClass, cx } from "@/lib/client/ui";
+import { IconCheck, IconStop, IconZap } from "@/lib/client/ui/icons";
 
 import type { HostSession } from "./useHostSession";
 
@@ -32,7 +33,7 @@ function useLeftS(until: string | null | undefined, serverNow: string): number |
   return Math.max(0, Math.ceil((Date.parse(until) - (now + offset)) / 1000));
 }
 
-/** Small chip under the round bar while an event runs. Tap → the sheet. */
+/** Small chip under the alarms while a surprise runs. Tap opens the sheet. */
 export function EventChip({ snap, onOpen }: { snap: Snapshot; onOpen: () => void }) {
   const ev = snap.event;
   const left = useLeftS(ev?.ends_at, snap.server_now);
@@ -40,11 +41,12 @@ export function EventChip({ snap, onOpen }: { snap: Snapshot; onOpen: () => void
   if ((!ev || ev.done) && !pending) return null;
   return (
     <button
-      className="ui-press m-drop-in pointer-events-auto flex min-h-12 w-full items-center justify-between gap-2 rounded-2xl bg-gold px-4 py-2 text-left text-sm font-black text-on-accent shadow-[var(--shadow-float)] hover:bg-gold-light"
+      className="ui-press m-drop-in pointer-events-auto flex min-h-12 w-full items-center gap-3 rounded-2xl bg-gold px-4 py-2 text-left text-sm font-black text-on-accent shadow-[var(--shadow-float)] hover:bg-gold-light"
       onClick={onOpen}
       data-testid="event-chip"
     >
-      <span className="truncate">
+      <IconZap size={18} className="shrink-0" />
+      <span className="min-w-0 flex-1 truncate">
         {ev && !ev.done ? `${e.kinds[ev.kind]} · ${e.entries(ev.entries.filter((x) => x.state !== "pending").length)}` : e.pendingTitle(pending)}
       </span>
       {ev && !ev.done && <span className="font-mono tabular-nums">{formatClock(left)}</span>}
@@ -70,7 +72,7 @@ export function EventSheet({ snap, hs }: { snap: Snapshot; hs: HostSession }) {
   }
 
   return (
-    <div className="space-y-3" data-testid="event-sheet">
+    <div className="space-y-5 pb-2" data-testid="event-sheet">
       {err && <p className="m-drop-in rounded-2xl bg-warn/20 px-4 py-2.5 text-sm font-bold text-warn-text">{err}</p>}
 
       {running ? (
@@ -82,32 +84,33 @@ export function EventSheet({ snap, hs }: { snap: Snapshot; hs: HostSession }) {
               key={k}
               disabled={busy}
               style={{ "--i": i } as React.CSSProperties}
-              className="ui-press min-h-14 rounded-2xl bg-ink px-4 py-3 text-left hover:bg-ink-3 disabled:opacity-50"
+              className="ui-press min-h-16 rounded-2xl bg-ink px-4 py-3.5 text-left hover:bg-ink-3 disabled:opacity-50"
               onClick={() => void run("event_start", { kind: k })}
               data-testid={`event-${k}`}
             >
-              <span className="block text-lg font-black">{e.kinds[k]}</span>
+              <span className="block text-lg font-black leading-tight">{e.kinds[k]}</span>
               <span className="mt-0.5 block text-sm text-txt-dim">{e.hostDesc[k]}</span>
             </button>
           ))}
         </div>
       ) : (
-        <p className="text-sm text-txt-dim">{e.notLive}</p>
+        <p className="py-2 text-txt-dim">{e.notLive}</p>
       )}
 
       {pending.length > 0 && (
-        <div className="m-rise-in rounded-2xl border border-gold/60 bg-gold/10 p-3">
+        <div className="m-rise-in rounded-2xl border border-gold/60 bg-gold/10 p-4">
           <div className="flex items-center justify-between gap-2">
             <p className="font-black">{e.pendingTitle(pending.length)}</p>
             <button className={buttonClass("primary", "sm", "min-h-12")} onClick={() => void run("mission_confirm")} data-testid="confirm-all">
               {e.confirmAll}
             </button>
           </div>
-          <ul className="mt-2 space-y-1.5">
+          <ul className="mt-3 space-y-1.5">
             {pending.map((p) => (
               <li key={p.player_id} className="host-join flex items-center justify-between gap-2 rounded-xl bg-ink-2 py-1.5 pr-1.5 pl-3">
                 <span className="truncate font-bold">{p.nickname}</span>
-                <button className={buttonClass("ok", "sm", "min-h-11")} onClick={() => void run("mission_confirm", { player_id: p.player_id })}>
+                <button className={buttonClass("ok", "sm", "min-h-12")} onClick={() => void run("mission_confirm", { player_id: p.player_id })}>
+                  <IconCheck size={16} />
                   {e.confirm}
                 </button>
               </li>
@@ -117,9 +120,9 @@ export function EventSheet({ snap, hs }: { snap: Snapshot; hs: HostSession }) {
       )}
 
       {snap.events_every_s > 0 && (
-        <div className="flex items-center justify-between gap-2 rounded-2xl bg-ink py-1.5 pr-1.5 pl-4">
+        <div className="flex items-center justify-between gap-3 rounded-2xl bg-ink py-2 pr-2 pl-4">
           <span className="text-sm font-bold">{e.autoState(snap.events_auto, snap.events_every_s)}</span>
-          <button className={buttonClass("secondary", "sm", "min-h-11")} onClick={() => void run("events_auto", { on: !snap.events_auto })}>
+          <button className={buttonClass("secondary", "sm", "min-h-12")} onClick={() => void run("events_auto", { on: !snap.events_auto })}>
             {snap.events_auto ? e.autoOff : e.autoOn}
           </button>
         </div>
@@ -132,7 +135,7 @@ function RunningEvent({ ev, serverNow, onStop }: { ev: HostEventView; serverNow:
   const left = useLeftS(ev.ends_at, serverNow);
   const made = ev.entries.filter((x) => x.state !== "pending");
   return (
-    <div className="m-rise-in rounded-2xl bg-ink p-4">
+    <div className="m-rise-in rounded-2xl bg-ink p-5">
       <div className="flex items-center justify-between">
         <p className="text-lg font-black">{e.kinds[ev.kind]}</p>
         <p className="font-mono text-2xl font-black tabular-nums">{formatClock(left)}</p>
@@ -151,7 +154,11 @@ function RunningEvent({ ev, serverNow, onStop }: { ev: HostEventView; serverNow:
           ))}
         </ol>
       )}
-      <button className={cx("ui-press mt-4 min-h-12 w-full rounded-[var(--radius-ctl)] bg-danger/10 font-black text-danger-text hover:bg-danger/15")} onClick={onStop}>
+      <button
+        className={cx("ui-press mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-[var(--radius-ctl)] bg-danger/10 font-black text-danger-text hover:bg-danger/15")}
+        onClick={onStop}
+      >
+        <IconStop size={16} />
         {e.stop}
       </button>
     </div>

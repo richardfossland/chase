@@ -70,7 +70,7 @@ export function useHostSession(sessionId: string, token: string | null): HostSes
   const onHint = useCallback(() => void refresh(), [refresh]);
   useChannel(token ? channels.host(sessionId) : null, onHint);
 
-  // New alarm → buzz once (not for the ones already there when the panel opened).
+  // New alarm: buzz once (not for the ones already there when the panel opened).
   useEffect(() => {
     if (!snap) return;
     const ids = new Set(snap.alarms.filter((a) => !a.acked).map((a) => a.id));
@@ -88,7 +88,7 @@ export function useHostSession(sessionId: string, token: string | null): HostSes
     seenAlarms.current = ids;
   }, [snap]);
 
-  // Unacked SOS → siren until acked.
+  // Unacked SOS: siren until acked.
   const sosOpen = !!snap?.alarms.some((a) => a.kind === "sos" && !a.acked);
   useEffect(() => {
     if (!sosOpen) return;

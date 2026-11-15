@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { no } from "@/lib/locale/no";
 import { buttonClass } from "@/lib/client/ui";
+import { IconArrowRight, IconCamera, IconX } from "@/lib/client/ui/icons";
 
 const t = no.qr;
 
@@ -93,15 +94,19 @@ export function QrScanner({
 
   return (
     <div className="m-fade-in absolute inset-0 z-30 flex flex-col bg-ink text-txt" role="dialog" aria-label={title}>
-      <div className="flex items-center justify-between px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3">
+      <div className="flex items-center justify-between gap-3 px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3">
         <h2 className="text-2xl font-black">{title}</h2>
-        <button className={buttonClass("secondary", "md")} onClick={onClose}>
+        <button className={buttonClass("secondary", "lg", "flex-none")} onClick={onClose}>
+          <IconX size={20} />
           {t.close}
         </button>
       </div>
       <div className="relative min-h-0 flex-1 bg-black">
         {camError ? (
-          <p className="p-6 text-lg font-bold">{t.noCamera}</p>
+          <div className="flex flex-col items-start gap-3 p-6">
+            <IconCamera size={36} className="text-txt-dim" />
+            <p className="text-lg font-bold">{t.noCamera}</p>
+          </div>
         ) : (
           <>
             <video ref={video} className="h-full w-full object-cover" playsInline muted />
@@ -129,8 +134,9 @@ export function QrScanner({
           className="min-h-14 min-w-0 flex-1 rounded-[var(--radius-ctl)] border-2 border-line bg-ink-2 px-3 py-3 text-center text-2xl font-black tracking-[0.3em] outline-none transition-colors focus:border-gold"
           aria-label={codeLabel}
         />
-        <button className={buttonClass("primary", "lg")} disabled={busy || !typed.trim()}>
+        <button className={buttonClass("primary", "lg", "flex-none")} disabled={busy || !typed.trim()}>
           {t.send}
+          <IconArrowRight size={20} />
         </button>
       </form>
     </div>

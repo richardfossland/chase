@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { IconExpand, IconX } from "@/lib/client/ui/icons";
 import { no } from "@/lib/locale/no";
 
 /** Small fixed-corner button to enter/exit fullscreen — for a distraction-free
@@ -35,7 +36,7 @@ export function FullscreenToggle() {
       title={isFull ? no.common.exitFullscreen : no.common.fullscreen}
       onClick={toggle}
     >
-      {isFull ? "🡼" : "⛶"}
+      {isFull ? <IconX /> : <IconExpand />}
     </button>
   );
 }

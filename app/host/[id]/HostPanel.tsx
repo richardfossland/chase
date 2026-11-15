@@ -8,7 +8,38 @@ import { ConfirmDialog } from "@/lib/client/ConfirmDialog";
 import { identity } from "@/lib/client/identity";
 import { QRCode } from "@/lib/client/QRCode";
 import { audioReady, unlockAudio } from "@/lib/client/sound";
-import { Button, buttonClass, Card, Chip, cx, Sheet, useCountUp } from "@/lib/client/ui";
+import { Button, buttonClass, Chip, cx, Sheet, useCountUp } from "@/lib/client/ui";
+import {
+  IconAlert,
+  IconBan,
+  IconCheck,
+  IconChevronRight,
+  IconList,
+  IconLocate,
+  IconMapPin,
+  IconMegaphone,
+  IconMessage,
+  IconMore,
+  IconMove,
+  IconPause,
+  IconPencil,
+  IconPlay,
+  IconPrinter,
+  IconQr,
+  IconRadar,
+  IconScreen,
+  IconShield,
+  IconSkip,
+  IconStar,
+  IconStop,
+  IconTarget,
+  IconTrophy,
+  IconUndo,
+  IconUsers,
+  IconVolumeOff,
+  IconX,
+  IconZap,
+} from "@/lib/client/ui/icons";
 import { no } from "@/lib/locale/no";
 import { formatClock, phaseLeftS, planTotalS } from "@/lib/rules/game";
 import { SAFETY } from "@/lib/rules/safety";
@@ -18,6 +49,7 @@ import { HostCeremony } from "./HostCeremony";
 import { EventChip, EventSheet } from "./HostEvents";
 import { TeamMoveRow, TeamsChip, TeamsSheet } from "./HostTeams";
 import HostMap, { dotState, type HostMapHandle } from "./HostMap";
+import { IconChevronUp, IconGather, IconMinusCircle } from "./icons";
 import { useHostSession, type HostSession } from "./useHostSession";
 
 const h = no.host;
@@ -34,6 +66,8 @@ type Sheet =
   | { kind: "message"; to: string | null }
   | { kind: "more" }
   | { kind: "players"; missingOnly?: boolean }
+  | { kind: "gps" }
+  | { kind: "rounds" }
   | { kind: "qr" }
   | { kind: "ceremony" }
   | { kind: "events" }
@@ -41,9 +75,18 @@ type Sheet =
 
 type Confirm = null | { message: string; label?: string; danger?: boolean; run: () => void };
 
+/** Alarm icon per kind. Icons only add to the text, they never replace it (rule 4). */
+const ALARM_ICON: Record<string, typeof IconAlert> = {
+  sos: IconAlert,
+  forbidden: IconBan,
+  outside: IconMapPin,
+  signal: IconRadar,
+  speed: IconZap,
+};
+
 /**
  * Teacher panel, mobile first (PLAN §6): full-screen map, alarm strip on top,
- * big bottom buttons, player card, messages, gathering + roll call, end.
+ * one fixed action bar at the bottom, player card, messages, gathering + roll call, end.
  * On wide screens a player list column is always visible.
  */
 export default function HostPanel({ sessionId }: { sessionId: string }) {
@@ -59,8 +102,8 @@ export default function HostPanel({ sessionId }: { sessionId: string }) {
   if (!token || hs.error === "auth") {
     return (
       <Center>
-        <p className="text-lg font-bold">{h.noToken}</p>
-        <Link href="/" className={buttonClass("secondary", "md", "mt-6")}>
+        <p className="max-w-sm text-lg font-bold">{h.noToken}</p>
+        <Link href="/" className={buttonClass("secondary", "md", "mt-8")}>
           {no.common.home}
         </Link>
       </Center>
@@ -70,10 +113,12 @@ export default function HostPanel({ sessionId }: { sessionId: string }) {
   if (hs.snap.status === "ended") {
     return (
       <Center>
-        <span className="m-pop grid size-16 place-items-center rounded-full bg-ok text-3xl font-black text-on-accent">✔</span>
-        <h1 className="mt-5 text-3xl font-black">{h.end.ended}</h1>
+        <span className="m-pop grid size-20 place-items-center rounded-full bg-ok text-on-accent">
+          <IconCheck size={40} />
+        </span>
+        <h1 className="mt-6 text-3xl font-black">{h.end.ended}</h1>
         <p className="mt-2 max-w-sm text-txt-dim">{h.end.endedBody}</p>
-        <Link href="/ny" className={buttonClass("primary", "lg", "mt-8")}>
+        <Link href="/ny" className={buttonClass("primary", "lg", "mt-10")}>
           {h.end.newSession}
         </Link>
       </Center>
@@ -107,10 +152,13 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
   const gathering = snap.status === "gathering";
   const ceremony = snap.status === "ceremony";
   const paused = snap.status === "paused";
+  const live = snap.status === "live";
+  const between = snap.status === "countdown" || snap.status === "breather";
   const joinUrl = origin ? `${origin}/j/${snap.pin}` : "";
   const playlistDone = snap.playlist_done;
   const qrCount = snap.plan?.qr_posts ?? 0;
   const roundBar = !!snap.round && !lobby && !ceremony;
+  const roundControls = !!snap.round && !playlistDone && (live || between);
 
   function focusAlarm(a: HostAlarm) {
     if (a.pos) mapRef.current?.flyTo(a.pos.lat, a.pos.lng);
@@ -137,6 +185,12 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
     });
   }
 
+  function nextRound() {
+    setSheet(null);
+    if (live) setConfirm({ message: h.round.nextConfirm, label: h.round.next, run: () => void hs.act("next") });
+    else void hs.act("next");
+  }
+
   const checkedIn = snap.players.filter((p) => p.checked_in).length;
   const missing = snap.players.filter((p) => !p.checked_in && p.role !== "referee");
 
@@ -144,9 +198,11 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
     player: sheet?.kind === "player" ? (byId.get(sheet.id)?.nickname ?? "") : "",
     message: h.msg.title(sheet?.kind === "message" && sheet.to ? (byId.get(sheet.to)?.nickname ?? null) : null),
     more: h.more,
-    players: h.playersList,
+    players: sheet?.kind === "players" && sheet.missingOnly ? h.gatherPanel.title : h.playersList,
+    gps: h.gpsTitle,
+    rounds: h.roundsTitle,
     qr: h.showQr,
-    ceremony: no.ceremony.start,
+    ceremony: h.prize.start,
     events: no.events.title,
     teams: no.teams.host.title,
   };
@@ -163,7 +219,15 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
     >
       <div className="relative h-full">
         {lobby ? (
-          <LobbyBoard pin={snap.pin} joinUrl={joinUrl} players={snap.players} onSelect={select} snap={snap} sessionId={hs.sessionId} />
+          <LobbyBoard
+            pin={snap.pin}
+            joinUrl={joinUrl}
+            players={snap.players}
+            onSelect={select}
+            snap={snap}
+            onGps={() => setSheet({ kind: "gps" })}
+            onRounds={() => setSheet({ kind: "rounds" })}
+          />
         ) : (
           <HostMap
             ref={mapRef}
@@ -185,40 +249,36 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
           />
         )}
 
-        {/* top: status + round + alarm strip (safety first, rule 4) */}
+        {/* top: sound + status + alarm strip (safety first, rule 4) */}
         <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex flex-col gap-2 p-3 pt-[max(0.75rem,env(safe-area-inset-top))] lg:max-w-lg">
-          {(!roundBar || !sound) && (
-            <div className="flex items-center justify-between gap-2">
-              {!roundBar ? (
-                <span
-                  className={cx(
-                    "pointer-events-auto inline-flex shrink-0 items-center gap-2 rounded-full px-3.5 py-2 text-sm font-extrabold whitespace-nowrap",
-                    paused ? "bg-warn text-on-accent" : gathering ? "bg-ok text-on-accent" : "host-float text-txt",
-                  )}
-                >
-                  <span className={cx("size-2 rounded-full", paused || gathering ? "bg-on-accent/70" : "bg-ok")} aria-hidden />
-                  {h.status[snap.status] ?? snap.status} · PIN {snap.pin}
-                </span>
-              ) : (
-                <span />
-              )}
-              {!sound && (
-                <button
-                  className="ui-press pointer-events-auto min-h-12 min-w-0 rounded-full bg-danger px-4 text-xs leading-tight font-black text-white shadow-[var(--shadow-float)]"
-                  onClick={() => unlockAudio()}
-                >
-                  {h.soundOff}
-                </button>
-              )}
-            </div>
+          {!sound && (
+            <button
+              className="ui-press pointer-events-auto flex min-h-12 items-center gap-2.5 self-start rounded-full bg-danger px-4 text-sm font-black text-white shadow-[var(--shadow-float)]"
+              onClick={() => unlockAudio()}
+            >
+              <IconVolumeOff size={20} />
+              {h.soundOff}
+            </button>
           )}
-          {roundBar && <RoundBar snap={snap} act={hs.act} onConfirm={setConfirm} />}
+          {!roundBar && !lobby && (
+            <span
+              className={cx(
+                "pointer-events-auto inline-flex min-h-10 items-center gap-2 self-start rounded-full px-4 text-sm font-extrabold whitespace-nowrap",
+                paused ? "bg-warn text-on-accent" : gathering ? "bg-ok text-on-accent" : "host-float text-txt",
+              )}
+            >
+              <span className={cx("size-2 rounded-full", paused || gathering ? "bg-on-accent/70" : "bg-ok")} aria-hidden />
+              {h.status[snap.status] ?? snap.status}
+              <span className="font-bold opacity-70">· {h.pin} {snap.pin}</span>
+            </span>
+          )}
+          {roundBar && <RoundBar snap={snap} act={hs.act} />}
           <AlarmStrip alarms={snap.alarms} onAck={(ids) => ids.forEach((id) => void hs.ack(id))} onFocus={focusAlarm} />
           {/* Under the alarms: safety beats game (CLAUDE.md rule 4). */}
           {!ceremony && <EventChip snap={snap} onOpen={() => setSheet({ kind: "events" })} />}
           <TeamsChip snap={snap} onOpen={() => setSheet({ kind: "teams" })} />
           {hs.error === "network" || hs.error === "timeout" ? (
-            <p className="m-drop-in pointer-events-auto rounded-2xl bg-warn px-4 py-2.5 text-sm font-bold text-on-accent shadow-[var(--shadow-float)]">
+            <p className="m-drop-in pointer-events-auto rounded-2xl bg-warn px-4 py-3 text-sm font-bold text-on-accent shadow-[var(--shadow-float)]">
               {h.errors.network}
             </p>
           ) : null}
@@ -227,75 +287,72 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
         {/* gathering roll call */}
         {gathering && (
           <button
-            className="host-float ui-press m-rise-in absolute inset-x-3 bottom-[calc(6rem+env(safe-area-inset-bottom))] z-10 flex min-h-14 items-center justify-between gap-3 rounded-2xl px-4 py-3 text-left lg:hidden"
+            className="host-float ui-press m-rise-in absolute inset-x-3 bottom-[calc(6.5rem+env(safe-area-inset-bottom))] z-10 flex min-h-16 items-center gap-3 rounded-2xl px-4 py-3 text-left lg:hidden"
             onClick={() => setSheet({ kind: "players", missingOnly: true })}
           >
-            <span className="font-extrabold">
-              🧲 {h.gatherPanel.title}: {h.gatherPanel.here(checkedIn, snap.players.length)}
+            <IconGather size={22} className="shrink-0 text-ok-text" />
+            <span className="min-w-0 flex-1">
+              <span className="block font-extrabold">{h.gatherPanel.title}</span>
+              <span className="block text-sm font-semibold text-txt-dim">{h.gatherPanel.here(checkedIn, snap.players.length)}</span>
             </span>
             <span className={cx("shrink-0 text-sm font-black", missing.length ? "text-warn-text" : "text-ok-text")}>
-              {h.gatherPanel.missing(missing.length)} ›
+              {h.gatherPanel.missing(missing.length)}
             </span>
+            <IconChevronRight size={18} className="shrink-0 text-txt-dim" />
           </button>
         )}
 
         {/* ceremony (0006): under the alarm strip, own controls */}
         {ceremony && snap.ceremony && <HostCeremony view={snap.ceremony} act={hs.act} onEnd={endFlow} />}
 
-        {/* bottom dock */}
+        {/* bottom action bar */}
         {!ceremony && (
           <nav className="absolute inset-x-0 bottom-0 z-10 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:mx-auto lg:max-w-2xl">
-            <div
-              className={cx(
-                "host-float grid gap-1 rounded-[1.4rem] p-1.5",
-                lobby || (gathering && playlistDone) ? "grid-cols-4" : "grid-cols-5",
-              )}
-            >
+            <div className={cx("host-float grid gap-1 rounded-[1.5rem] p-1.5", lobby || (gathering && playlistDone) ? "grid-cols-4" : "grid-cols-5")}>
               {gathering && playlistDone ? (
                 <>
-                  {/* The playlist is done: the ceremony is the next step, so it is the main button. */}
-                  <BarButton label={no.ceremony.start} tone="gold" wide onClick={() => setSheet({ kind: "ceremony" })} />
-                  <BarButton icon="📣" label={h.message} onClick={() => setSheet({ kind: "message", to: null })} />
-                  <BarButton icon="⋯" label={h.more} onClick={() => setSheet({ kind: "more" })} />
+                  {/* All rounds are done: the prize-giving is the next step, so it is the main button. */}
+                  <BarButton icon={<IconTrophy size={22} />} label={h.prize.start} tone="gold" wide onClick={() => setSheet({ kind: "ceremony" })} />
+                  <BarButton icon={<IconMegaphone size={22} />} label={h.message} onClick={() => setSheet({ kind: "message", to: null })} />
+                  <BarButton icon={<IconMore size={22} />} label={h.more} onClick={() => setSheet({ kind: "more" })} />
                 </>
               ) : lobby ? (
                 <>
                   <BarButton
-                    icon="▶"
+                    icon={<IconPlay size={22} />}
                     label={h.start}
                     tone="gold"
                     wide
+                    span={3}
                     disabled={snap.players.length === 0}
                     onClick={() =>
                       setConfirm({ message: h.startConfirm(snap.players.length), label: h.start, run: () => void hs.act("start") })
                     }
                   />
-                  <BarButton icon="📣" label={h.message} onClick={() => setSheet({ kind: "message", to: null })} />
-                  <BarButton icon="⋯" label={h.more} onClick={() => setSheet({ kind: "more" })} />
+                  <BarButton icon={<IconMore size={22} />} label={h.more} onClick={() => setSheet({ kind: "more" })} />
                 </>
               ) : (
                 <>
-                  {/* PLAN §6: ⏸ · 📣 · ⚡ · 🧲 · ⋯ (⚡ needs a round, 0007) */}
                   <BarButton
-                    icon={paused ? "▶" : "⏸"}
+                    icon={paused ? <IconPlay size={22} /> : <IconPause size={22} />}
                     label={paused ? h.resume : h.pause}
                     tone={paused ? "gold" : undefined}
                     onClick={() => void hs.act(paused ? "resume" : "pause")}
                   />
-                  <BarButton icon="📣" label={h.message} onClick={() => setSheet({ kind: "message", to: null })} />
+                  <BarButton icon={<IconMegaphone size={22} />} label={h.message} onClick={() => setSheet({ kind: "message", to: null })} />
                   <BarButton
-                    icon="⚡"
-                    label={no.events.button}
-                    tone={snap.event && !snap.event.done ? "gold" : undefined}
-                    onClick={() => setSheet({ kind: "events" })}
-                  />
-                  <BarButton
-                    icon="🧲"
+                    icon={gathering ? <IconPlay size={22} /> : <IconGather size={22} />}
                     label={gathering ? h.endGather : h.gather}
                     tone={gathering ? "ok" : undefined}
                     onClick={() => void hs.act(gathering ? "end_gather" : "gather")}
                   />
-                  <BarButton icon="⋯" label={h.more} onClick={() => setSheet({ kind: "more" })} />
+                  <BarButton
+                    icon={<IconZap size={22} />}
+                    label={h.surprise}
+                    tone={snap.event && !snap.event.done ? "gold" : undefined}
+                    onClick={() => setSheet({ kind: "events" })}
+                  />
+                  <BarButton icon={<IconMore size={22} />} label={h.more} onClick={() => setSheet({ kind: "more" })} />
                 </>
               )}
             </div>
@@ -305,8 +362,8 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
 
       {/* tablet / PC: always-visible list */}
       <aside className="hidden h-dvh flex-col border-l border-line bg-ink-2 lg:flex">
-        <div className="flex items-baseline justify-between gap-2 border-b border-line px-5 pt-5 pb-3">
-          <h2 className="text-lg font-black">{h.playersList}</h2>
+        <div className="flex items-baseline justify-between gap-2 border-b border-line px-5 pt-6 pb-4">
+          <h2 className="text-lg font-black">{gathering ? h.gatherPanel.title : h.playersList}</h2>
           <span className="text-sm font-bold text-txt-dim tabular-nums">
             {gathering ? h.gatherPanel.here(checkedIn, snap.players.length) : snap.players.length}
           </span>
@@ -361,15 +418,19 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
                 act={hs.act}
               />
             )}
+            {sheet.kind === "gps" && <GpsList players={snap.players} onSelect={select} />}
+            {sheet.kind === "rounds" && <RoundList snap={snap} />}
             {sheet.kind === "qr" && (
-              <div className="flex flex-col items-center gap-4 py-2">
+              <div className="flex flex-col items-center gap-5 py-4">
                 {joinUrl && (
-                  <div className="rounded-3xl bg-white p-4 shadow-[var(--shadow-card)]">
+                  <div className="rounded-[2rem] bg-white p-4 shadow-[var(--shadow-card)]">
                     <QRCode value={joinUrl} size={240} />
                   </div>
                 )}
-                <p className="text-xs font-bold uppercase tracking-[0.2em] text-txt-dim">{h.pin}</p>
-                <p className="-mt-3 font-mono text-5xl font-black tracking-[0.15em]">{snap.pin}</p>
+                <div className="text-center">
+                  <p className="text-xs font-bold uppercase tracking-[0.2em] text-txt-dim">{h.pin}</p>
+                  <p className="font-mono text-5xl font-black tracking-[0.15em]">{snap.pin}</p>
+                </div>
               </div>
             )}
             {sheet.kind === "ceremony" && (
@@ -382,29 +443,56 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
             {sheet.kind === "events" && <EventSheet snap={snap} hs={hs} />}
             {sheet.kind === "teams" && <TeamsSheet snap={snap} hs={hs} onSelect={select} />}
             {sheet.kind === "more" && (
-              <div className="grid gap-2">
+              <div className="space-y-6 pb-2">
                 {gathering && (
-                  <SheetButton tone="gold" onClick={() => setSheet({ kind: "ceremony" })}>
-                    {no.ceremony.start}
+                  <SheetButton tone="gold" icon={<IconTrophy />} onClick={() => setSheet({ kind: "ceremony" })}>
+                    {h.prize.start}
                   </SheetButton>
                 )}
-                <SheetButton onClick={() => setSheet({ kind: "qr" })}>▦ {h.showQr}</SheetButton>
-                <a href={`/host/${hs.sessionId}/tavle`} target="_blank" rel="noopener" className={sheetBtn()} data-testid="open-screen">
-                  {no.screen.open}
-                </a>
-                {qrCount > 0 && (
-                  <Link href={`/host/${hs.sessionId}/poster`} className={sheetBtn()}>
-                    {h.printQr(qrCount)}
-                  </Link>
+                {roundControls && (
+                  <MoreGroup title={h.moreGroups.round}>
+                    <SheetButton icon={<IconSkip />} onClick={nextRound}>
+                      {between ? h.round.startNow : h.round.next}
+                    </SheetButton>
+                  </MoreGroup>
                 )}
-                <SheetButton onClick={() => setSheet({ kind: "players" })}>
-                  👥 {h.playersList} <span className="ml-auto text-txt-dim tabular-nums">{snap.players.length}</span>
-                </SheetButton>
-                {(snap.plan?.teams ?? 0) >= 2 && <SheetButton onClick={() => setSheet({ kind: "teams" })}>{no.teams.host.title}</SheetButton>}
-                <div className="my-1 h-px bg-line" aria-hidden />
-                <SheetButton tone="danger" onClick={endFlow}>
-                  ■ {h.endSession}
-                </SheetButton>
+                <MoreGroup title={h.moreGroups.players}>
+                  {lobby && (
+                    <SheetButton icon={<IconMegaphone />} onClick={() => setSheet({ kind: "message", to: null })}>
+                      {h.message}
+                    </SheetButton>
+                  )}
+                  <SheetButton icon={<IconList />} onClick={() => setSheet({ kind: "players" })}>
+                    {h.playersList} <span className="ml-auto text-txt-dim tabular-nums">{snap.players.length}</span>
+                  </SheetButton>
+                  {(snap.plan?.teams ?? 0) >= 2 && (
+                    <SheetButton icon={<IconUsers />} onClick={() => setSheet({ kind: "teams" })}>
+                      {no.teams.host.title}
+                    </SheetButton>
+                  )}
+                  {!lobby && (
+                    <SheetButton icon={<IconQr />} onClick={() => setSheet({ kind: "qr" })}>
+                      {h.showQr}
+                    </SheetButton>
+                  )}
+                </MoreGroup>
+                <MoreGroup title={h.moreGroups.show}>
+                  <a href={`/host/${hs.sessionId}/tavle`} target="_blank" rel="noopener" className={sheetBtn()} data-testid="open-screen">
+                    <IconScreen className="shrink-0 text-txt-dim" />
+                    {no.screen.open}
+                  </a>
+                  {qrCount > 0 && (
+                    <Link href={`/host/${hs.sessionId}/poster`} className={sheetBtn()}>
+                      <IconPrinter className="shrink-0 text-txt-dim" />
+                      {h.printQr(qrCount)}
+                    </Link>
+                  )}
+                </MoreGroup>
+                <div className="border-t border-line pt-6">
+                  <SheetButton tone="danger" icon={<IconStop />} onClick={endFlow}>
+                    {h.endSession}
+                  </SheetButton>
+                </div>
               </div>
             )}
           </div>
@@ -425,6 +513,15 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
         />
       )}
     </div>
+  );
+}
+
+function MoreGroup({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section>
+      <h3 className="mb-2 px-1 text-xs font-bold uppercase tracking-[0.15em] text-txt-dim">{title}</h3>
+      <div className="grid gap-2">{children}</div>
+    </section>
   );
 }
 
@@ -452,7 +549,7 @@ export function groupAlarms(alarms: HostAlarm[]) {
 function AlarmStrip({ alarms, onAck, onFocus }: { alarms: HostAlarm[]; onAck: (ids: string[]) => void; onFocus: (a: HostAlarm) => void }) {
   const [expanded, setExpanded] = useState(false);
   if (!alarms.length) return null;
-  // Server order (unacked first, then sos › forbidden › outside › signal › speed) is kept.
+  // Server order (unacked first, then sos, forbidden, outside, signal, speed) is kept.
   const groups = groupAlarms(alarms);
   // Always in sight, no tap needed (rule 4): the most severe row and every open SOS.
   const pinned = groups.filter((g, i) => i === 0 || (g.a.kind === "sos" && !g.a.acked));
@@ -464,31 +561,39 @@ function AlarmStrip({ alarms, onAck, onFocus }: { alarms: HostAlarm[]; onAck: (i
       {shown.map(({ a, ids }, i) => {
         const urgent = !a.acked;
         const sos = a.kind === "sos";
+        const Icon = ALARM_ICON[a.kind] ?? IconAlert;
         return (
           <li
             key={a.id}
             className={cx(
-              "flex items-center gap-2 rounded-2xl py-1.5 pr-1.5 pl-4",
+              "flex items-center gap-2 rounded-2xl py-1.5 pr-1.5 pl-3",
               urgent
                 ? cx("bg-danger text-white shadow-[0_10px_30px_-10px_rgb(255_59_48/0.7)]", sos && "host-sos")
                 : "host-float text-txt-dim",
             )}
           >
-            <button className="min-h-12 min-w-0 flex-1 text-left" onClick={() => onFocus(a)}>
-              <span className="block truncate font-black leading-tight">
-                {sos ? "🆘 " : ""}
-                {h.alarms[a.kind] ?? a.kind}
-                {a.level >= 2 && a.kind === "outside" ? <span className="font-bold"> · {h.alarmHigh}</span> : null}
+            <button className="flex min-h-12 min-w-0 flex-1 items-center gap-3 text-left" onClick={() => onFocus(a)}>
+              <span
+                className={cx("grid size-9 shrink-0 place-items-center rounded-full", urgent ? "bg-white/20" : "bg-ink-3")}
+                aria-hidden
+              >
+                <Icon size={sos ? 22 : 20} />
               </span>
-              <span className={cx("block truncate text-sm font-bold", urgent ? "text-white/90" : "text-txt-dim")}>
-                {a.nickname ?? "?"}
-                {a.resolved ? ` · ${h.over}` : ""}
+              <span className="min-w-0">
+                <span className="block truncate font-black leading-tight">
+                  {h.alarms[a.kind] ?? a.kind}
+                  {a.level >= 2 && a.kind === "outside" ? <span className="font-bold"> · {h.alarmHigh}</span> : null}
+                </span>
+                <span className={cx("block truncate text-sm font-bold", urgent ? "text-white/90" : "text-txt-dim")}>
+                  {a.nickname ?? "?"}
+                  {a.resolved ? ` · ${h.over}` : ""}
+                </span>
               </span>
             </button>
             {i === 0 && rest.length > 0 && (
               <button
                 className={cx(
-                  "ui-press relative min-h-12 min-w-12 shrink-0 rounded-xl px-3 text-sm font-black tabular-nums",
+                  "ui-press relative flex min-h-12 min-w-12 shrink-0 items-center justify-center rounded-xl px-3 text-sm font-black tabular-nums",
                   urgent ? "bg-white/20 text-white hover:bg-white/30" : "bg-ink-3 text-txt",
                 )}
                 onClick={() => setExpanded((v) => !v)}
@@ -496,7 +601,7 @@ function AlarmStrip({ alarms, onAck, onFocus }: { alarms: HostAlarm[]; onAck: (i
                 aria-label={expanded ? h.alarmLess : h.alarmMore(rest.length, restOpen)}
                 data-testid="alarm-more"
               >
-                {expanded ? "▲" : `+${rest.length}`}
+                {expanded ? <IconChevronUp size={20} /> : `+${rest.length}`}
                 {!expanded && restOpen > 0 && (
                   <span className="absolute -top-1 -right-1 size-3 rounded-full border-2 border-danger bg-white" aria-hidden />
                 )}
@@ -530,117 +635,176 @@ function useFreshIds(ids: string[]): Set<string> {
   return fresh;
 }
 
+/** 0 good, 1 weak, 2 missing/bad. */
+function gpsLevel(p: HostPlayer): 0 | 1 | 2 {
+  return p.acc === null || p.signal === "none" || p.signal === "lost" ? 2 : p.acc < 15 ? 0 : p.acc <= 30 ? 1 : 2;
+}
+
+/** Lobby, Kahoot style: big QR and PIN, the head count, one Start button (in the bar). */
 function LobbyBoard({
   pin,
   joinUrl,
   players,
   onSelect,
   snap,
-  sessionId,
+  onGps,
+  onRounds,
 }: {
   pin: string;
   joinUrl: string;
   players: HostPlayer[];
   onSelect: (id: string) => void;
   snap: Snapshot;
-  sessionId: string;
+  onGps: () => void;
+  onRounds: () => void;
 }) {
   const plan = snap.plan;
-  // 0013: a big group lists only the phones that need help (GPS weak or missing).
-  const [showAll, setShowAll] = useState(false);
   const crowd = players.length >= CROWD_FROM;
-  const level = (p: HostPlayer) => (p.acc === null || p.signal === "none" || p.signal === "lost" ? 2 : p.acc < 15 ? 0 : p.acc <= 30 ? 1 : 2);
   const counts = [0, 0, 0];
-  for (const p of players) counts[level(p)]++;
-  const shown = crowd && !showAll ? players.filter((p) => level(p) > 0) : players;
+  for (const p of players) counts[gpsLevel(p)]++;
+  const issues = counts[1] + counts[2];
   const fresh = useFreshIds(players.map((p) => p.id));
+  const count = useCountUp(players.length);
   const host = joinUrl.replace(/^https?:\/\//, "").replace(/\/\d+$/, "");
   return (
-    <div className="h-full overflow-y-auto px-4 pt-20 pb-32 lg:px-8">
-      <Card className="m-rise-in mx-auto flex max-w-3xl flex-col items-center gap-6 p-6 text-center sm:flex-row sm:items-center sm:gap-8 sm:p-8 sm:text-left">
-        <div className="shrink-0 rounded-3xl border border-line bg-white p-3">
-          {joinUrl ? <QRCode value={joinUrl} size={208} /> : <div className="size-[208px] rounded-xl bg-ink-3" />}
-        </div>
-        <div className="min-w-0 flex-1">
-          <h1 className="text-3xl font-black tracking-tight">{h.lobbyTitle}</h1>
-          <p className="mt-1.5 text-txt-dim">
-            {h.scan} <span className="font-bold whitespace-nowrap text-txt">{host}</span>
-          </p>
-          <p className="mt-5 text-xs font-bold uppercase tracking-[0.2em] text-txt-dim">{h.pin}</p>
-          <p className="font-mono text-6xl font-black tracking-[0.12em] text-txt" data-testid="pin">
-            {pin}
-          </p>
-          <span className="mt-1 block h-1 w-16 rounded-full bg-gold max-sm:mx-auto" aria-hidden />
-        </div>
-      </Card>
+    <div className="h-full overflow-y-auto px-5 pt-20 pb-36 lg:px-10">
+      <div className="m-rise-in mx-auto flex max-w-3xl flex-col items-center text-center">
+        <h1 className="text-sm font-bold uppercase tracking-[0.25em] text-txt-dim">{h.lobbyTitle}</h1>
 
-      {!!(plan?.rounds?.length || plan?.qr_posts) && (
-        <div className="m-rise-in mx-auto mt-4 flex max-w-3xl flex-wrap items-center gap-2">
-          {plan?.rounds?.length ? (
-            <>
-              <span className="mr-1 text-sm font-bold text-txt-dim">
-                {h.round.playlist(plan.rounds.length, Math.round(planTotalS(plan) / 60))}
-              </span>
-              {plan.rounds.map((r, i) => (
-                <span key={i} className="inline-flex items-center rounded-full bg-ink-2 px-3 py-1.5 text-xs font-bold shadow-[var(--shadow-card)]">
-                  <span className="mr-1.5 text-txt-dim">{i + 1}</span>
-                  {roundName(r)} · {Math.round(r.duration_s / 60)}′
-                </span>
-              ))}
-            </>
-          ) : null}
-          {plan?.qr_posts ? (
-            <Link href={`/host/${sessionId}/poster`} className={buttonClass("secondary", "md", "ml-auto")}>
-              {h.printQr(plan.qr_posts)}
-            </Link>
-          ) : null}
+        <div className="mt-6 flex flex-col items-center gap-8 sm:flex-row sm:gap-14">
+          <div className="rounded-[2rem] bg-white p-4 shadow-[var(--shadow-card)]">
+            {joinUrl ? <QRCode value={joinUrl} size={232} /> : <div className="size-[232px] rounded-xl bg-ink-3" />}
+          </div>
+          <div className="sm:text-left">
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-txt-dim">{h.pin}</p>
+            <p className="font-mono text-7xl font-black leading-none tracking-[0.12em] text-txt" data-testid="pin">
+              {pin}
+            </p>
+            <span className="mt-4 block h-1.5 w-16 rounded-full bg-gold max-sm:mx-auto" aria-hidden />
+            <p className="mt-4 text-txt-dim">
+              {h.scan} <span className="font-bold whitespace-nowrap text-txt">{host}</span>
+            </p>
+          </div>
         </div>
-      )}
 
-      <section className="mx-auto mt-8 max-w-3xl">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-lg font-extrabold" aria-live="polite">
-            {players.length ? h.players(players.length) : h.waiting}
-          </h2>
-          {crowd && <span className="text-sm font-bold text-txt-dim">{no.crowd.summary(counts[0], counts[1], counts[2])}</span>}
+        <div className="mt-14" aria-live="polite">
+          {players.length ? (
+            <p>
+              <span className="block text-7xl font-black leading-none tabular-nums">{count}</span>
+              <span className="mt-2 block text-lg font-bold text-txt-dim">{h.joined(players.length)}</span>
+            </p>
+          ) : (
+            <p className="flex items-center gap-3 text-lg font-bold text-txt-dim">
+              <span className="size-2.5 animate-pulse rounded-full bg-gold" aria-hidden />
+              {h.waiting}
+            </p>
+          )}
         </div>
-        {crowd && (
-          <button className={buttonClass("secondary", "sm", "mt-2 min-h-12")} onClick={() => setShowAll((v) => !v)} data-testid="crowd-toggle">
-            {showAll ? no.crowd.issuesOnly(counts[1] + counts[2]) : no.crowd.showAll(players.length)}
+
+        {players.length > 0 && (
+          <button
+            className="ui-press mt-5 inline-flex min-h-12 items-center gap-2.5 rounded-full bg-ink-2 px-5 text-sm font-bold shadow-[var(--shadow-card)] hover:bg-ink-3"
+            onClick={onGps}
+            data-testid="gps-summary"
+          >
+            <IconLocate size={18} className={issues ? "text-warn-text" : "text-ok-text"} />
+            {issues ? h.gpsSummary(counts[1], counts[2]) : h.gpsAllOk}
+            <IconChevronRight size={16} className="text-txt-dim" />
           </button>
         )}
-        {!players.length && (
-          <div className="mt-3 flex items-center gap-3 rounded-[var(--radius-card)] border border-dashed border-line px-4 py-5 text-txt-dim">
-            <span className="size-2.5 animate-pulse rounded-full bg-gold" aria-hidden />
-            {h.waiting}
-          </div>
-        )}
-        <ul className="mt-3 grid gap-2 sm:grid-cols-2">
-          {shown.map((p) => {
-            const b = gpsBadge(p);
-            return (
+
+        {!crowd && players.length > 0 && (
+          <ul className="mt-8 flex max-w-2xl flex-wrap justify-center gap-2">
+            {players.map((p) => (
               <li key={p.id} className={fresh.has(p.id) ? "host-join" : undefined}>
                 <button
-                  className="ui-press flex min-h-14 w-full items-center justify-between gap-3 rounded-2xl bg-ink-2 px-4 py-2.5 text-left shadow-[var(--shadow-card)] hover:bg-ink-3"
+                  className={cx(
+                    "ui-press min-h-12 rounded-full bg-ink-2 px-4 font-bold shadow-[var(--shadow-card)] hover:bg-ink-3",
+                    gpsLevel(p) === 2 && "ring-2 ring-danger/60",
+                  )}
                   onClick={() => onSelect(p.id)}
                 >
-                  <span className="truncate font-bold">{p.nickname}</span>
-                  <Chip tone={b.tone}>{b.label}</Chip>
+                  {p.nickname}
                 </button>
               </li>
-            );
-          })}
-        </ul>
-      </section>
+            ))}
+          </ul>
+        )}
+
+        {plan?.rounds?.length ? (
+          <button
+            className="ui-press mt-10 inline-flex min-h-12 items-center gap-2 rounded-full px-4 text-sm font-bold text-txt-dim hover:bg-ink-2 hover:text-txt"
+            onClick={onRounds}
+          >
+            <IconList size={18} />
+            {h.round.playlist(plan.rounds.length, Math.round(planTotalS(plan) / 60))}
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/** The planned rounds, in order. */
+function RoundList({ snap }: { snap: Snapshot }) {
+  const rounds = snap.plan?.rounds ?? [];
+  return (
+    <ol className="space-y-2 pb-2">
+      {rounds.map((r, i) => (
+        <li key={i} className="flex min-h-14 items-center gap-4 rounded-2xl bg-ink px-4">
+          <span className="grid size-8 shrink-0 place-items-center rounded-full bg-ink-3 text-sm font-black tabular-nums">{i + 1}</span>
+          <span className="min-w-0 flex-1 truncate font-bold">{roundName(r)}</span>
+          <span className="shrink-0 text-sm font-bold text-txt-dim tabular-nums">{h.round.minutes(Math.round(r.duration_s / 60))}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/** GPS details per pupil. A big group lists only the phones that need help (0013). */
+function GpsList({ players, onSelect }: { players: HostPlayer[]; onSelect: (id: string) => void }) {
+  const [showAll, setShowAll] = useState(false);
+  const crowd = players.length >= CROWD_FROM;
+  const counts = [0, 0, 0];
+  for (const p of players) counts[gpsLevel(p)]++;
+  const shown = (crowd && !showAll ? players.filter((p) => gpsLevel(p) > 0) : players)
+    .slice()
+    .sort((a, b) => gpsLevel(b) - gpsLevel(a));
+  return (
+    <div className="pb-2">
+      <p className="text-sm font-bold text-txt-dim">{no.crowd.summary(counts[0], counts[1], counts[2])}</p>
+      {crowd && (
+        <button className={buttonClass("secondary", "sm", "mt-3 min-h-12")} onClick={() => setShowAll((v) => !v)} data-testid="crowd-toggle">
+          {showAll ? no.crowd.issuesOnly(counts[1] + counts[2]) : no.crowd.showAll(players.length)}
+        </button>
+      )}
+      <ul className="mt-4 space-y-1.5">
+        {shown.map((p) => {
+          const b = gpsBadge(p);
+          return (
+            <li key={p.id}>
+              <button
+                className="ui-press flex min-h-12 w-full items-center justify-between gap-3 rounded-2xl bg-ink px-4 py-2 text-left hover:bg-ink-3"
+                onClick={() => onSelect(p.id)}
+              >
+                <span className="truncate font-bold">{p.nickname}</span>
+                <Chip tone={b.tone}>{b.label}</Chip>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      {crowd && !showAll && counts[0] > 0 && <p className="mt-3 px-1 text-sm text-txt-dim">{no.crowd.others(counts[0])}</p>}
     </div>
   );
 }
 
 function gpsBadge(p: HostPlayer): { label: string; tone: "ok" | "warn" | "danger" } {
   if (p.acc === null || p.signal === "none" || p.signal === "lost") return { label: h.gps.none, tone: "danger" };
-  if (p.acc < 15) return { label: `${h.gps.ok} ±${Math.round(p.acc)} m`, tone: "ok" };
-  if (p.acc <= 30) return { label: `${h.gps.warn} ±${Math.round(p.acc)} m`, tone: "warn" };
-  return { label: `${h.gps.bad} ±${Math.round(p.acc)} m`, tone: "danger" };
+  const m = `${Math.round(p.acc)} m`;
+  if (p.acc < 15) return { label: `${h.gps.ok} · ${m}`, tone: "ok" };
+  if (p.acc <= 30) return { label: `${h.gps.warn} · ${m}`, tone: "warn" };
+  return { label: `${h.gps.bad} · ${m}`, tone: "danger" };
 }
 
 function PlayerList({
@@ -665,7 +829,7 @@ function PlayerList({
     <>
       {crowd && (
         <input
-          className="mb-2 min-h-12 w-full rounded-[var(--radius-ctl)] border border-line bg-ink px-4 font-bold outline-none focus:border-gold-deep"
+          className="mb-3 min-h-12 w-full rounded-[var(--radius-ctl)] border border-line bg-ink px-4 font-bold outline-none focus:border-gold-deep"
           placeholder={no.crowd.search}
           value={q}
           onChange={(e) => setQ(e.target.value)}
@@ -674,6 +838,7 @@ function PlayerList({
         />
       )}
       {crowd && needle && list.length === 0 && <p className="px-1 text-sm text-txt-dim">{no.crowd.noMatch}</p>}
+      {gathering && players.length === 0 && <p className="px-1 py-2 font-bold text-ok-text">{h.gatherPanel.missing(0)}</p>}
       <ul className="space-y-0.5">
         {list.map((p) => {
           const s = dotState(p, sosPlayers.has(p.id), status);
@@ -682,15 +847,15 @@ function PlayerList({
               <span className="size-3.5 shrink-0 rounded-full border-2 shadow-sm" style={{ background: s.bg, borderColor: s.ring }} aria-hidden />
               <button className="flex min-h-12 min-w-0 flex-1 items-center gap-2 text-left" onClick={() => onSelect(p.id)}>
                 <span className="truncate font-bold">{p.nickname}</span>
-                <span className={cx("shrink-0 text-xs font-semibold", p.signal === "ok" ? "text-txt-dim" : "text-warn-text")}>
-                  {h.card.signal[p.signal]}
-                </span>
+                {p.signal !== "ok" && <span className="shrink-0 text-xs font-semibold text-warn-text">{h.card.signal[p.signal]}</span>}
               </button>
               {gathering &&
                 (p.checked_in ? (
-                  <span className="text-sm font-black text-ok-text">✔</span>
+                  <span className="grid size-9 place-items-center rounded-full bg-ok/15 text-ok-text" aria-label={h.card.checkedIn} role="img">
+                    <IconCheck size={18} />
+                  </span>
                 ) : (
-                  <Button variant="ok" size="sm" className="min-h-10" onClick={() => void act("check_in", { player_id: p.id })}>
+                  <Button variant="ok" size="sm" className="min-h-12" onClick={() => void act("check_in", { player_id: p.id })}>
                     {h.card.checkIn}
                   </Button>
                 ))}
@@ -733,12 +898,12 @@ function PlayerCard({
   const field = "min-h-12 rounded-[var(--radius-ctl)] border border-line bg-ink-2 px-4 font-bold outline-none focus:border-gold-deep";
 
   return (
-    <div>
+    <div className="pb-2">
       <div className="flex flex-wrap gap-1.5">
         <Chip tone="neutral">{h.card.role[p.role] ?? p.role}</Chip>
         <Chip tone={p.signal !== "ok" ? "warn" : "ok"}>
           {h.card.signal[p.signal]}
-          {p.acc !== null ? ` ${h.card.accuracy(p.acc)}` : ""}
+          {p.acc !== null ? ` · ${h.card.accuracy(p.acc)}` : ""}
           {p.fix_age_s !== null ? ` · ${h.card.age(p.fix_age_s)}` : ""}
         </Chip>
         <Chip tone={p.forbidden || p.geofence >= 2 ? "danger" : p.geofence >= 1 ? "warn" : "ok"}>
@@ -747,7 +912,7 @@ function PlayerCard({
         </Chip>
         {p.still_s !== null && p.still_s > SAFETY.still_alert_s && status === "live" && <Chip tone="warn">{h.still(p.still_s)}</Chip>}
       </div>
-      <dl className="mt-4 grid grid-cols-3 gap-2 text-center">
+      <dl className="mt-5 grid grid-cols-3 gap-2 text-center">
         <Stat label={h.card.distance} value={no.play.meters(p.distance_m)} />
         <Stat label={h.card.active} value={no.play.minutes(p.active_s)} />
         <Stat label={h.card.points} value={String(points)} />
@@ -761,7 +926,7 @@ function PlayerCard({
 
       {renaming ? (
         <form
-          className="m-rise-in mt-4 flex gap-2"
+          className="m-rise-in mt-5 flex gap-2"
           onSubmit={async (e) => {
             e.preventDefault();
             setErr(null);
@@ -771,12 +936,12 @@ function PlayerCard({
           }}
         >
           <input className={cx(field, "min-w-0 flex-1")} value={name} maxLength={20} onChange={(e) => setName(e.target.value)} autoFocus />
-          <button className={buttonClass("primary", "md")}>{h.card.save}</button>
+          <button className={buttonClass("primary", "md", "min-h-12")}>{h.card.save}</button>
         </form>
       ) : null}
       {adjusting && (
         <form
-          className="m-rise-in mt-4 space-y-2.5 rounded-2xl bg-ink p-3"
+          className="m-rise-in mt-5 space-y-3 rounded-2xl bg-ink p-4"
           onSubmit={async (e) => {
             e.preventDefault();
             if (!reason.trim()) return;
@@ -808,7 +973,7 @@ function PlayerCard({
                 key={q}
                 type="button"
                 className={cx(
-                  "ui-press min-h-10 rounded-full border px-3 text-xs font-bold",
+                  "ui-press min-h-12 rounded-full border px-4 text-sm font-bold",
                   reason === q ? "border-gold-deep bg-gold/20 text-txt" : "border-line bg-ink-2",
                 )}
                 onClick={() => setReason(q)}
@@ -818,7 +983,7 @@ function PlayerCard({
             ))}
           </div>
           <input className={cx(field, "w-full")} placeholder={h.card.adjustReason} value={reason} maxLength={80} onChange={(e) => setReason(e.target.value)} />
-          <button className={buttonClass("primary", "md", "w-full")} disabled={!reason.trim()}>
+          <button className={buttonClass("primary", "md", "min-h-12 w-full")} disabled={!reason.trim()}>
             {h.card.adjustSave(delta)}
           </button>
         </form>
@@ -826,37 +991,61 @@ function PlayerCard({
       {err && <p className="mt-2 text-sm font-semibold text-danger-text">{err}</p>}
 
       {hs.snap && status !== "ceremony" && (
-        <div className="mt-4">
+        <div className="mt-5">
           <TeamMoveRow p={p} snap={hs.snap} hs={hs} />
         </div>
       )}
 
-      <div className="mt-5 grid grid-cols-2 gap-2">
-        {p.pos && <SheetButton onClick={() => onShow(p.pos!.lat, p.pos!.lng)}>📍 {h.card.showOnMap}</SheetButton>}
-        <SheetButton onClick={onMessage}>📣 {h.card.sendMessage}</SheetButton>
-        {status === "gathering" && (
-          <SheetButton tone={p.checked_in ? undefined : "ok"} onClick={() => void hs.act("check_in", { player_id: p.id, checked: !p.checked_in })}>
-            {p.checked_in ? h.card.uncheck : `✔ ${h.card.checkIn}`}
+      <div className="mt-6 grid grid-cols-2 gap-2">
+        {p.pos && (
+          <SheetButton icon={<IconMapPin />} onClick={() => onShow(p.pos!.lat, p.pos!.lng)}>
+            {h.card.showOnMap}
           </SheetButton>
         )}
-        <SheetButton onClick={() => void hs.act("sit_out", { player_id: p.id, on: !sitting })}>
-          {sitting ? `↩ ${h.card.sitIn}` : `🩹 ${h.card.sitOut}`}
+        <SheetButton icon={<IconMessage />} onClick={onMessage}>
+          {h.card.sendMessage}
         </SheetButton>
-        <SheetButton onClick={() => setRenaming((r) => !r)}>✏️ {h.card.rename}</SheetButton>
-        {live && <SheetButton onClick={() => setAdjusting((a) => !a)}>{h.card.adjust}</SheetButton>}
+        {status === "gathering" && (
+          <SheetButton
+            tone={p.checked_in ? undefined : "ok"}
+            icon={p.checked_in ? <IconUndo /> : <IconCheck />}
+            onClick={() => void hs.act("check_in", { player_id: p.id, checked: !p.checked_in })}
+          >
+            {p.checked_in ? h.card.uncheck : h.card.checkIn}
+          </SheetButton>
+        )}
+        <SheetButton icon={sitting ? <IconUndo /> : <IconMinusCircle />} onClick={() => void hs.act("sit_out", { player_id: p.id, on: !sitting })}>
+          {sitting ? h.card.sitIn : h.card.sitOut}
+        </SheetButton>
+        {live && (
+          <SheetButton icon={<IconStar />} onClick={() => setAdjusting((a) => !a)}>
+            {h.card.adjust}
+          </SheetButton>
+        )}
+        <SheetButton icon={<IconPencil />} onClick={() => setRenaming((r) => !r)}>
+          {h.card.rename}
+        </SheetButton>
         {tagLive && p.role === "prey" && (
-          <SheetButton onClick={() => void hs.act("set_role", { player_id: p.id, role: "hunter" })}>{h.card.makeHunter}</SheetButton>
+          <SheetButton icon={<IconTarget />} onClick={() => void hs.act("set_role", { player_id: p.id, role: "hunter" })}>
+            {h.card.makeHunter}
+          </SheetButton>
         )}
         {tagLive && p.role === "hunter" && (
-          <SheetButton onClick={() => void hs.act("set_role", { player_id: p.id, role: "prey" })}>{h.card.makePrey}</SheetButton>
+          <SheetButton icon={<IconMove />} onClick={() => void hs.act("set_role", { player_id: p.id, role: "prey" })}>
+            {h.card.makePrey}
+          </SheetButton>
         )}
         {status !== "ceremony" && (
-          <SheetButton onClick={() => void hs.act("set_role", { player_id: p.id, role: p.role === "referee" ? "player" : "referee" })}>
+          <SheetButton
+            icon={p.role === "referee" ? <IconUndo /> : <IconShield />}
+            onClick={() => void hs.act("set_role", { player_id: p.id, role: p.role === "referee" ? "player" : "referee" })}
+          >
             {p.role === "referee" ? h.card.backToPlay : h.card.makeReferee}
           </SheetButton>
         )}
         {status !== "ceremony" && (p.role === "referee" || awarded) && (
           <SheetButton
+            icon={<IconTrophy />}
             onClick={async () => {
               setErr(null);
               if (!(await hs.act("referee_award", { player_id: p.id, on: !awarded })) && !awarded) setErr(h.card.awardFull);
@@ -865,8 +1054,10 @@ function PlayerCard({
             {awarded ? h.card.unaward : h.card.award}
           </SheetButton>
         )}
-        <SheetButton tone="danger" onClick={() => onKick(p)}>
-          ✕ {h.card.kick}
+      </div>
+      <div className="mt-6 border-t border-line pt-6">
+        <SheetButton tone="danger" icon={<IconX />} onClick={() => onKick(p)}>
+          {h.card.kick}
         </SheetButton>
       </div>
     </div>
@@ -877,6 +1068,7 @@ function MessageSheet({ onSend }: { onSend: (text: string) => void }) {
   const [text, setText] = useState("");
   return (
     <form
+      className="pb-2"
       onSubmit={(e) => {
         e.preventDefault();
         if (text.trim()) onSend(text.trim());
@@ -889,15 +1081,16 @@ function MessageSheet({ onSend }: { onSend: (text: string) => void }) {
           </button>
         ))}
       </div>
-      <div className="mt-4 flex gap-2">
+      <div className="mt-6 flex gap-2">
         <input
           className="min-h-12 min-w-0 flex-1 rounded-[var(--radius-ctl)] border border-line bg-ink px-4 font-bold outline-none focus:border-gold-deep"
           placeholder={h.msg.placeholder}
           maxLength={200}
           value={text}
           onChange={(e) => setText(e.target.value)}
+          aria-label={h.msg.placeholder}
         />
-        <button className={buttonClass("primary", "md")} disabled={!text.trim()}>
+        <button className={buttonClass("primary", "md", "min-h-12")} disabled={!text.trim()}>
           {h.msg.send}
         </button>
       </div>
@@ -911,20 +1104,22 @@ function BarButton({
   onClick,
   tone,
   wide,
+  span = 2,
   disabled,
 }: {
-  icon?: string;
+  icon?: React.ReactNode;
   label: string;
   onClick: () => void;
   tone?: "gold" | "ok";
   wide?: boolean;
+  span?: 2 | 3;
   disabled?: boolean;
 }) {
   return (
     <button
       className={cx(
-        "ui-press flex min-h-14 items-center justify-center rounded-2xl font-extrabold disabled:opacity-40",
-        wide ? "col-span-2 gap-2 px-3 text-base" : "flex-col gap-1 px-1 text-[11px] leading-tight",
+        "ui-press flex min-h-16 items-center justify-center rounded-2xl font-extrabold disabled:opacity-40",
+        wide ? cx(span === 3 ? "col-span-3" : "col-span-2", "gap-2.5 px-3 text-lg") : "min-w-0 flex-col gap-1 px-0.5 text-[11px] leading-tight",
         tone === "gold"
           ? "bg-gold text-on-accent shadow-[var(--shadow-card)] hover:bg-gold-light"
           : tone === "ok"
@@ -935,18 +1130,18 @@ function BarButton({
       disabled={disabled}
     >
       {icon && (
-        <span className={cx("leading-none", wide ? "text-xl" : "text-lg")} aria-hidden>
+        <span className="shrink-0 leading-none" aria-hidden>
           {icon}
         </span>
       )}
-      <span className="text-center">{label}</span>
+      <span className="max-w-full text-center break-words hyphens-manual">{label}</span>
     </button>
   );
 }
 
 function sheetBtn(tone?: "danger" | "gold" | "ok") {
   return cx(
-    "ui-press flex min-h-12 items-center gap-2 rounded-[var(--radius-ctl)] px-4 py-2.5 text-left font-bold",
+    "ui-press flex min-h-14 w-full items-center gap-3 rounded-[var(--radius-ctl)] px-4 py-3 text-left font-bold",
     tone === "danger"
       ? "bg-danger/10 text-danger-text hover:bg-danger/15"
       : tone === "gold"
@@ -957,9 +1152,24 @@ function sheetBtn(tone?: "danger" | "gold" | "ok") {
   );
 }
 
-function SheetButton({ children, onClick, tone }: { children: React.ReactNode; onClick: () => void; tone?: "danger" | "gold" | "ok" }) {
+function SheetButton({
+  children,
+  onClick,
+  tone,
+  icon,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  tone?: "danger" | "gold" | "ok";
+  icon?: React.ReactNode;
+}) {
   return (
     <button className={sheetBtn(tone)} onClick={onClick}>
+      {icon && (
+        <span className={cx("shrink-0", tone ? "" : "text-txt-dim")} aria-hidden>
+          {icon}
+        </span>
+      )}
       {children}
     </button>
   );
@@ -967,9 +1177,9 @@ function SheetButton({ children, onClick, tone }: { children: React.ReactNode; o
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl bg-ink px-2 py-3">
+    <div className="rounded-2xl bg-ink px-2 py-4">
       <dt className="text-[11px] font-bold uppercase tracking-wide text-txt-dim">{label}</dt>
-      <dd className="mt-0.5 text-xl font-black tabular-nums">{value}</dd>
+      <dd className="mt-1 text-xl font-black tabular-nums">{value}</dd>
     </div>
   );
 }
@@ -978,16 +1188,8 @@ function Center({ children }: { children: React.ReactNode }) {
   return <main className="m-fade-in flex min-h-dvh flex-col items-center justify-center bg-ink px-6 text-center">{children}</main>;
 }
 
-/** Round clock + teacher round controls (PLAN §13 phase 2: «neste runde, forleng»). */
-function RoundBar({
-  snap,
-  act,
-  onConfirm,
-}: {
-  snap: Snapshot;
-  act: HostSession["act"];
-  onConfirm: (c: Confirm) => void;
-}) {
+/** Compact status line: round x of y, game name, time left, «+1 min» while live. «Neste runde» lives in «Mer». */
+function RoundBar({ snap, act }: { snap: Snapshot; act: HostSession["act"] }) {
   const [now, setNow] = useState(() => Date.now());
   const [offset, setOffset] = useState(0);
   useEffect(() => {
@@ -1004,14 +1206,14 @@ function RoundBar({
   const status = h.status[snap.status] ?? snap.status;
   if (snap.playlist_done) {
     return (
-      <div className="host-float m-drop-in pointer-events-auto flex items-center gap-3 rounded-2xl px-4 py-2.5" data-testid="round-bar">
-        <span className="grid size-8 shrink-0 place-items-center rounded-full bg-ok text-sm font-black text-on-accent" aria-hidden>
-          ✔
+      <div className="host-float m-drop-in pointer-events-auto flex items-center gap-3 rounded-2xl px-4 py-3" data-testid="round-bar">
+        <span className="grid size-9 shrink-0 place-items-center rounded-full bg-ok text-on-accent" aria-hidden>
+          <IconCheck size={18} />
         </span>
         <div className="min-w-0">
           <p className="text-sm font-extrabold leading-snug">{h.round.done}</p>
           <p className="truncate text-xs font-semibold text-txt-dim">
-            {status} · PIN {snap.pin}
+            {status} · {h.pin} {snap.pin}
           </p>
         </div>
       </div>
@@ -1033,55 +1235,58 @@ function RoundBar({
         : live && r.relay
           ? h.round.relay((snap.teams ?? []).map((t) => `${t.name} ${r.relay?.legs[String(t.n)] ?? 0}`).join(" · "))
           : null;
-  const sub = [h.round.of(r.idx + 1, r.count), live ? null : status, detail ?? `PIN ${snap.pin}`].filter(Boolean).join(" · ");
-  const btn = "ui-press min-h-12 shrink-0 rounded-xl bg-ink-3 px-2.5 text-sm font-extrabold whitespace-nowrap hover:brightness-95";
+  const sub = [h.round.of(r.idx + 1, r.count), live ? null : status, detail].filter(Boolean).join(" · ");
   return (
     <div
       className={cx(
-        "host-float pointer-events-auto flex items-center gap-2 rounded-2xl py-1.5 pr-1.5 pl-4 transition-shadow duration-[var(--dur-2)]",
+        "host-float pointer-events-auto flex items-center gap-3 rounded-2xl py-2 pr-2 pl-4 transition-shadow duration-[var(--dur-2)]",
         paused && "ring-2 ring-warn",
         snap.status === "gathering" && "ring-2 ring-ok",
       )}
       data-testid="round-bar"
     >
-      <div className="min-w-0 flex-1 py-1">
-        <p className="truncate text-sm font-extrabold leading-tight">{roundName(r)}</p>
-        <p className={cx("line-clamp-2 text-xs font-semibold leading-tight", paused ? "text-warn-text" : "text-txt-dim")}>{sub}</p>
+      <div className="min-w-0 flex-1">
+        <p className="truncate font-extrabold leading-tight">{roundName(r)}</p>
+        <p className={cx("mt-0.5 truncate text-xs font-semibold leading-tight", paused ? "text-warn-text" : "text-txt-dim")}>{sub}</p>
       </div>
-      <span className="font-mono text-[1.4rem] font-black tabular-nums">{r.frozen ? "⏸" : formatClock(left)}</span>
+      <span className="flex min-h-12 items-center px-1 font-mono text-[1.6rem] font-black tabular-nums">
+        {r.frozen ? <IconPause size={26} role="img" aria-hidden={false} aria-label={h.pause} /> : formatClock(left)}
+      </span>
       {live && (
-        <button className={btn} onClick={() => void act("extend", { seconds: 60 })}>
+        <button
+          className="ui-press flex min-h-12 shrink-0 items-center gap-1.5 rounded-xl bg-ink-3 px-3 text-sm font-extrabold whitespace-nowrap hover:brightness-95"
+          onClick={() => void act("extend", { seconds: 60 })}
+          data-testid="round-extend"
+        >
           {h.round.extend}
         </button>
       )}
-      {(live || between) && (
+      {between && (
         <button
-          className={btn}
-          onClick={() =>
-            live
-              ? onConfirm({ message: h.round.nextConfirm, label: h.round.next, run: () => void act("next") })
-              : void act("next")
-          }
+          className="ui-press flex min-h-12 shrink-0 items-center gap-1.5 rounded-xl bg-gold px-3.5 text-sm font-extrabold whitespace-nowrap text-on-accent shadow-[var(--shadow-card)] hover:bg-gold-light"
+          onClick={() => void act("next")}
         >
-          {live ? h.round.next : h.round.startNow}
+          <IconSkip size={16} />
+          {h.round.startNow}
         </button>
       )}
     </div>
   );
 }
 
-/** «Start seremoni»: the spreading rule is on unless the teacher switches it off (PLAN §5.2). */
+/** «Start premieutdeling»: the spreading rule is on unless the teacher switches it off (PLAN §5.2). */
 function CeremonyStart({ onStart }: { onStart: (spread: boolean) => void }) {
   const [spread, setSpread] = useState(true);
   return (
-    <div className="space-y-4">
-      <p className="text-txt-dim">{no.ceremony.introBody}</p>
+    <div className="space-y-5 pb-2">
+      <p className="text-txt-dim">{h.prize.introBody}</p>
       <label className="flex min-h-14 cursor-pointer items-center gap-3 rounded-[var(--radius-ctl)] bg-ink px-4 py-3 font-bold">
         <input type="checkbox" className="size-5 accent-[var(--color-gold-deep)]" checked={spread} onChange={(e) => setSpread(e.target.checked)} />
-        {no.ceremony.spread}
+        {h.prize.spread}
       </label>
       <button className={buttonClass("primary", "xl", "w-full")} onClick={() => onStart(spread)} data-testid="ceremony-start">
-        {no.ceremony.start}
+        <IconTrophy size={22} />
+        {h.prize.start}
       </button>
     </div>
   );

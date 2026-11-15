@@ -10,6 +10,8 @@ import { bearing, haversine } from "@/lib/geo";
 import { formatClock } from "@/lib/rules/game";
 import { powerupCheck, type Powerup } from "@/lib/rules/events";
 import type { Fix } from "@/lib/client/gps";
+import { IconArrowUp, IconCheck, IconQr, IconZap } from "@/lib/client/ui/icons";
+import { EVENT_ICONS, POWERUP_ICONS } from "./icons";
 import { useTurn } from "./useTurn";
 
 const e = no.events;
@@ -54,44 +56,51 @@ export function EventStrip({
   else if (me?.state === "reached") line = e.reached(me.points);
   else if (me?.state === "done") line = e.confirmed(me.points);
   else if (me?.state === "pending" || pendingLocal) line = e.pending;
-  else if (over) line = null;   // «Hendelsen er over» on the right says it
+  else if (over) line = null;   // «over» on the right says it
   else if (ev.kind === "mission" && ev.mission_text) line = ev.mission_text;
   else if (ev.kind === "mission" && ev.mission !== null) line = e.missions[ev.mission];
   else line = e.phoneDesc[ev.kind] ?? null;
 
+  const KindIcon = EVENT_ICONS[ev.kind] ?? IconZap;
   return (
-    <div className="m-drop-in mx-4 mb-2 rounded-xl border-2 border-gold bg-black/50 px-3 py-2 text-white shadow-[var(--shadow-card)]" role="status" data-testid="event-strip">
+    <div className="m-drop-in mx-4 mb-2 rounded-2xl border-2 border-gold bg-black/55 px-4 py-3 text-white shadow-[var(--shadow-card)]" role="status" data-testid="event-strip">
       <div className="flex items-center gap-3">
-        {dir && (
-          <span className="p-compass inline-block text-3xl leading-none" style={{ transform: `rotate(${turn}deg)` }} aria-hidden>
-            ↑
-          </span>
+        {dir ? (
+          <IconArrowUp size={36} strokeWidth={3} className="p-compass flex-none text-gold" style={{ transform: `rotate(${turn}deg)` }} />
+        ) : (
+          <KindIcon size={30} className="flex-none text-gold" />
         )}
         <div className="min-w-0 flex-1">
           <p className="text-sm font-black uppercase tracking-wide text-gold">{e.kinds[ev.kind]}</p>
           {line && (
-            <p key={line} className="m-rise-in text-lg font-black leading-tight">
+            <p key={line} className="m-rise-in text-xl font-black leading-tight">
               {line}
             </p>
           )}
-          {ev.kind === "mission" && !me && !pendingLocal && !over && <p className="mt-0.5 text-sm font-bold opacity-90">{e.missionHow(qr)}</p>}
-          {me?.powerup && <p className="mt-0.5 font-black text-gold">{e.gotPowerup(e.powerups[me.powerup])}</p>}
-          {ev.kind === "gather" && over && !me && <p className="mt-0.5 font-bold">{e.lateExercise}</p>}
+          {ev.kind === "mission" && !me && !pendingLocal && !over && <p className="mt-1 text-sm font-bold opacity-85">{e.missionHow(qr)}</p>}
+          {me?.powerup && <p className="mt-1 font-black text-gold">{e.gotPowerup(e.powerups[me.powerup])}</p>}
+          {ev.kind === "gather" && over && !me && <p className="mt-1 font-bold">{e.lateExercise}</p>}
         </div>
-        <div className="text-right">
-          {!over && <p className="font-mono text-2xl font-black tabular-nums">{formatClock(left)}</p>}
-          {dir && <p className="text-sm font-black tabular-nums">{dir.m} m</p>}
-          {ev.kind === "sprint" && !me && ev.left !== null && <p className="text-xs font-bold">{ev.left ? e.left(ev.left) : e.full}</p>}
+        <div className="flex-none text-right">
+          {!over && <p className="font-mono text-3xl font-black leading-none tabular-nums">{formatClock(left)}</p>}
+          {dir && <p className="mt-1 text-base font-black tabular-nums">{dir.m} m</p>}
+          {ev.kind === "sprint" && !me && ev.left !== null && <p className="mt-1 text-xs font-bold">{ev.left ? e.left(ev.left) : e.full}</p>}
           {over && <p className="text-xs font-bold opacity-80">{e.over}</p>}
         </div>
       </div>
       {ev.kind === "mission" && !over && !me && !pendingLocal && (
-        <div className="mt-2 flex gap-2">
-          <button className="ui-press min-h-12 flex-1 rounded-xl bg-ok py-3 text-lg font-black text-on-accent" onClick={onDone} data-testid="mission-done">
+        <div className="mt-3 flex gap-2">
+          <button
+            className="ui-press flex min-h-14 flex-1 items-center justify-center gap-2 rounded-xl bg-ok text-lg font-black text-on-accent"
+            onClick={onDone}
+            data-testid="mission-done"
+          >
+            <IconCheck size={22} strokeWidth={3} />
             {e.done}
           </button>
           {qr && (
-            <button className="ui-press min-h-12 flex-1 rounded-xl border border-white/40 bg-black/30 py-3 text-lg font-black" onClick={onScan}>
+            <button className="ui-press flex min-h-14 flex-1 items-center justify-center gap-2 rounded-xl border-2 border-white/40 bg-black/30 text-lg font-black" onClick={onScan}>
+              <IconQr size={22} />
               {no.play.scan}
             </button>
           )}
@@ -123,7 +132,7 @@ export function PowerBar({
   const leftOf = (iso: string | null) => (iso ? Math.max(0, Math.ceil((Date.parse(iso) - (now + offsetMs)) / 1000)) : 0);
   for (const k of ["radar", "turbo", "decoy"] as const) {
     const s = leftOf(power[`${k}_until`]);
-    if (s > 0) running.push({ k, text: `${e.on[k]} ${s}` });
+    if (s > 0) running.push({ k, text: `${e.on[k]} ${s} s` });
   }
   if (!power.inv.length && !running.length) return null;
   return (
@@ -135,19 +144,26 @@ export function PowerBar({
             key={`${k}-${i}`}
             disabled={busy || why !== null}
             title={e.powerupHelp[k]}
-            className="ui-press m-pop min-h-11 rounded-full border-2 border-gold bg-black/40 px-4 py-2 text-sm font-black text-white disabled:opacity-40"
+            className="ui-press m-pop flex min-h-12 items-center gap-2 rounded-full border-2 border-gold bg-black/45 px-4 text-base font-black text-white disabled:opacity-40"
             onClick={() => onUse(k)}
             data-testid={`powerup-${k}`}
           >
+            <PuIcon k={k} />
             {e.powerups[k]}
           </button>
         );
       })}
       {running.map((r) => (
-        <span key={r.k} className="m-pop rounded-full bg-gold px-3 py-1.5 text-sm font-black text-on-accent">
+        <span key={r.k} className="m-pop flex items-center gap-1.5 rounded-full bg-gold px-3 py-2 text-sm font-black tabular-nums text-on-accent">
+          <PuIcon k={r.k} />
           {r.text}
         </span>
       ))}
     </div>
   );
+}
+
+function PuIcon({ k }: { k: string }) {
+  const I = POWERUP_ICONS[k] ?? IconZap;
+  return <I size={18} />;
 }

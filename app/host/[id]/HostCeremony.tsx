@@ -1,8 +1,8 @@
 "use client";
 
-// Teacher's ceremony (0006): big podium for showing the class, a drumroll on
-// «Neste», then «ditt beste» on every phone and the anonymous «vil spille
-// igjen» count. Sits under the alarm strip — safety stays on top (rule 4).
+// Teacher's prize-giving («Premieutdeling», 0006): big podium for showing the
+// class, a drumroll on «Neste pall», then «ditt beste» on every phone and the
+// anonymous «vil spille igjen» count. Sits under the alarm strip (rule 4).
 
 import { useState } from "react";
 
@@ -12,10 +12,11 @@ import { cue } from "@/lib/client/feedback";
 import { no } from "@/lib/locale/no";
 
 import { buttonClass, cx } from "@/lib/client/ui";
+import { IconArrowRight, IconChevronLeft, IconStop } from "@/lib/client/ui/icons";
 
 import type { HostSession } from "./useHostSession";
 
-const c = no.ceremony;
+const c = no.host.prize;
 const DRUM_MS = 1700;
 
 export function HostCeremony({ view, act, onEnd }: { view: CeremonyView; act: HostSession["act"]; onEnd: () => void }) {
@@ -27,7 +28,7 @@ export function HostCeremony({ view, act, onEnd }: { view: CeremonyView; act: Ho
   function next() {
     if (drumming) return;
     if (view.step >= view.total) {
-      void act("ceremony_next");   // → «ditt beste» on every phone
+      void act("ceremony_next"); // «ditt beste» on every phone
       return;
     }
     setDrumming(true);
@@ -39,7 +40,7 @@ export function HostCeremony({ view, act, onEnd }: { view: CeremonyView; act: Ho
 
   return (
     <div className="absolute inset-0 z-[5] flex flex-col bg-ink text-txt" data-testid="host-ceremony">
-      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-5 overflow-y-auto px-4 pt-28 pb-4 text-center lg:pt-20">
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-6 overflow-y-auto px-5 pt-28 pb-6 text-center lg:pt-20">
         <p className="text-xs font-bold uppercase tracking-[0.25em] text-gold-text">{c.title}</p>
         {drumming ? (
           <p className="animate-pulse text-6xl font-black">{c.intro}</p>
@@ -47,9 +48,9 @@ export function HostCeremony({ view, act, onEnd }: { view: CeremonyView; act: Ho
           <div className="m-rise-in w-full max-w-xl space-y-4">
             <p className="text-3xl font-black">{c.cardsShown}</p>
             {view.again && <p className="text-2xl font-black text-gold-text" data-testid="again-count">{c.againCount(view.again.yes, view.again.no)}</p>}
-            <div className="rounded-[var(--radius-card)] bg-ink-2 p-5 shadow-[var(--shadow-card)]">
+            <div className="rounded-[var(--radius-card)] bg-ink-2 p-6 shadow-[var(--shadow-card)]">
               <p className="font-black">{c.teacherAgain}</p>
-              <div className="mt-3 flex gap-2">
+              <div className="mt-4 flex gap-2">
                 {[true, false].map((yes) => (
                   <button
                     key={String(yes)}
@@ -78,26 +79,29 @@ export function HostCeremony({ view, act, onEnd }: { view: CeremonyView; act: Ho
         )}
       </div>
 
-      <nav className="mx-3 mb-[max(0.75rem,env(safe-area-inset-bottom))] grid grid-cols-4 gap-1.5 rounded-[1.4rem] bg-ink-2 p-1.5 shadow-[var(--shadow-float)] lg:mx-auto lg:w-full lg:max-w-2xl">
+      <nav className="mx-3 mb-[max(0.75rem,env(safe-area-inset-bottom))] grid grid-cols-4 gap-1.5 rounded-[1.5rem] bg-ink-2 p-1.5 shadow-[var(--shadow-float)] lg:mx-auto lg:w-full lg:max-w-2xl">
         <button
-          className="ui-press min-h-14 rounded-2xl font-black hover:bg-ink-3 disabled:opacity-30"
+          className="ui-press flex min-h-16 items-center justify-center gap-1.5 rounded-2xl font-black hover:bg-ink-3 disabled:opacity-30"
           disabled={view.step === 0 || drumming}
           onClick={() => void act("ceremony_back")}
         >
+          <IconChevronLeft size={20} />
           {c.back}
         </button>
         {cards ? (
-          <button className={buttonClass("primary", "lg", "col-span-3 min-h-14")} onClick={onEnd} data-testid="ceremony-end">
-            ■ {c.end}
+          <button className={buttonClass("primary", "lg", "col-span-3 min-h-16")} onClick={onEnd} data-testid="ceremony-end">
+            <IconStop size={18} />
+            {c.end}
           </button>
         ) : (
           <button
-            className={buttonClass("primary", "lg", "col-span-3 min-h-14")}
+            className={buttonClass("primary", "lg", "col-span-3 min-h-16")}
             disabled={drumming}
             onClick={next}
             data-testid="ceremony-next"
           >
             {lastPodium || view.total === 0 ? c.toCards : c.drum}
+            <IconArrowRight size={20} />
           </button>
         )}
       </nav>

@@ -9,6 +9,7 @@ import { normalizeResumeCode } from "@/lib/codes";
 import { looksLikeFullName } from "@/lib/nickname";
 import { no } from "@/lib/locale/no";
 import { Button, cx } from "@/lib/client/ui";
+import { IconArrowRight, IconCheck } from "@/lib/client/ui/icons";
 
 const t = no.join;
 
@@ -18,7 +19,7 @@ function errorText(e: unknown) {
 }
 
 /**
- * PLAN §2.2 step 1: QR → /j/123456 → nickname → play. A stored identity for
+ * PLAN §2.2 step 1: QR, /j/123456, nickname, play. A stored identity for
  * the same PIN skips straight back into the game. Resume code on a new device.
  */
 export default function JoinForm({ initialPin }: { initialPin?: string }) {
@@ -31,7 +32,7 @@ export default function JoinForm({ initialPin }: { initialPin?: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [newCode, setNewCode] = useState<{ code: string; sessionId: string } | null>(null);
-  const [shake, setShake] = useState(0); // bumps on every error → m-shake
+  const [shake, setShake] = useState(0); // bumps on every error to m-shake
   const nickRef = useRef<HTMLInputElement>(null);
   const codeRef = useRef<HTMLInputElement>(null);
 
@@ -90,34 +91,33 @@ export default function JoinForm({ initialPin }: { initialPin?: string }) {
   }
 
   const input =
-    "mt-2 block min-h-14 w-full rounded-[var(--radius-ctl)] border-2 border-line bg-ink-2 px-4 py-3 text-xl font-bold text-txt outline-none transition-colors duration-[var(--dur-2)] placeholder:text-txt-dim/50 focus:border-gold";
-  const label = "text-sm font-extrabold uppercase tracking-wide text-txt-dim";
+    "block min-h-16 w-full text-center rounded-[var(--radius-ctl)] border-2 border-line bg-ink-2 px-4 py-3 text-xl font-bold text-txt outline-none transition-colors duration-[var(--dur-2)] placeholder:text-txt-dim/50 focus:border-gold";
 
   if (newCode) {
     return (
       <main className="theme-dark mx-auto flex min-h-dvh max-w-md flex-col px-5 pt-[max(2.5rem,env(safe-area-inset-top))] pb-[max(2rem,env(safe-area-inset-bottom))]">
         <div className="m-stagger flex flex-1 flex-col justify-center">
-          <p className="text-sm font-black uppercase tracking-[0.25em] text-ok-text" style={{ "--i": 0 } as React.CSSProperties}>
+          <p className="flex items-center gap-2 text-lg font-black text-ok-text" style={{ "--i": 0 } as React.CSSProperties}>
+            <IconCheck size={22} />
             {t.codeKicker}
           </p>
-          <h1 className="mt-2 text-5xl font-black tracking-tight" style={{ "--i": 1 } as React.CSSProperties}>
-            {t.codeTitle}
-          </h1>
-          <div className="mt-8" style={{ "--i": 2 } as React.CSSProperties}>
+          <div className="mt-6" style={{ "--i": 1 } as React.CSSProperties}>
             <p
-              className="p-flip-in rounded-[var(--radius-card)] border-2 border-gold/60 bg-ink-2 px-4 py-9 text-center font-mono text-5xl font-black tracking-widest text-gold-text shadow-[var(--shadow-float)]"
+              className="p-flip-in rounded-[var(--radius-card)] border-2 border-gold/60 bg-ink-2 px-4 py-12 text-center font-mono text-6xl font-black tracking-widest text-gold-text shadow-[var(--shadow-float)]"
               style={{ animationDelay: "140ms" }}
               data-testid="resume-code"
+              aria-label={t.codeTitle}
             >
               {newCode.code}
             </p>
           </div>
-          <p className="mt-6 text-lg leading-snug text-txt-dim" style={{ "--i": 3 } as React.CSSProperties}>
+          <p className="mt-6 text-center text-lg leading-snug text-txt-dim" style={{ "--i": 2 } as React.CSSProperties}>
             {t.codeBody}
           </p>
         </div>
         <Button size="xl" className="m-rise-in mt-8 w-full" onClick={() => router.replace(`/play/${newCode.sessionId}`)}>
           {t.codeOk}
+          <IconArrowRight size={22} />
         </Button>
       </main>
     );
@@ -128,28 +128,25 @@ export default function JoinForm({ initialPin }: { initialPin?: string }) {
   return (
     <main className="theme-dark mx-auto flex min-h-dvh max-w-md flex-col px-5 pt-[max(2.5rem,env(safe-area-inset-top))] pb-[max(2rem,env(safe-area-inset-bottom))]">
       <div className="m-stagger flex flex-1 flex-col justify-center">
-        <p className="text-sm font-black uppercase tracking-[0.25em] text-gold-text" style={{ "--i": 0 } as React.CSSProperties}>
-          {no.brand}
-        </p>
-        <h1 className="mt-2 text-5xl font-black tracking-tight" style={{ "--i": 1 } as React.CSSProperties}>
+        <h1 className="text-center text-4xl font-black tracking-tight" style={{ "--i": 0 } as React.CSSProperties}>
           {mode === "join" ? t.title : t.codeLabel}
         </h1>
-        <p className="mt-3 text-lg text-txt-dim" style={{ "--i": 2 } as React.CSSProperties}>
-          {mode === "join" ? t.lead : t.codeBody}
+        <p className="mt-2 text-center text-lg text-txt-dim" style={{ "--i": 1 } as React.CSSProperties}>
+          {mode === "join" ? t.lead : t.resumeLead}
         </p>
 
         <form
-          className="mt-9"
-          style={{ "--i": 3 } as React.CSSProperties}
+          className="mt-8"
+          style={{ "--i": 2 } as React.CSSProperties}
           onSubmit={(e) => {
             e.preventDefault();
             if (mode === "join") void join();
             else void resume();
           }}
         >
-          <div key={shake} className={cx("space-y-6", shake > 0 && "m-shake")}>
+          <div key={shake} className={cx("space-y-5", shake > 0 && "m-shake")}>
             <div>
-              <span className={label} id="pin-label">
+              <span className="sr-only" id="pin-label">
                 {t.pinLabel}
               </span>
               <PinBoxes
@@ -165,7 +162,7 @@ export default function JoinForm({ initialPin }: { initialPin?: string }) {
 
             {mode === "join" ? (
               <label className="block">
-                <span className={label}>{t.nickLabel}</span>
+                <span className="sr-only">{t.nickLabel}</span>
                 <input
                   ref={nickRef}
                   className={input}
@@ -177,13 +174,13 @@ export default function JoinForm({ initialPin }: { initialPin?: string }) {
                     setNick(e.target.value);
                     setWarnName(false);
                   }}
-                  placeholder="Lynet"
+                  placeholder={t.nickLabel}
                 />
-                <span className="mt-2 block text-sm text-txt-dim">{t.nickHint}</span>
+                <span className="mt-2 block text-center text-sm text-txt-dim">{t.nickHint}</span>
               </label>
             ) : (
               <label className="block">
-                <span className={label}>{t.codeLabel}</span>
+                <span className="sr-only">{t.codeLabel}</span>
                 <input
                   ref={codeRef}
                   className={`${input} font-mono uppercase tracking-widest`}
@@ -192,7 +189,7 @@ export default function JoinForm({ initialPin }: { initialPin?: string }) {
                   maxLength={8}
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
-                  placeholder="KOLE-7F"
+                  placeholder={t.codeLabel}
                 />
               </label>
             )}
@@ -216,8 +213,9 @@ export default function JoinForm({ initialPin }: { initialPin?: string }) {
             <>
               <Button type="submit" size="xl" className="mt-7 w-full" disabled={!pinOk || !nick.trim() || busy}>
                 {busy ? t.joining : t.join}
+                {!busy && <IconArrowRight size={22} />}
               </Button>
-              <Button variant="ghost" className="mt-3 w-full text-txt-dim" onClick={() => switchMode("resume")}>
+              <Button variant="ghost" size="sm" className="mx-auto mt-4 flex min-h-12 text-txt-dim" onClick={() => switchMode("resume")}>
                 {t.haveCode}
               </Button>
             </>
@@ -226,7 +224,7 @@ export default function JoinForm({ initialPin }: { initialPin?: string }) {
               <Button type="submit" size="xl" className="mt-7 w-full" disabled={!pinOk || code.replace(/[^A-Za-z0-9]/g, "").length !== 6 || busy}>
                 {t.resume}
               </Button>
-              <Button variant="ghost" className="mt-3 w-full text-txt-dim" onClick={() => switchMode("join")}>
+              <Button variant="ghost" size="sm" className="mx-auto mt-4 flex min-h-12 text-txt-dim" onClick={() => switchMode("join")}>
                 {t.backToJoin}
               </Button>
             </>
@@ -248,8 +246,8 @@ function PinBoxes({ value, onChange, error }: { value: string; onChange: (v: str
   const [focused, setFocused] = useState(false);
   const at = Math.min(value.length, 5);
   return (
-    <div className="relative mt-2">
-      <div className="grid grid-cols-6 gap-2" aria-hidden>
+    <div className="relative">
+      <div className="grid grid-cols-6 gap-2 sm:gap-3" aria-hidden>
         {Array.from({ length: 6 }, (_, i) => {
           const d = value[i];
           const active = focused && i === at;
@@ -257,7 +255,7 @@ function PinBoxes({ value, onChange, error }: { value: string; onChange: (v: str
             <div
               key={i}
               className={cx(
-                "grid h-16 place-items-center rounded-[var(--radius-ctl)] border-2 font-mono text-3xl font-black tabular-nums transition-[border-color,background-color,transform] duration-[var(--dur-2)] ease-[var(--ease-out)]",
+                "grid h-[4.5rem] place-items-center rounded-[var(--radius-ctl)] border-2 font-mono text-3xl font-black tabular-nums transition-[border-color,background-color,transform] duration-[var(--dur-2)] ease-[var(--ease-out)]",
                 error ? "border-danger/70 bg-ink-2" : active ? "-translate-y-0.5 border-gold bg-ink-2" : d ? "border-gold/30 bg-ink-3" : "border-line bg-ink-2",
               )}
             >

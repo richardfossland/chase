@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { IconArrowLeft } from "@/lib/client/ui/icons";
 import { no } from "@/lib/locale/no";
 
 // Server component: lib/client/ui is a client module, so the button look is spelled out here.
@@ -12,8 +13,9 @@ export default function NotFound() {
       <p className="mt-2 leading-relaxed text-txt-dim">{no.common.notFoundBody}</p>
       <Link
         href="/"
-        className="ui-press mt-8 inline-flex min-h-12 items-center justify-center rounded-[var(--radius-ctl)] bg-gold px-6 font-extrabold text-on-accent shadow-[var(--shadow-card)] hover:bg-gold-light"
+        className="ui-press mt-10 inline-flex min-h-14 items-center justify-center gap-2 rounded-2xl bg-gold px-6 text-lg font-extrabold text-on-accent shadow-[var(--shadow-card)] hover:bg-gold-light"
       >
+        <IconArrowLeft size={20} />
         {no.common.home}
       </Link>
     </main>

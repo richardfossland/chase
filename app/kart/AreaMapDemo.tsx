@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import { circleRing, ringArea, type LngLat } from "@/lib/geo";
+import { IconArrowLeft } from "@/lib/client/ui/icons";
 import { no } from "@/lib/locale/no";
 import { loadMapLibre } from "@/lib/map/maplibre";
 import { DEFAULT_CENTER, kartverketStyle } from "@/lib/map/style";
@@ -107,14 +108,15 @@ export default function AreaMapDemo() {
       </div>
       <div className="pointer-events-none absolute inset-x-0 bottom-0 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
         <div className="m-sheet-in pointer-events-auto mx-auto max-w-md rounded-[1.75rem] bg-ink-2 p-5 shadow-[var(--shadow-float)]">
-          <div className="flex items-baseline justify-between gap-3">
+          <div className="flex items-center justify-between gap-3">
             <h1 className="text-lg font-extrabold">{no.map.circleAroundMe}</h1>
-            <Link href="/" className="inline-flex min-h-12 items-center text-sm font-bold text-txt-dim underline-offset-4 hover:text-txt hover:underline">
+            <Link href="/" className="inline-flex min-h-12 items-center gap-1.5 text-sm font-bold text-txt-dim hover:text-txt">
+              <IconArrowLeft size={16} />
               {no.map.back}
             </Link>
           </div>
-          <p className="mt-1 text-sm text-txt-dim">{no.map.hint}</p>
-          <label className="mt-3 block">
+          <p className="text-sm text-txt-dim">{no.map.hint}</p>
+          <label className="mt-4 block">
             <span className="flex justify-between text-sm font-semibold">
               <span>{no.map.radius(radius)}</span>
               <span className="text-txt-dim">{no.map.area(ringAreaM2)}</span>

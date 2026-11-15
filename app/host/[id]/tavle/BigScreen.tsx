@@ -12,6 +12,7 @@ import { useEffect, useMemo, useState } from "react";
 import { PodiumCard } from "@/lib/client/Ceremony";
 import { identity } from "@/lib/client/identity";
 import { QRCode } from "@/lib/client/QRCode";
+import { IconCheck, IconZap } from "@/lib/client/ui/icons";
 import { no } from "@/lib/locale/no";
 import { formatClock, phaseLeftS } from "@/lib/rules/game";
 
@@ -19,6 +20,7 @@ import HostMap from "../HostMap";
 import { useHostSession } from "../useHostSession";
 
 const sc = no.screen;
+const prize = no.host.prize;
 
 export default function BigScreen({ sessionId }: { sessionId: string }) {
   const [token, setToken] = useState<string | null | undefined>(undefined);
@@ -59,12 +61,12 @@ export default function BigScreen({ sessionId }: { sessionId: string }) {
     const last = c.revealed[c.revealed.length - 1];
     return (
       <Full>
-        <p className="text-2xl font-black uppercase tracking-[0.3em] text-gold-text">{no.ceremony.title}</p>
+        <p className="text-2xl font-black uppercase tracking-[0.3em] text-gold-text">{prize.title}</p>
         {c.step === 0 || !last ? (
-          <p className="m-rise-in mt-10 text-8xl font-black tracking-tight">{no.ceremony.intro}</p>
+          <p className="m-rise-in mt-12 text-8xl font-black tracking-tight">{prize.intro}</p>
         ) : (
-          <div key={c.step} className="m-scale-in mt-8 w-full max-w-3xl">
-            <p className="mb-4 text-center text-2xl font-bold text-txt-dim">{no.ceremony.of(Math.min(c.step, c.total), c.total)}</p>
+          <div key={c.step} className="m-scale-in mt-10 w-full max-w-3xl">
+            <p className="mb-5 text-center text-2xl font-bold text-txt-dim">{prize.of(Math.min(c.step, c.total), c.total)}</p>
             <PodiumCard podium={last} big />
           </div>
         )}
@@ -76,20 +78,25 @@ export default function BigScreen({ sessionId }: { sessionId: string }) {
     return (
       <Full>
         <div className="m-rise-in flex flex-col items-center">
-          <p className="text-3xl font-black uppercase tracking-[0.25em] text-gold-text">{sc.title}</p>
-          <div className="mt-10 flex flex-wrap items-center justify-center gap-14">
+          <p className="text-3xl font-black uppercase tracking-[0.3em] text-txt-dim">{no.host.lobbyTitle}</p>
+          <div className="mt-12 flex flex-wrap items-center justify-center gap-20">
             {origin && (
-              <div className="rounded-[2rem] bg-white p-5 shadow-[var(--shadow-float)]">
-                <QRCode value={`${origin}/j/${snap.pin}`} size={320} />
+              <div className="rounded-[2.5rem] bg-white p-6 shadow-[var(--shadow-float)]">
+                <QRCode value={`${origin}/j/${snap.pin}`} size={380} />
               </div>
             )}
             <div className="text-left">
               <p className="text-2xl font-bold uppercase tracking-[0.2em] text-txt-dim">{no.host.pin}</p>
-              <p className="font-mono text-[9rem] font-black leading-none tracking-[0.12em]">{snap.pin}</p>
-              <span className="mt-4 block h-2 w-28 rounded-full bg-gold" aria-hidden />
+              <p className="font-mono text-[11rem] font-black leading-none tracking-[0.12em]">{snap.pin}</p>
+              <span className="mt-5 block h-2 w-32 rounded-full bg-gold" aria-hidden />
+              {origin && (
+                <p className="mt-6 text-3xl font-bold text-txt-dim">
+                  {no.host.scan} <span className="text-txt">{origin.replace(/^https?:\/\//, "")}</span>
+                </p>
+              )}
             </div>
           </div>
-          <p key={snap.players.length} className="m-pop mt-12 text-5xl font-black tabular-nums">{sc.players(snap.players.length)}</p>
+          <p key={snap.players.length} className="m-pop mt-16 text-6xl font-black tabular-nums">{sc.players(snap.players.length)}</p>
         </div>
       </Full>
     );
@@ -116,26 +123,35 @@ export default function BigScreen({ sessionId }: { sessionId: string }) {
           onSelect={() => {}}
         />
       </div>
-      <aside className="flex flex-col gap-8 border-l border-line bg-ink-2 p-8">
+      <aside className="flex flex-col gap-10 border-l border-line bg-ink-2 p-10">
         <div key={`${snap.status}-${r?.idx ?? -1}`} className="m-fade-in">
           <p className="text-xl font-bold uppercase tracking-[0.2em] text-txt-dim">{no.host.status[snap.status] ?? snap.status}</p>
-          {r && <p className="mt-1 text-3xl font-black">{no.host.round.of(r.idx + 1, r.count)} · {roundName}</p>}
+          {r && <p className="mt-2 text-4xl font-black leading-tight">{roundName}</p>}
+          {r && <p className="mt-1 text-2xl font-bold text-txt-dim">{no.host.round.of(r.idx + 1, r.count)}</p>}
           {snap.playlist_done ? (
-            <p className="mt-6 text-4xl font-black leading-tight">✔ {no.host.round.done}</p>
+            <p className="mt-8 flex items-start gap-4 text-4xl font-black leading-tight">
+              <span className="mt-1 grid size-12 shrink-0 place-items-center rounded-full bg-ok text-on-accent" aria-hidden>
+                <IconCheck size={28} />
+              </span>
+              {no.host.round.done}
+            </p>
           ) : (
             <p className="mt-3 font-mono text-[7.5rem] font-black leading-none tabular-nums">{formatClock(left)}</p>
           )}
         </div>
         {ev && (
-          <div key={ev.kind} className="m-drop-in rounded-[1.5rem] bg-gold px-5 py-4 text-on-accent shadow-[var(--shadow-float)]">
-            <p className="text-3xl font-black">{no.events.kinds[ev.kind]}</p>
+          <div key={ev.kind} className="m-drop-in rounded-[1.5rem] bg-gold px-6 py-5 text-on-accent shadow-[var(--shadow-float)]">
+            <p className="flex items-center gap-3 text-3xl font-black">
+              <IconZap size={30} className="shrink-0" />
+              {no.events.kinds[ev.kind]}
+            </p>
             {ev.mission_text && <p className="mt-1 text-xl font-bold">{ev.mission_text}</p>}
           </div>
         )}
         {teams.length >= 2 && (
           <div>
             <p className="text-xl font-bold uppercase tracking-[0.2em] text-txt-dim">{sc.teams}</p>
-            <div className="mt-3 space-y-2.5">
+            <div className="mt-4 space-y-3">
               {teams.map((t) => (
                 <div key={t.n} className="flex items-center justify-between rounded-[1.25rem] px-5 py-3.5 text-3xl font-black transition-transform duration-[var(--dur-3)]" style={{ background: t.color, color: t.color === "#f5b800" ? "#111827" : "#fff" }}>
                   <span>{t.name}</span>
@@ -148,7 +164,7 @@ export default function BigScreen({ sessionId }: { sessionId: string }) {
             </div>
           </div>
         )}
-        <p className="mt-auto text-2xl font-black text-txt-dim">{sc.join(snap.pin)}</p>
+        <p className="mt-auto text-3xl font-black text-txt-dim">{sc.join(snap.pin)}</p>
       </aside>
     </div>
   );

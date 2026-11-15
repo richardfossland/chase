@@ -15,6 +15,7 @@ import { EVENTS } from "@/lib/rules/events";
 import { SAFETY } from "@/lib/rules/safety";
 import { zoneAt, type ZoneState } from "@/lib/rules/zone";
 import { prefersReducedMotion } from "@/lib/client/ui";
+import { no } from "@/lib/locale/no";
 
 /** Name tags only from this zoom (≈ 1 px per metre at our latitudes), plus the
  * selected pupil and anyone who needs the teacher (rule 4). */
@@ -190,7 +191,7 @@ const HostMap = forwardRef<
       const alarm = sosPlayers.has(p.id) || p.forbidden || p.geofence >= 2 || p.signal === "lost" || p.signal === "none";
       const named = !anonymous && (close || p.id === selectedId || alarm || still);
       const name = entry.el.querySelector<HTMLElement>("[data-name]")!;
-      name.textContent = anonymous ? "" : `${p.nickname}${still ? " 💤" : ""}`;
+      name.textContent = anonymous ? "" : still ? `${p.nickname} · ${no.host.stillTag}` : p.nickname;
       name.style.display = named ? "" : "none";
       const tc = teams?.find((t) => t.n === teamOf?.[p.id])?.color;
       name.style.background = tc ?? "";

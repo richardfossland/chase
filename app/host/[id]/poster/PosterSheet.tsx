@@ -9,12 +9,15 @@ import { QRCode } from "@/lib/client/QRCode";
 import { no } from "@/lib/locale/no";
 import { qrUrl } from "@/lib/qr";
 import { buttonClass } from "@/lib/client/ui";
+import { IconArrowLeft, IconPrinter } from "@/lib/client/ui/icons";
+
+import { InfoNote } from "../InfoNote";
 
 const p = no.host.poster;
 
 type Card = { n: number; code: string; value: number };
 
-/** Printable physical QR posts (PLAN §1 «Fysiske QR-poster»): 6 per A4 page. */
+/** Printable QR cards (PLAN §1, «QR-kort» in the UI): 6 per A4 page. */
 export default function PosterSheet({ sessionId }: { sessionId: string }) {
   const [cards, setCards] = useState<Card[] | null>(null);
   const [error, setError] = useState(false);
@@ -36,16 +39,19 @@ export default function PosterSheet({ sessionId }: { sessionId: string }) {
 
   return (
     <main className="min-h-dvh bg-ink px-4 py-8 text-txt print:bg-white print:p-0 print:text-[#14171e]">
-      <div className="m-rise-in mx-auto max-w-4xl rounded-[var(--radius-card)] bg-ink-2 p-6 shadow-[var(--shadow-card)] print:hidden">
-        <h1 className="text-3xl font-black tracking-tight">{p.title}</h1>
-        <p className="mt-2 max-w-2xl text-txt-dim">{p.lead}</p>
-        <div className="mt-5 flex flex-wrap gap-3">
-          <button className={buttonClass("primary", "md")} onClick={() => window.print()} disabled={!cards?.length}>
-            🖨 {p.print}
+      <div className="m-rise-in mx-auto max-w-4xl rounded-[var(--radius-card)] bg-ink-2 p-6 shadow-[var(--shadow-card)] sm:p-8 print:hidden">
+        <Link href={`/host/${sessionId}`} className={buttonClass("ghost", "md", "-ml-3 min-h-12")}>
+          <IconArrowLeft size={18} />
+          {p.back}
+        </Link>
+        <h1 className="mt-4 text-3xl font-black tracking-tight">{p.title}</h1>
+        <p className="mt-2 text-txt-dim">{p.lead}</p>
+        <InfoNote className="mt-2">{p.info}</InfoNote>
+        <div className="mt-6">
+          <button className={buttonClass("primary", "lg")} onClick={() => window.print()} disabled={!cards?.length}>
+            <IconPrinter size={20} />
+            {p.print}
           </button>
-          <Link href={`/host/${sessionId}`} className={buttonClass("secondary", "md")}>
-            {p.back}
-          </Link>
         </div>
         {error && <p className="mt-4 font-bold text-danger-text">{no.host.noToken}</p>}
         {cards && !cards.length && <p className="mt-4 font-bold">{p.none}</p>}

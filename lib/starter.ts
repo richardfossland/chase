@@ -9,7 +9,6 @@ import { GAME } from "@/lib/rules/game";
 export interface StarterPack {
   id: "skolegard" | "skog" | "sentrum" | "kirkeleir";
   name: string;
-  emoji: string;
   lead: string;
   /** Suggested circle around the teacher, metres. */
   radius_m: number;
@@ -24,10 +23,9 @@ export const STARTER_PACKS: StarterPack[] = [
   {
     id: "skolegard",
     name: "Skolegården",
-    emoji: "🏫",
     lead: "En hel gymtime på skolens eget område. Korte runder og mange poster, så alle kommer i gang.",
     radius_m: 70,
-    tips: ["Tegn sykkelstativ, parkering og innganger som forbudte soner.", "Samlingspunktet ved inngangsdøra er lett å finne."],
+    tips: ["Tegn sykkelstativ, parkering og innganger som sperret område.", "Møteplassen ved inngangsdøra er lett å finne."],
     plan: {
       ...base,
       rounds: [
@@ -43,10 +41,9 @@ export const STARTER_PACKS: StarterPack[] = [
   {
     id: "skog",
     name: "Skogen",
-    emoji: "🌲",
     lead: "Større område, lengre runder og lag. Flaggjakt passer godt mellom trærne.",
     radius_m: 150,
-    tips: ["Gå rundt grensa selv først – elevene skal se den.", "Merk bekker, bratte skrenter og vei som forbudte soner.", "Avtal fløyte som samlingssignal i tillegg til mobilen."],
+    tips: ["Gå rundt grensa selv først – elevene skal se den.", "Merk bekker, bratte skrenter og vei som sperret område.", "Avtal fløyte som samlingssignal i tillegg til mobilen."],
     plan: {
       ...base,
       teams: 3,
@@ -62,10 +59,9 @@ export const STARTER_PACKS: StarterPack[] = [
   {
     id: "sentrum",
     name: "Park i sentrum",
-    emoji: "🏙️",
     lead: "En park eller et torg uten biltrafikk. Postjakt og krympende sone holder alle samlet.",
     radius_m: 100,
-    tips: ["Bare områder uten biltrafikk – tegn alle gater som forbudte soner.", "Lær elevene «se opp, ikke ned» før dere starter.", "Kortere runder: det er flere folk rundt dere."],
+    tips: ["Bare områder uten biltrafikk – tegn alle gater som sperret område.", "Lær elevene «se opp, ikke ned» før dere starter.", "Kortere runder: det er flere folk rundt dere."],
     plan: {
       ...base,
       breather_s: 60,
@@ -80,10 +76,9 @@ export const STARTER_PACKS: StarterPack[] = [
   {
     id: "kirkeleir",
     name: "Leir",
-    emoji: "⛺",
-    lead: "Kirkeleir eller ungdomsleir: lag mot lag, oppdrag og en lang avslutning med Konge på haugen.",
+    lead: "Kirkeleir eller ungdomsleir: lag mot lag, øvelser og en lang avslutning med Konge på haugen.",
     radius_m: 130,
-    tips: ["Tegn vann, brygge og parkering som forbudte soner.", "Lederne kan være dommere – gjør dem til dommer på spillerkortet.", "Del opp i 4 lag så alle blir kjent på tvers."],
+    tips: ["Tegn vann, brygge og parkering som sperret område.", "Lederne kan være dommere – gjør dem til dommer på spillerkortet.", "Del opp i 4 lag så alle blir kjent på tvers."],
     plan: {
       ...base,
       teams: 4,
