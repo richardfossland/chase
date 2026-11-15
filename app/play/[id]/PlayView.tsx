@@ -14,13 +14,12 @@ import { QrScanner } from "@/lib/client/QrScanner";
 import { identity, type StoredPlayer } from "@/lib/client/identity";
 import { useDeviceGps, useSimGps, useWakeLock, vibrate, type Fix, type GpsState, type SimControls } from "@/lib/client/gps";
 import { playBuzzer, playDing, unlockAudio } from "@/lib/client/sound";
-import { useChannel } from "@/lib/client/useChannel";
+import { useLiveTick } from "./useLiveTick";
 import { no } from "@/lib/locale/no";
 import { bearing, haversine } from "@/lib/geo";
 import { addEventLayer, addMeLayer, addPostsLayer, addRadarLayer, addSessionLayers, addTeamLayer, addZoneLayer, boundsOf, setEvent, setMe, setPosts, setRadar, setTeam, setZone } from "@/lib/map/layers";
 import { loadMapLibre } from "@/lib/map/maplibre";
 import { kartverketStyle } from "@/lib/map/style";
-import { channels } from "@/lib/realtime";
 import { formatClock, phaseLeftS, type PlanRound } from "@/lib/rules/game";
 import { catchQr, parseCatch } from "@/lib/rules/tag";
 import { SAFETY } from "@/lib/rules/safety";
@@ -68,10 +67,7 @@ function roundTitle(r: { mode: string; variant?: string | null; zone?: unknown; 
   return r.zoned || r.zone === true ? teamed + t.zoneTag : teamed;
 }
 const SIM_ALLOWED = process.env.NODE_ENV !== "production" || process.env.NEXT_PUBLIC_SIM_ENABLED === "1";
-const FAST_MS = 2000; // active round / gathering (PLAN §9.2)
-const SLOW_MS = 10000; // lobby / pause
 const SOS_HOLD_MS = 1500;
-const STALE_FIX_MS = 15000; // never send an old fix as if it were current
 
 type Fatal = "lost" | "kicked" | "ended" | null;
 
@@ -155,7 +151,6 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
   const [offsetMs, setOffsetMs] = useState(0); // server − client clock (rule 6: server time is the truth)
 
   const fixRef = useRef<Fix | null>(null);
-  const inflight = useRef(false);
   const seenMsg = useRef<Set<number>>(new Set());
   const danger = useRef(false);
   const prev = useRef<TickView | null>(null);
@@ -303,58 +298,38 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
 
   }, [queueBadges]);
 
-  const tickNow = useCallback(async () => {
-    const f = fixRef.current;
-    if (!f || inflight.current || Date.now() - f.at > STALE_FIX_MS) return;
-    inflight.current = true;
-    try {
-      const v = await api.tick(sessionId, {
-        playerId: me.playerId,
-        token: me.token,
-        lat: f.lat,
-        lng: f.lng,
-        acc: f.acc,
-        speed: f.speed,
-        ts: Date.now(), // send time: orders requests; the same fix may be re-sent while standing still
-        steps: takeSteps() || undefined,
-      });
+  const status = view?.status ?? boot.status;
+  const fast = status === "live" || status === "gathering" || status === "countdown" || status === "ceremony";
+
+  const onView = useCallback(
+    (v: TickView) => {
       setOffsetMs(Date.parse(v.server_now) - Date.now());
       setView(v);
       react(v);
       if (v.status === "ended") setEnded(true);
-    } catch (e) {
-      const code = e instanceof ApiError ? e.code : "";
-      if (code === "ended") setEnded(true);
-      else if (code === "kicked") setKicked(true);
-      // network/timeout/stale: the next tick tries again
-    } finally {
-      inflight.current = false;
-    }
-  }, [me.playerId, me.token, sessionId, react, takeSteps]);
-
-  const status = view?.status ?? boot.status;
-  const fast = status === "live" || status === "gathering" || status === "countdown" || status === "ceremony";
-
-  useEffect(() => {
-    if (!ready || ended || kicked) return;
-    const first = setTimeout(tickNow, 0);
-    const iv = setInterval(tickNow, fast ? FAST_MS : SLOW_MS);
-    return () => {
-      clearTimeout(first);
-      clearInterval(iv);
-    };
-  }, [ready, ended, kicked, fast, tickNow]);
-
-  // First fix after «Jeg er klar»: report at once instead of waiting a full interval.
-  const hasFix = gps.fix !== null;
-  useEffect(() => {
-    if (ready && hasFix && !view) void tickNow();
-  }, [ready, hasFix, view, tickNow]);
-
-  // Push hints → fetch truth immediately.
-  const onHint = useCallback(() => void tickNow(), [tickNow]);
-  useChannel(ready ? channels.all(sessionId) : null, onHint);
-  useChannel(ready ? channels.player(sessionId, me.playerId) : null, onHint);
+    },
+    [react],
+  );
+  const onEnded = useCallback(() => setEnded(true), []);
+  const onKicked = useCallback(() => setKicked(true), []);
+  const tickFn = useLiveTick({
+    sessionId,
+    playerId: me.playerId,
+    token: me.token,
+    live: boot.live,
+    ready,
+    ended,
+    kicked,
+    fast,
+    hasView: view !== null,
+    fixRef,
+    hasFix: gps.fix !== null,
+    takeSteps,
+    onView,
+    onEnded,
+    onKicked,
+  }).tickNow;
+  const tickNow = tickFn;
 
   // Tick the moment the current phase ends (countdown → round → breather), so
   // the screen flips with the server instead of on the next 10 s interval.
