@@ -36,7 +36,12 @@ export const CHUNK = 40;
 /** A fix waits at least this long so fixes arriving together share one call. */
 export const COALESCE_MS = 50;
 export const RETRY_MS = 300;
-export const HTTP_WAIT_MS = 8000;
+/**
+ * How long an HTTP-fallback tick waits in the room. The phone gives up after 6 s
+ * (api.tick), and on a room timeout the Next route still has to run the direct
+ * RPC, so this must leave it room: 3.5 s here + ~0.5 s slack in lib/server/live.ts.
+ */
+export const HTTP_WAIT_MS = 3500;
 /** Token bucket per socket: refill per second and burst. Clients send one fix per 2 s. */
 export const RATE_PER_S = 2;
 export const RATE_BURST = 6;
@@ -49,8 +54,6 @@ export const HOST_EVERY_MS = 2000;
 export const HOST_DEBOUNCE_MS = 200;
 /** Server-side watchdog cadence while a session is in an active phase, sockets or not. */
 export const WATCHDOG_EVERY_MS = 5000;
-/** notify(state) re-ticks players whose last fix is younger than this. */
-export const FRESH_FIX_MS = 15000;
 /**
  * Phases where Postgres has time-driven work (lazy phase advance, signal-loss
  * alarms), so the watchdog keeps polling. lobby/ended need nothing; paused is
@@ -169,10 +172,12 @@ export class RoomCore<S> {
   private timer: unknown = null;
   private timerAt = Infinity;
   private ended = false;
-  /** Last accepted fix per player, memory only, for notify(state) re-ticks. Dropped after FRESH_FIX_MS. */
-  private lastFix = new Map<string, { entry: TickEntry; at: number }>();
   private lastStatus: string | null = null;
   private wdDue: number | null = null;
+  /** What was last handed to watchdog.save, to skip identical writes (a flush runs ~1/s). */
+  private savedKey: string | null = null;
+  /** HTTP waiters that timed out (the route then ticks directly). */
+  private withdrawn = new WeakSet<(r: HttpReply) => void>();
   private hostTimer: unknown = null;
   private refreshTimer: unknown = null;
   private lastSnapStart = -Infinity;
@@ -216,6 +221,7 @@ export class RoomCore<S> {
     if (!s) return;
     this.lastStatus = s.status;
     this.wdDue = s.watchdogDue;
+    this.savedKey = JSON.stringify(s);
   }
 
   closed(sock: S): void {
@@ -310,7 +316,16 @@ export class RoomCore<S> {
         this.d.clearTimer(t);
         resolve(r);
       };
-      const t = this.d.setTimer(HTTP_WAIT_MS, () => once({ status: 503, body: { error: "timeout" } }));
+      const t = this.d.setTimer(HTTP_WAIT_MS, () => {
+        // The route falls back to a direct RPC on this 503. A fix still queued here
+        // (not yet sent) is withdrawn so it is not ticked twice; one already in
+        // flight may still land, and then the direct RPC is dropped as stale
+        // (same client ts) by _tick_base.
+        this.withdrawn.add(once);
+        const p = this.pending.get(playerId);
+        if (p && p.waiters.includes(once) && !this.keep(p)) this.pending.delete(playerId);
+        once({ status: 503, body: { error: "timeout" } });
+      });
       this.queue(playerId, tokenHash, { t: "fix", ...fix }, once);
     });
   }
@@ -377,7 +392,6 @@ export class RoomCore<S> {
     } finally {
       this.flushing = false;
       this.st.flushes++;
-      for (const [id, f] of this.lastFix) if (this.d.now() - f.at > FRESH_FIX_MS) this.lastFix.delete(id);
       this.flushMs.push(this.d.now() - start);
       if (this.flushMs.length > 200) this.flushMs.shift();
       this.schedule();
@@ -417,7 +431,6 @@ export class RoomCore<S> {
       if (!p) continue;
       if (r.ok) {
         this.lastTickAt.set(player, start);
-        this.lastFix.set(player, { entry: { ...p.entry, steps: null }, at: start });
         const v = stripView(r);
         this.toPlayer(player, { t: "view", v });
         this.reply(p, { status: 200, body: v });
@@ -448,8 +461,20 @@ export class RoomCore<S> {
     }
   }
 
+  /**
+   * Drops timed-out HTTP waiters. false when the fix only served waiters that
+   * have all given up (and no socket of that player): the route has fallen back
+   * to a direct RPC for it, so the room must not tick it as well.
+   */
+  private keep(p: Pending): boolean {
+    const had = p.waiters.length;
+    p.waiters = p.waiters.filter((w) => !this.withdrawn.has(w));
+    return !(had > 0 && p.waiters.length === 0 && !this.hasPlayerSocket(p.entry.player));
+  }
+
   /** Put a fix back unless a newer one arrived meanwhile; waiters move along. */
   private requeue(p: Pending): void {
+    if (!this.keep(p)) return;
     const newer = this.pending.get(p.entry.player);
     if (newer) {
       newer.waiters.push(...p.waiters);
@@ -467,6 +492,11 @@ export class RoomCore<S> {
 
   // ───────────────────────── fan-out ─────────────────────────
 
+  private hasPlayerSocket(playerId: string): boolean {
+    for (const c of this.conns.values()) if (c.authed && c.playerId === playerId) return true;
+    return false;
+  }
+
   private toPlayer(playerId: string, msg: ServerMsg): void {
     for (const [s, c] of this.conns) if (c.authed && c.playerId === playerId) this.d.send(s, msg);
   }
@@ -482,7 +512,6 @@ export class RoomCore<S> {
   private closePlayer(playerId: string, code: number, reason: string): void {
     for (const [s, c] of [...this.conns]) if (c.playerId === playerId) this.drop(s, code, reason);
     this.pending.delete(playerId);
-    this.lastFix.delete(playerId);
   }
 
   closeAll(code: number, reason: string): void {
@@ -503,7 +532,6 @@ export class RoomCore<S> {
     this.toPlayers({ t: "hint" }); // final nudge: they refetch and see the ended state
     this.closeAll(CLOSE.ended, "ended");
     this.lastTickAt.clear();
-    this.lastFix.clear();
     this.d.watchdog?.wipe();
   }
 
@@ -515,17 +543,10 @@ export class RoomCore<S> {
     this.st.notifies++;
     if (kind === "alarm") return this.requestHostRefresh();
     if (kind === "state") {
-      const now = this.d.now();
-      for (const [id, f] of this.lastFix) {
-        if (now - f.at >= FRESH_FIX_MS) {
-          this.lastFix.delete(id);
-        } else if (!this.pending.has(id)) {
-          // Same position again: nothing moves, but the player gets a fresh view.
-          // Timing (MIN_PLAYER_GAP_MS, 1 s cadence) is the flush loop's business.
-          this.pending.set(id, { entry: { ...f.entry }, tokenHash: f.entry.token_hash, receivedAt: now, waiters: [] });
-        }
-      }
-      this.schedule();
+      // No server-side re-tick of a remembered fix: tick() would treat it as a
+      // fresh fix (fix_at = now, signal alarm cleared), hiding a phone that went
+      // silent (rule 4), and with its old client ts it is dropped as stale anyway.
+      // The hint makes each phone send a real fix now, as the Realtime state hint does.
       this.toPlayers({ t: "hint" });
       this.requestHostRefresh();
       // A state change can leave a quiet phase (lobby → countdown): make sure the watchdog sees it.
@@ -645,11 +666,22 @@ export class RoomCore<S> {
     if (status === "ended") return this.end();
     if (ACTIVE_PHASES.has(status)) this.armWatchdog();
     else this.disarmWatchdog();
-    this.d.watchdog?.save({ status, watchdogDue: this.wdDue });
+    this.save();
+  }
+
+  private save(): void {
+    if (this.ended || !this.d.watchdog) return;
+    const s: WatchdogState = { status: this.lastStatus, watchdogDue: this.wdDue };
+    const key = JSON.stringify(s);
+    if (key === this.savedKey) return;
+    this.savedKey = key;
+    this.d.watchdog.save(s);
   }
 
   private armWatchdog(): void {
-    if (this.wdDue !== null || !this.d.watchdog) return;
+    if (!this.d.watchdog) return;
+    // Armed, unless the deadline is long past (the alarm was lost, e.g. retries exhausted).
+    if (this.wdDue !== null && this.wdDue > this.d.now() - 3 * WATCHDOG_EVERY_MS) return;
     this.wdDue = this.d.now() + WATCHDOG_EVERY_MS;
     this.d.watchdog.setAlarm(this.wdDue);
   }
@@ -679,7 +711,7 @@ export class RoomCore<S> {
       this.st.watchdogHints++;
       this.requestHostRefresh();
     }
-    this.d.watchdog?.save({ status: this.lastStatus, watchdogDue: this.wdDue });
+    this.save();
     return { again: this.wdDue !== null };
   }
 

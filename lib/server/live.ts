@@ -7,7 +7,10 @@ import type { NotifyKind } from "@/lib/live/protocol";
 // Next worker → chase-live session room (Durable Object), via the LIVE service
 // binding. Internal only. Never log bodies: they contain positions (rule 3).
 
-const TIMEOUT_MS = { tick: 8000, notify: 3000 } as const;
+// tick: the room answers 503 itself after HTTP_WAIT_MS (3.5 s); this is only the
+// backstop. Phones give up after 6 s, and the route still needs time for the
+// direct-RPC fallback, so keep it well under that.
+const TIMEOUT_MS = { tick: 4000, notify: 3000 } as const;
 
 interface LiveEnv {
   LIVE?: { fetch(req: Request): Promise<Response> };

@@ -7,7 +7,6 @@ import {
   MIN_PLAYER_GAP_MS,
   HOST_DEBOUNCE_MS,
   HOST_EVERY_MS,
-  FRESH_FIX_MS,
   RETRY_MS,
   RoomCore,
   WATCHDOG_EVERY_MS,
@@ -389,6 +388,45 @@ describe("RoomCore HTTP fallback", () => {
     await expect(p).resolves.toMatchObject({ status: 503 });
   });
 
+  it("withdraws a still-queued fix on timeout, so the route's fallback does not tick it twice", async () => {
+    const { clock, core, setBatch, calls } = setup();
+    let fail = true;
+    setBatch(async (entries) => {
+      if (fail) throw new Error("down");
+      return { ok: true, server_now: "n", status: "live", hint_all: false, alert_host: false,
+        results: entries.map((e) => ({ player: e.player, r: { ok: true, status: "live" } })) };
+    });
+    const p = core.httpTick(pid(2), "h".repeat(64), { lat: 59.5, lng: 10, acc: 5, speed: null, steps: 10 });
+    await clock.advance(HTTP_WAIT_MS + 10);
+    await expect(p).resolves.toMatchObject({ status: 503 });
+    fail = false;
+    const n = calls.flat().length;
+    await clock.advance(5000);
+    expect(calls.flat()).toHaveLength(n);
+    expect(core.stats().pending).toBe(0);
+  });
+
+  it("does not requeue an in-flight fix whose HTTP waiter timed out", async () => {
+    const { clock, core, setBatch, calls } = setup();
+    let release: (() => void) | null = null;
+    setBatch(() => new Promise((_res, rej) => (release = () => rej(new Error("down")))));
+    const p = core.httpTick(pid(2), "h".repeat(64), { lat: 59.5, lng: 10, acc: 5, speed: null });
+    await clock.advance(HTTP_WAIT_MS + 10);
+    await expect(p).resolves.toMatchObject({ status: 503 });
+    setBatch(async () => {
+      throw new Error("still down");
+    });
+    (release as (() => void) | null)?.();
+    await clock.advance(400); // the retry fails too → requeue
+    setBatch(async (entries) => ({ ok: true, server_now: "n", status: "live", hint_all: false, alert_host: false,
+      results: entries.map((e) => ({ player: e.player, r: { ok: true, status: "live" } })) }));
+    const n = calls.flat().length;
+    expect(n).toBe(2);
+    await clock.advance(5000);
+    expect(calls.flat()).toHaveLength(n);
+    expect(core.stats().pending).toBe(0);
+  });
+
   it("maps errors to the tick route's statuses", async () => {
     const { clock, core, setBatch } = setup();
     setBatch(async (entries) => ({ ok: true, server_now: "n", status: "live", hint_all: false, alert_host: false,
@@ -497,7 +535,7 @@ describe("RoomCore notify", () => {
     expect(snapCalls()).toBe(n + 1);
   });
 
-  it("state re-ticks fresh players (respecting the gap), hints players and refreshes hosts", async () => {
+  it("state hints players and refreshes hosts, but never re-ticks a remembered fix", async () => {
     const { clock, core, player, fix, host, calls, snapCalls } = setup();
     const a = await player(1);
     const b = await player(2);
@@ -512,26 +550,12 @@ describe("RoomCore notify", () => {
     await core.notify("state");
     await settle();
     expect(hints(a)).toHaveLength(1);
+    expect(hints(b)).toHaveLength(1);
     expect(hints(h)).toHaveLength(0);
     expect(snapCalls()).toBe(n + 1);
-    // not before the 1.9 s gap
-    await clock.advance(300);
+    // A re-tick of an old fix would stamp fix_at = now and clear signal alarms (rule 4).
+    await clock.advance(MIN_PLAYER_GAP_MS + 5000);
     expect(calls.flat()).toHaveLength(2);
-    await clock.advance(MIN_PLAYER_GAP_MS + 1100);
-    expect(calls.flat().length).toBe(4);
-    expect(views(a)).toHaveLength(2);
-    expect(calls.at(-1)?.every((e) => e.steps === null)).toBe(true);
-  });
-
-  it("state skips players whose last fix is 15 s old or older", async () => {
-    const { clock, core, player, fix, calls } = setup();
-    const a = await player(1);
-    await fix(a);
-    await clock.advance(FRESH_FIX_MS + 100);
-    const n = calls.flat().length;
-    await core.notify("state");
-    await clock.advance(5000);
-    expect(calls.flat()).toHaveLength(n);
   });
 
   it("end pushes a final host view, closes all sockets 4410 and wipes", async () => {
@@ -556,6 +580,16 @@ describe("RoomCore notify", () => {
 });
 
 describe("RoomCore watchdog", () => {
+  it("re-arms when the stored deadline is long past (lost alarm)", async () => {
+    const { clock, core, player, fix, wd } = setup();
+    core.restoreState({ status: "live", watchdogDue: clock.t - 60_000 });
+    const a = await player(1);
+    await fix(a);
+    await clock.advance(100);
+    expect(wd.alarm).not.toBeNull();
+    expect(wd.alarm!).toBeGreaterThan(clock.t);
+  });
+
   it("arms on the first successful flush and re-arms in active phases without sockets", async () => {
     const { clock, core, player, fix, wd, snapCalls } = setup();
     const a = await player(1);

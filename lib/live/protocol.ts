@@ -49,7 +49,7 @@ export type RoomTickBody = z.infer<typeof roomTickBody>;
 /**
  * Internal nudge (Next route → room): POST /live/s/<id>/notify. Fire-and-forget.
  *  - state: something changed for everybody (phase, catch, claim, host action):
- *           re-tick players whose last fix is < 15 s old, push {t:"hint"}, refresh hosts.
+ *           push {t:"hint"} to players (they send a fix now), refresh hosts.
  *  - alarm: a new or escalated alarm (incl. SOS): refresh host screens now.
  *  - end:   the session ended: push a final view, close all sockets 4410, clear storage.
  */
@@ -66,7 +66,7 @@ export type ServerMsg =
   | { t: "ready"; role: "player" | "host"; server_now: string }
   | { t: "view"; v: TickView }
   | { t: "err"; error: string }
-  | { t: "hint" } // something changed for everybody: expect a fresh view soon
+  | { t: "hint" } // something changed for everybody: send a fix now to get a fresh view
   | { t: "alarm" } // host only: a new or escalated alarm, refetch now
   | { t: "host"; v: Record<string, unknown> }; // host only: pushed host_snapshot (same shape as GET /api/s/[id]/host)
 

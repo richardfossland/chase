@@ -70,9 +70,13 @@ export class SessionRoom extends DurableObject<Env> {
         },
       },
     });
-    this.loaded = this.ctx.storage.get<WatchdogState>("wd").then((s) => core.restoreState(s ?? null));
     // Woken from hibernation: the runtime kept the sockets, memory starts empty.
-    for (const ws of this.ctx.getWebSockets()) core.restore(ws, ws.deserializeAttachment() as SockMeta | null);
+    // Stored state first, then the sockets: a restored host socket starts a
+    // snapshot whose observe() must not be overwritten by the older stored state.
+    this.loaded = this.ctx.storage.get<WatchdogState>("wd").then((s) => {
+      core.restoreState(s ?? null);
+      for (const ws of this.ctx.getWebSockets()) core.restore(ws, ws.deserializeAttachment() as SockMeta | null);
+    });
     this.core = core;
     return core;
   }
