@@ -2,6 +2,8 @@ import { fail, isUuid } from "@/lib/server/http";
 import { guarded, respond, rpc } from "@/lib/server/rpc";
 import { limited, parseBody } from "@/lib/server/route";
 import { playerAuth } from "@/lib/server/schemas";
+import { livePath } from "@/lib/live/protocol";
+import { liveTransport } from "@/lib/server/live";
 import { sha256Hex } from "@/lib/server/tokens";
 
 // Player bootstrap: map geometry, teacher phone (for «Ring lærer»), status.
@@ -21,5 +23,6 @@ export const POST = guarded(async (req, ctx) => {
     teacherPhone: x.teacher_phone,
     geo: x.geo,
     serverNow: x.server_now,
+    live: liveTransport() === "ws" ? { path: livePath(id) } : null,
   }));
 });

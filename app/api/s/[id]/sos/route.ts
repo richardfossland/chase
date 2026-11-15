@@ -1,4 +1,6 @@
 import { channels, events } from "@/lib/realtime";
+import { defer } from "@/lib/server/defer";
+import { liveNotify } from "@/lib/server/live";
 import { broadcast } from "@/lib/server/broadcast";
 import { fail, isUuid } from "@/lib/server/http";
 import { guarded, respond, rpc } from "@/lib/server/rpc";
@@ -21,5 +23,7 @@ export const POST = guarded(async (req, ctx) => {
     p_session: id,
   });
   if (r.ok) await broadcast(channels.host(id), events.alarm, { kind: "sos" });
+  // Never waits on the room: the Supabase broadcast above is the immediate path.
+  if (r.ok) defer(() => liveNotify(id, "alarm"), "sos-live");
   return respond(r, (x) => ({ alarmId: x.alarm_id, new: x.new }));
 });

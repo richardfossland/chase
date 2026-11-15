@@ -1,5 +1,6 @@
 import { channels, events } from "@/lib/realtime";
 import { broadcast } from "@/lib/server/broadcast";
+import { liveNotify } from "@/lib/server/live";
 import { defer } from "@/lib/server/defer";
 import { fail, isUuid } from "@/lib/server/http";
 import { guarded, respond, rpc } from "@/lib/server/rpc";
@@ -23,5 +24,6 @@ export const POST = guarded(async (req, ctx) => {
     p_yes: body.yes,
   });
   if (r.ok && !r.already) defer(() => broadcast(channels.host(id), events.state), "again");
+  if (r.ok && !r.already) defer(() => liveNotify(id, "state"), "again-live");
   return respond(r, (x) => ({ already: !!x.already }));
 });

@@ -1,5 +1,6 @@
 import { channels, events } from "@/lib/realtime";
 import { broadcast } from "@/lib/server/broadcast";
+import { liveNotify } from "@/lib/server/live";
 import { defer } from "@/lib/server/defer";
 import { fail, isUuid } from "@/lib/server/http";
 import { guarded, respond, rpc } from "@/lib/server/rpc";
@@ -34,5 +35,6 @@ export const POST = guarded(async (req, ctx) => {
   const r = await rpc("mission_done", auth);
   // The teacher's list of «Ferdig» to confirm changed.
   if (r.ok) defer(() => broadcast(channels.host(id), events.roster), "mission");
+  if (r.ok) defer(() => liveNotify(id, "state"), "mission-live");
   return respond(r, (x) => ({ state: x.state ?? null }));
 });

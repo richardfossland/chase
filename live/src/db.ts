@@ -45,5 +45,7 @@ export function createDb(url: string, key: string): RoomDb {
       auth(await rpc("player_bootstrap", { p_player: playerId, p_token_hash: tokenHash, p_session: session })),
     hostAuth: async (session, hostTokenHash) =>
       auth(await rpc("host_snapshot", { p_session: session, p_host_token_hash: hostTokenHash, p_include_geo: false })),
+    hostSnapshot: async (session, includeGeo) =>
+      await rpc("host_snapshot_svc", { p_session: session, p_include_geo: includeGeo }),
   };
 }

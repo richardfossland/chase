@@ -1,4 +1,6 @@
 import { channels, events } from "@/lib/realtime";
+import { defer } from "@/lib/server/defer";
+import { liveNotify } from "@/lib/server/live";
 import { broadcast } from "@/lib/server/broadcast";
 import { fail, isUuid } from "@/lib/server/http";
 import { guarded, respond, rpc } from "@/lib/server/rpc";
@@ -20,6 +22,7 @@ export const POST = guarded(async (req, ctx) => {
   if (r.ok && typeof r.player_id === "string") {
     await broadcast(channels.player(id, r.player_id), events.ack, { kind: String(r.kind) });
     await broadcast(channels.host(id), events.alarm);
+    defer(() => liveNotify(id, "alarm"), "ack-live");
   }
   return respond(r, (x) => ({ alarmId: x.alarm_id, kind: x.kind }));
 });
