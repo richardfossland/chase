@@ -286,6 +286,7 @@ Fysiske oppdrag gjøres der eleven er, aldri som en betingelse for å slippe str
 | Lagvisnings-cache (lagkameratenes posisjoner og lagbeskjeder, bygges hvert sekund) | `team_clock`, `session_clock.team_cache` (UNLOGGED) | **Slettes ved øktslutt** (fra 0013; før det fulgte den økta i 24 t) |
 | **Lærerbibliotek** (lagrede og sist brukte områder, opplegg, oppdragspakker), knyttet til en anonym lærernøkkel (bare hash lagres). Ingen elevdata. | `teachers`, `areas`, `plans`, `challenge_packs` | Til læreren sletter det, eller **13 måneder uten bruk** (`purge_expired`). Bare de 5 siste «sist brukt» per type beholdes. |
 | Delelenker (kopi av et opplegg og ev. et område, ingen info om læreren) | `shares` | Til læreren trekker lenken tilbake (raden slettes), eller med biblioteket |
+| Øktrom (Durable Object, ADR-033): siste posisjon per spiller i minnet til den er skrevet (ca. 1 s), sockets med spiller-id og token-hash | `chase-live` (Cloudflare, EU-jurisdiksjon) | **Bare i minnet.** DO-lagring har bare `{session, status, watchdogDue}` og slettes (`deleteAll`) ved øktslutt |
 | **Anonymt sammendrag** | `session_summaries` | Beholdes: antall spillere, varighet, moduser, total og median distanse og aktive minutter som histogram, og anonym telling av «vil spille igjen» (ja/nei, lærerens svar). **Ingen koordinater, navn eller område.** |
 
 **Tekniske tiltak:**
@@ -309,8 +310,13 @@ Fysiske oppdrag gjøres der eleven er, aldri som en betingelse for å slippe str
 
 ```
 Elevmobil (PWA)                 Lærermobil (PWA)
-  watchPosition ─┐                 │ polling /snapshot (2 s)
-                 ▼                 ▼
+  watchPosition ─┐                 │ WebSocket: push av snapshot (2 s) + HTTP-vakthund (10 s)
+     WebSocket   ▼                 ▼
+   ┌──────── chase-live: ett øktrom (Durable Object) per økt (ADR-033) ────────┐
+   │  samler posisjoner → chase.tick_batch() ca. 1/s, pusher visning/snapshot, │
+   │  vakthund (DO-alarm 5 s) for signaltap og faseskifte                      │
+   └───────────────────────────────▲───────────────────────────────────────────┘
+                 service binding   │  (HTTP-reserve: POST /tick via Next)
         Next 16 API-ruter på Cloudflare Workers (OpenNext)
           │  validering (zod), token-hash, rate limit
           ▼
@@ -331,7 +337,8 @@ Elevmobil (PWA)                 Lærermobil (PWA)
   3. evaluerer geofence, forbudt sone, postklaim og sone,
   4. returnerer **spillerens personlige visning**: rolle, poeng, synlige objekter etter synlighetsregelen, varsler og servertid.
 - **Ett kall per tick per spiller**, uten egen broadcast for posisjoner. Ved 60 spillere er det ca. 30 forespørsler/s, som er håndterbart for både Workers og Postgres.
-- Lærerpanelet poller `GET /api/s/[id]/snapshot` hvert 2. sekund. Signaltap og stillstand utledes ved lesing (`now() - fix_at`), så det trengs ingen cron.
+- **Fra ADR-033 (`LIVE_TRANSPORT=ws`):** mobilen sender posisjoner over WebSocket til øktrommet, som kaller `chase.tick_batch()` ca. én gang i sekundet (maks 50 per kall, ≥ 1,9 s mellom hver spillers tick fordi farten måles mot `now()`, `busy` ved låsventing over 250 ms). Visningen pushes tilbake. Faller socketen, går mobilen straks over til `POST /tick`, som rommet også betjener (eller direkte `tick()` hvis rommet ikke svarer). Med `LIVE_TRANSPORT=http` gjelder modellen over uendret.
+- Lærerpanelet poller `GET /api/s/[id]/snapshot` hvert 2. sekund (med ws: snapshot pushes hvert 2. s, HTTP hvert 10. s som vakthund, 2 s hvis push uteblir). Signaltap og stillstand utledes ved lesing (`now() - fix_at`), så det trengs ingen cron.
 - **Realtime Broadcast** brukes bare til push av hendelser med lavt volum, slik at elevene reagerer umiddelbart (pause, beskjed, alarmkvittering, «du ble fanget»). Klienten henter alltid fasit med neste tick. Broadcasts er bare dytt.
 - Kanaler:
   - `chase:{session}:all`,
@@ -381,6 +388,7 @@ API under `/api/...`: `sessions` (opprett), `join`, `resume`, `s/[id]/tick`, `s/
 ### 9.7 Kostnad og drift
 
 - En økt på 45 minutter med 60 spillere gir ca. 80 000 API-kall. Det krever **Workers Paid** (5 USD/mnd, 10 M forespørsler), som gir rom for 100+ økter i måneden.
+- Med øktrommet (ADR-033) blir det ca. 1 DB-kall/s per økt i stedet for ca. 20. Durable Objects ligger innenfor Workers Paid (ca. 0 kr ekstra ved 100 økter/mnd). **Aldri deploy `chase-live` midt i en time etter lansering:** alle sockets kobles fra (tilbake på under 1 s, men unødvendig).
 - Supabase-belastningen er lav, men det må verifiseres at PostGIS-kall i `tick()` holder seg under 15 ms (fase 1-ytelsestest).
 
 ---
