@@ -36,6 +36,13 @@
 - **Store grupper** (opptil 300): fra 80 elever viser kartet vanlige elever som små prikker og klynger med antall. Elever som trenger deg (SOS, utenfor, mistet signal, står stille) har fortsatt navn. I lobbyen ser du bare dem med svak GPS. Trykk «Vis alle» for resten. Spillerlista har søk.
 - ⚠️ Mange klasser samtidig krever en større databasemaskin enn den vi har nå. Si fra før dere prøver mer enn én klasse.
 
+## Sanntidsforbindelse (ADR-033) – sjekk i utetesten
+- [ ] **Låst skjerm på iPhone** i en pustepause, så lås opp: eleven er tilbake i spillet innen et par sekunder, uten å laste siden på nytt.
+- [ ] **Bytt app** (åpne kamera eller meldinger) i 30 s og kom tilbake: posisjonen oppdateres igjen.
+- [ ] **Dårlig dekning** (gå bak et bygg eller inn i skogkanten): spillet fortsetter, og læreren ser «mistet signal» hvis dekningen faktisk er borte.
+- [ ] **Lærerskjermen** oppdateres hvert par sekunder uten at du gjør noe, og alarmer kommer med en gang.
+- [ ] Hvis noe henger: si fra med klokkeslett. Det kan skrus tilbake til den gamle forbindelsen på ett minutt.
+
 ## I timen (start)
 1. **Lag økta** på chase.sundaysuite.app: tegn området og velg samlingspunkt. Velg malen *Full gymtime*, eller *Første gang* hvis klassen ikke har spilt før. Legg inn mobilnummeret ditt.
 2. **Vis QR-koden.** Elevene skanner, velger kallenavn og trykker **«Jeg er klar»** for å slå på lyd, GPS og skjerm-på.
