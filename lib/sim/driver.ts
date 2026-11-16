@@ -11,6 +11,10 @@
 import { relayBatons } from "@/lib/rules/relay";
 import { powerupCheck } from "@/lib/rules/events";
 
+import { fixDelayMs } from "@/lib/client/live";
+
+import { rng } from "./rng";
+import { WsLink, type ServerLike, type WsCtor } from "./ws";
 import { createBot, type Behaviour, type Bot, type BotFix, type SimGeo } from "./behaviours";
 
 export type AlarmKind = "sos" | "forbidden" | "outside" | "signal";
@@ -33,6 +37,46 @@ export interface SimPlayer {
   view: Record<string, unknown> | null;
   /** Conditions the bot was in on its previous step (expectations fire on entry only). */
   prevExpect: Set<string>;
+  /** ws transport: this bot's socket, send times of fixes not yet answered, last fix sent. */
+  link?: WsLink;
+  pendingFix?: { at: number; kind: FixKind; sampledAt: number }[];
+  /** When the bot took its current position (its step); the fix's age is counted from here. */
+  lastFixSampledAt?: number;
+  lastFixSentAt?: number;
+  /** A fix held back by the 1.9 s client throttle (useLiveTick's `pending`). */
+  deferredFix?: ReturnType<typeof setTimeout> | null;
+  /** Terminal close (ended/kicked/...): the bot is finished. */
+  done?: boolean;
+  /** 4003 (kill switch): HTTP only from now on. */
+  httpOnly?: boolean;
+}
+
+/** Why a fix went out: the 2 s interval, a hint from the room, or late because of the 1.9 s throttle. */
+export type FixKind = "interval" | "hint" | "deferred";
+
+/** Counters for the ws transport (SimStats.ws is set only in ws mode). */
+export interface WsStats {
+  fixView: number[];            // ms from the newest unanswered fix sent → {t:"view"}
+  fixViewBy: Record<FixKind, number[]>;
+  /** ms from the position being taken (bot step) → its view: what a geofence alarm waits for. */
+  sampleView: number[];
+  /** Fixes the room replaced by a newer one before writing (or whose view was lost): not latency samples. */
+  superseded: number;
+  /** Fixes held back by the client's 1.9 s throttle and sent later (like useLiveTick). */
+  deferred: number;
+  reconnects: number;
+  iphoneDrops: number;
+  httpFallbackTicks: number;
+  hints: number;
+  wsErrors: Record<string, number>;
+  closes: Record<string, number>;
+  terminal: Record<string, number>;
+  hostPushes: number;
+  hostAlarmMsgs: number;
+  hostConnected: boolean;
+  /** --kill-at: all sockets closed at once; recoveredAt when >= 95 % are back. */
+  kill: { at: number; total: number; recoveredAt: number | null } | null;
+  connectedNow: number;
 }
 
 export interface AlarmCheck {
@@ -48,6 +92,7 @@ export interface SimStats {
   errors: Record<string, number>;
   latencies: number[];
   alarms: AlarmCheck[];
+  ws?: WsStats;
   /** Phase 2 game accounting. */
   game: {
     claims: number;
@@ -109,6 +154,8 @@ export interface SwarmOptions {
   dropoutAfterS?: number;
   dropoutForS?: number;
   namePrefix?: string;
+  /** ws transport: base like ws://127.0.0.1:8787 (the path comes from /me live.path). */
+  ws?: { base: string; impl?: WsCtor; iphoneFraction?: number };
   onUpdate?: (players: SimPlayer[], stats: SimStats) => void;
   onLog?: (line: string) => void;
 }
@@ -146,6 +193,12 @@ export function startSwarm(opts: SwarmOptions) {
       events: {}, eventKeys: new Set(), sprintMax: 0, prizes: 0, powerupsGot: 0, powerupsUsed: 0, powerupFails: {}, missionsDone: 0, missionsConfirmed: 0,
       teamSizes: null, teamPoints: {}, flagCaptures: 0, hillHolds: 0, relayLegs: 0, relayBatonMax: 0, relayBatonCap: 0, relayLegsByRound: new Map(), capKeys: new Set(), msgsSent: 0, msgsSeen: 0, msgKeys: new Set(), quizAnswered: 0, quizRight: 0, steps: 0 },
   };
+  const wsOn = !!opts.ws;
+  if (wsOn) {
+    stats.ws = { fixView: [], fixViewBy: { interval: [], hint: [], deferred: [] }, sampleView: [], superseded: 0, deferred: 0, reconnects: 0, iphoneDrops: 0, httpFallbackTicks: 0, hints: 0, wsErrors: {}, closes: {}, terminal: {},
+      hostPushes: 0, hostAlarmMsgs: 0, hostConnected: false, kill: null, connectedNow: 0 };
+  }
+  let hostLink: WsLink | null = null;
   const players: SimPlayer[] = [];
   const timers: ReturnType<typeof setInterval>[] = [];
   let stopped = false;
@@ -161,6 +214,7 @@ export function startSwarm(opts: SwarmOptions) {
   };
 
   async function tickOne(p: SimPlayer) {
+    if (p.done) return;
     const s = p.bot.step(tickMs / 1000);
     const now = Date.now();
     if (s.sos) {
@@ -177,6 +231,12 @@ export function startSwarm(opts: SwarmOptions) {
       return;
     }
     p.lastFix = s.fix;
+    p.lastFixSampledAt = now;
+    if (p.link?.connected && !p.httpOnly) {
+      wsTick(p, "interval");
+      return;
+    }
+    if (wsOn) stats.ws!.httpFallbackTicks++;
     const t0 = Date.now();
     const r = opts.transport.tick
       ? await opts.transport.tick(sessionId, p, s.fix)
@@ -193,43 +253,121 @@ export function startSwarm(opts: SwarmOptions) {
         });
     stats.latencies.push(Date.now() - t0);
     if (stats.latencies.length > 200_000) stats.latencies.splice(0, 100_000);
-    if (r.status === 200) {
-      stats.ticks++;
-      p.lastTickAt = Date.now();
-      const z0 = (p.view as { zone?: { hits: number; pen: number } } | null)?.zone;
-      const z1 = (r.data as { zone?: { hits: number; pen: number } }).zone;
-      if (z1) {
-        // Per-round counters: a drop means a new round started.
-        stats.game.zoneHits += z0 && z1.hits >= z0.hits ? z1.hits - z0.hits : z1.hits;
-        stats.game.zonePen += z0 && z1.pen >= z0.pen ? z1.pen - z0.pen : z1.pen;
+    if (r.status === 200) await applyView(p, r.data, s.fix);
+    else err(`tick_${r.status}_${String(r.data.error ?? "")}`);
+  }
+
+  /**
+   * Mirror of useLiveTick.wsSend: the same fixDelayMs throttle (1.9 s since the last send);
+   * a tick (interval or hint) inside that window is sent once, at the earliest allowed
+   * moment, with the then newest position.
+   */
+  function wsTick(p: SimPlayer, kind: FixKind) {
+    if (!p.lastFix || p.done) return;
+    const wait = fixDelayMs(Date.now(), p.lastFixSentAt ?? null);
+    if (wait > 0) {
+      if (!p.deferredFix) {
+        stats.ws!.deferred++;
+        p.deferredFix = setTimeout(() => {
+          p.deferredFix = null;
+          if (!stopped && p.link?.connected && !p.httpOnly) wsTick(p, "deferred");
+        }, wait);
       }
-      const prevView = p.view;
-      p.view = r.data;
-      const cer = (r.data as { ceremony?: { best: unknown; voted: boolean | null } }).ceremony;
-      if (cer?.best && !voted.has(p.playerId)) {
-        voted.add(p.playerId);
-        stats.game.bestCards++;
-        const v = await opts.transport.post(`/api/s/${sessionId}/again`, { playerId: p.playerId, token: p.token, yes: p.nickname.length % 3 !== 0 });
-        if (v.status === 200) stats.game.votes++;
-        else err(`again_${v.status}`);
+      return;
+    }
+    sendFix(p, p.lastFix, kind);
+  }
+
+  function sendFix(p: SimPlayer, fix: BotFix, kind: FixKind) {
+    const now = Date.now();
+    const sent = p.link!.send({
+      t: "fix",
+      lat: fix.lat,
+      lng: fix.lng,
+      acc: fix.acc,
+      speed: fix.speed,
+      ts: now,
+      steps: fix.speed > 0.5 ? Math.round(fix.speed * (tickMs / 1000) * 1.3) : undefined,
+    });
+    if (!sent) return;
+    p.pendingFix ??= [];
+    p.pendingFix.push({ at: now, kind, sampledAt: p.lastFixSampledAt ?? now });
+    p.lastFixSentAt = now;
+  }
+
+  function onPlayerMsg(p: SimPlayer, m: ServerLike) {
+    const w = stats.ws!;
+    if (m.t === "view" && m.v) {
+      const now = Date.now();
+      // The room coalesces: a flush writes the player's NEWEST fix and answers it once.
+      // So a view answers the newest fix sent; older unanswered ones were superseded (or
+      // their view was lost while the socket was down) and are not latency samples.
+      // With the throttle a fix cannot be sent during the flush that answers the
+      // previous one (flush ≈ 0.1 s), so "newest" is the answered one.
+      const q = (p.pendingFix ??= []);
+      const f = q.pop();
+      w.superseded += q.length;
+      q.length = 0;
+      if (f !== undefined) {
+        w.fixView.push(now - f.at);
+        w.fixViewBy[f.kind].push(now - f.at);
+        w.sampleView.push(now - f.sampledAt);
+        if (w.sampleView.length > 200_000) w.sampleView.splice(0, 100_000);
+        if (w.fixView.length > 200_000) w.fixView.splice(0, 100_000);
+        if (w.fixViewBy[f.kind].length > 200_000) w.fixViewBy[f.kind].splice(0, 100_000);
       }
-      p.bot.observe(r.data as never);
-      const claimed = r.data.claimed as { post_id: string; kind: string } | null | undefined;
-      if (claimed) {
-        stats.game.claims++;
-        if (claimed.kind === "golden") stats.game.golden++;
-        if (stats.game.claimedIds.has(claimed.post_id)) stats.game.duplicateClaims++;
-        stats.game.claimedIds.add(claimed.post_id);
-      }
-      if (r.data.lost) stats.game.lost++;
-      void tryCatch(p);
-      void tryEvent(p, prevView);
-      void tryTeam(p);
-      void tryQuiz(p);
-      if (s.fix.speed > 0.5) stats.game.steps += Math.round(s.fix.speed * (tickMs / 1000) * 1.3);
-      // A signal-loss check is satisfied once the bot reports again.
-      stats.alarms = stats.alarms.filter((a) => !(a.player === p.playerId && a.kind === "signal" && a.seenAt === null && a.expectedAt > Date.now()));
-    } else err(`tick_${r.status}_${String(r.data.error ?? "")}`);
+      void applyView(p, m.v, p.lastFix);
+    } else if (m.t === "hint") {
+      w.hints++;
+      wsTick(p, "hint"); // like useLiveTick: a hint is a tick, subject to the same 1.9 s throttle
+    } else if (m.t === "err") {
+      const k = `ws_err_${String(m.error ?? "")}`;
+      err(k);
+      w.wsErrors[String(m.error ?? "")] = (w.wsErrors[String(m.error ?? "")] ?? 0) + 1;
+    }
+  }
+
+  function connectedCount() {
+    return players.filter((p) => p.link?.connected).length;
+  }
+
+  /** Everything a tick answer (HTTP response or ws {t:"view"}) does to the bot and the counters. */
+  async function applyView(p: SimPlayer, data: Record<string, unknown>, fix: BotFix | null) {
+    stats.ticks++;
+    p.lastTickAt = Date.now();
+    const z0 = (p.view as { zone?: { hits: number; pen: number } } | null)?.zone;
+    const z1 = (data as { zone?: { hits: number; pen: number } }).zone;
+    if (z1) {
+      // Per-round counters: a drop means a new round started.
+      stats.game.zoneHits += z0 && z1.hits >= z0.hits ? z1.hits - z0.hits : z1.hits;
+      stats.game.zonePen += z0 && z1.pen >= z0.pen ? z1.pen - z0.pen : z1.pen;
+    }
+    const prevView = p.view;
+    p.view = data;
+    const cer = (data as { ceremony?: { best: unknown; voted: boolean | null } }).ceremony;
+    if (cer?.best && !voted.has(p.playerId)) {
+      voted.add(p.playerId);
+      stats.game.bestCards++;
+      const v = await opts.transport.post(`/api/s/${sessionId}/again`, { playerId: p.playerId, token: p.token, yes: p.nickname.length % 3 !== 0 });
+      if (v.status === 200) stats.game.votes++;
+      else err(`again_${v.status}`);
+    }
+    p.bot.observe(data as never);
+    const claimed = data.claimed as { post_id: string; kind: string } | null | undefined;
+    if (claimed) {
+      stats.game.claims++;
+      if (claimed.kind === "golden") stats.game.golden++;
+      if (stats.game.claimedIds.has(claimed.post_id)) stats.game.duplicateClaims++;
+      stats.game.claimedIds.add(claimed.post_id);
+    }
+    if (data.lost) stats.game.lost++;
+    void tryCatch(p);
+    void tryEvent(p, prevView);
+    void tryTeam(p);
+    void tryQuiz(p);
+    if (fix && fix.speed > 0.5) stats.game.steps += Math.round(fix.speed * (tickMs / 1000) * 1.3);
+    // A signal-loss check is satisfied once the bot reports again.
+    stats.alarms = stats.alarms.filter((a) => !(a.player === p.playerId && a.kind === "signal" && a.seenAt === null && a.expectedAt > Date.now()));
   }
 
   // Smittejakt: a hunter bot that the server says is near prey looks for a prey
@@ -331,11 +469,17 @@ export function startSwarm(opts: SwarmOptions) {
     } else err(`quiz_${r.status}_${String(r.data.error ?? "")}`);
   }
 
-  async function pollHost() {
+  /** Teacher HTTP snapshot. matchAlarms=false: the host socket does the alarm matching. */
+  async function pollHost(matchAlarms = true, at?: number) {
     if (!opts.hostToken || stopped) return;
     const r = await opts.transport.post(`/api/s/${sessionId}/snapshot`, { hostToken: opts.hostToken });
     if (r.status !== 200) return err(`snapshot_${r.status}`);
-    const now = Date.now();
+    await ingestSnapshot(r.data, matchAlarms, at ?? Date.now());
+  }
+
+  /** Same data from GET/POST snapshot or a {t:"host"} push. */
+  async function ingestSnapshot(data: Record<string, unknown>, matchAlarms: boolean, now: number) {
+    const r = { data };
     const st = String(r.data.status);
     const g = stats.game;
     const prevSt = g.statuses[g.statuses.length - 1];
@@ -419,6 +563,7 @@ export function startSwarm(opts: SwarmOptions) {
         log(`👑 haug ${round.hill.no} → lag ${round.hill.holder}`);
       }
     }
+    if (!matchAlarms) return;
     const alarms = (r.data.alarms as Array<{ player_id: string; kind: AlarmKind; resolved: boolean; created_at: string }>) ?? [];
     for (const c of stats.alarms) {
       if (c.seenAt !== null || c.expectedAt > now + 1000) continue;
@@ -428,6 +573,98 @@ export function startSwarm(opts: SwarmOptions) {
       );
       if (hit) c.seenAt = Math.max(now, c.expectedAt);
     }
+  }
+
+  function startLinks(path: string) {
+    const o = opts.ws!;
+    const impl = o.impl ?? (globalThis as unknown as { WebSocket: WsCtor }).WebSocket;
+    const url = o.base.replace(/\/$/, "") + path;
+    const w = stats.ws!;
+    const iphone = rng(opts.seed * 31 + 7);
+    const frac = o.iphoneFraction ?? 0.1;
+    players.forEach((p, idx) => {
+      const r = rng(opts.seed * 977 + p.i + 1);
+      p.pendingFix = [];
+      p.link = new WsLink({
+        url,
+        impl,
+        rand: r,
+        auth: { t: "auth", role: "player", playerId: p.playerId, token: p.token },
+        onMessage: (m) => onPlayerMsg(p, m),
+        onReconnect: () => void w.reconnects++,
+        onClose: (code) => {
+          w.closes[code] = (w.closes[code] ?? 0) + 1;
+          // Fixes sent on a dead socket: their views may never come. Not latency samples.
+          w.superseded += p.pendingFix?.length ?? 0;
+          p.pendingFix = [];
+          if (p.deferredFix) clearTimeout(p.deferredFix);
+          p.deferredFix = null;
+        },
+        onTerminal: (code) => {
+          p.done = true;
+          w.terminal[code] = (w.terminal[code] ?? 0) + 1;
+          log(`${p.nickname}: socket lukket ${code} (ferdig)`);
+        },
+        onDisabled: () => {
+          p.httpOnly = true;
+          log(`${p.nickname}: 4003, faller tilbake til HTTP`);
+        },
+      });
+      // iPhone: ~10 % (seeded) lose the socket every 60-120 s and come back 1-5 s later.
+      if (iphone() < frac) {
+        const loop = () => {
+          const t = setTimeout(() => {
+            if (stopped || p.done || p.httpOnly) return;
+            if (p.link!.connected) {
+              w.iphoneDrops++;
+              p.link!.drop(1000 + Math.round(4000 * r()));
+            }
+            loop();
+          }, 60_000 + Math.round(60_000 * r()));
+          timers.push(t as unknown as ReturnType<typeof setInterval>);
+        };
+        loop();
+      }
+      const t = setTimeout(() => p.link!.start(), idx * 20);
+      timers.push(t as unknown as ReturnType<typeof setInterval>);
+    });
+    if (opts.hostToken) {
+      hostLink = new WsLink({
+        url,
+        impl,
+        rand: rng(opts.seed * 53 + 11),
+        auth: { t: "auth", role: "host", hostToken: opts.hostToken },
+        onState: (c) => void (w.hostConnected = c),
+        onReconnect: () => void w.reconnects++,
+        onMessage: (m) => {
+          if (m.t === "host" && m.v) {
+            w.hostPushes++;
+            void ingestSnapshot(m.v, true, Date.now());
+          } else if (m.t === "alarm") {
+            w.hostAlarmMsgs++;
+            void pollHost(true, Date.now());
+          }
+        },
+      });
+      hostLink.start();
+    }
+    timers.push(setInterval(() => {
+      w.connectedNow = connectedCount();
+      const k = w.kill;
+      if (k && k.recoveredAt === null) {
+        const live = players.filter((q) => !q.done && !q.httpOnly).length;
+        if (live > 0 && w.connectedNow >= Math.ceil(live * 0.95)) k.recoveredAt = Date.now();
+      }
+    }, 200));
+  }
+
+  /** --kill-at: close every socket at once (chase-live redeploy). */
+  function killAll() {
+    const w = stats.ws;
+    if (!w) return;
+    w.kill = { at: Date.now(), total: connectedCount(), recoveredAt: null };
+    for (const p of players) p.link?.kill();
+    hostLink?.kill();
   }
 
   const ready = (async () => {
@@ -458,6 +695,10 @@ export function startSwarm(opts: SwarmOptions) {
     const me = await opts.transport.post(`/api/s/${sessionId}/me`, { playerId: players[0].playerId, token: players[0].token });
     if (me.status !== 200) throw new Error(`me ${me.status}`);
     const geo = me.data.geo as SimGeo;
+    const live = me.data.live as { path?: string } | null | undefined;
+    if (wsOn && !live?.path) {
+      throw new Error("Serveren har LIVE_TRANSPORT=http (live er null i /me). Sett LIVE_TRANSPORT=ws på serveren, eller kjør uten --transport ws.");
+    }
     for (const p of players) {
       p.bot = createBot(p.kind, geo, {
         seed: opts.seed * 1000 + p.i,
@@ -466,6 +707,7 @@ export function startSwarm(opts: SwarmOptions) {
         dropoutForS: opts.dropoutForS,
       });
     }
+    if (wsOn && live?.path) startLinks(live.path);
     log(`${players.length} boter er med. Starter tick hvert ${tickMs / 1000}. sekund.`);
     stats.startedAt = Date.now();
     players.forEach((p, idx) => {
@@ -477,7 +719,16 @@ export function startSwarm(opts: SwarmOptions) {
       }, Math.floor((idx * tickMs) / players.length));
       timers.push(start as unknown as ReturnType<typeof setInterval>);
     });
-    if (opts.hostToken) timers.push(setInterval(() => void pollHost(), 1000));
+    let pollN = 0;
+    if (opts.hostToken) {
+      timers.push(setInterval(() => {
+        // ws: the host socket matches alarms; HTTP only keeps the game bookkeeping going (every 5th s)
+        // and takes over alarm matching while the host socket is down.
+        const hostUp = wsOn && !!hostLink?.connected;
+        if (hostUp && ++pollN % 5 !== 0) return;
+        void pollHost(!hostUp);
+      }, 1000));
+    }
     if (opts.onUpdate) timers.push(setInterval(() => opts.onUpdate!(players, stats), 1000));
     return { sessionId, geo };
   })();
@@ -486,8 +737,14 @@ export function startSwarm(opts: SwarmOptions) {
     ready,
     players,
     stats,
+    kill: killAll,
     stop() {
       stopped = true;
+      for (const p of players) {
+        p.link?.stop();
+        if (p.deferredFix) clearTimeout(p.deferredFix);
+      }
+      hostLink?.stop();
       for (const t of timers) {
         clearInterval(t);
         clearTimeout(t as unknown as ReturnType<typeof setTimeout>);
@@ -555,6 +812,8 @@ export function summarize(stats: SimStats) {
       steps: stats.game.steps,
       statuses: stats.game.statuses,
     },
+    transport: stats.ws ? "ws" : "http",
+    ws: stats.ws ? summarizeWs(stats) : undefined,
     ticks: stats.ticks,
     errors: stats.errors,
     tickMs: { p50: percentile(lat, 50), p95: percentile(lat, 95), p99: percentile(lat, 99), max: lat.length ? Math.max(...lat) : 0 },
@@ -563,6 +822,7 @@ export function summarize(stats: SimStats) {
       seen: alarmLat.length,
       pending: stats.alarms.filter((a) => a.seenAt === null).map((a) => `${a.kind}@${Math.round((Date.now() - a.expectedAt) / 1000)}s`),
       maxDelayS: alarmLat.length ? Math.max(...alarmLat) : null,
+      p95S: alarmLat.length ? percentile(alarmLat, 95) : null,
       byKind: Object.fromEntries(
         (["sos", "forbidden", "outside", "signal"] as const).map((k) => {
           const xs = stats.alarms.filter((a) => a.kind === k && a.seenAt !== null).map((a) => (a.seenAt! - a.expectedAt) / 1000);
@@ -570,5 +830,39 @@ export function summarize(stats: SimStats) {
         }),
       ),
     },
+  };
+}
+
+/** ws-mode numbers: fix → view latency, reconnects, closes, and the --kill-at recovery. */
+export function summarizeWs(stats: SimStats) {
+  const w = stats.ws!;
+  const lat = w.fixView;
+  const k = w.kill;
+  return {
+    superseded: w.superseded,
+    deferred: w.deferred,
+    sampleView: { p50: percentile(w.sampleView, 50), p95: percentile(w.sampleView, 95), p99: percentile(w.sampleView, 99) },
+    fixViewBy: Object.fromEntries(
+      (Object.entries(w.fixViewBy) as [FixKind, number[]][]).map(([k, xs]) => [k, { n: xs.length, p50: percentile(xs, 50), p95: percentile(xs, 95) }]),
+    ),
+    fixView: { n: lat.length, p50: percentile(lat, 50), p95: percentile(lat, 95), p99: percentile(lat, 99), max: lat.length ? Math.max(...lat) : 0 },
+    reconnects: w.reconnects,
+    iphoneDrops: w.iphoneDrops,
+    httpFallbackTicks: w.httpFallbackTicks,
+    hints: w.hints,
+    connectedNow: w.connectedNow,
+    closes: w.closes,
+    terminal: w.terminal,
+    wsErrors: w.wsErrors,
+    host: { connected: w.hostConnected, pushes: w.hostPushes, alarmMsgs: w.hostAlarmMsgs },
+    kill: k
+      ? {
+          at: new Date(k.at).toISOString(),
+          connectedAtKill: k.total,
+          recoveryS: k.recoveredAt === null ? null : Math.round(((k.recoveredAt - k.at) / 1000) * 10) / 10,
+          // Alarms that came due after the kill and still had not reached the teacher 5 s later.
+          missedAlarms: stats.alarms.filter((a) => a.expectedAt >= k.at && a.seenAt === null && Date.now() - a.expectedAt > 5000).length,
+        }
+      : null,
   };
 }

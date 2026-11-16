@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ApiError, api, type HostAction, type SessionGeo, type Snapshot } from "@/lib/client/api";
 import { audioReady, playBuzzer, playSiren } from "@/lib/client/sound";
+import { LiveSocket, hostPollDue, mergeHostPush, olderSnapshot } from "@/lib/client/live";
 import { useChannel } from "@/lib/client/useChannel";
 import { useTabHidden } from "@/lib/client/useTabHidden";
 import { channels } from "@/lib/realtime";
@@ -38,17 +39,22 @@ export function useHostSession(sessionId: string, token: string | null): HostSes
   const inflight = useRef(false);
   const needGeo = useRef(true);
   const seenAlarms = useRef<Set<string> | null>(null);
+  const lastHttpAt = useRef<number | null>(null);
+  const lastPushAt = useRef<number | null>(null);
+  const wsReady = useRef(false);
 
   const refresh = useCallback(async () => {
     if (!token || inflight.current) return;
     inflight.current = true;
+    lastHttpAt.current = Date.now();
     try {
       const s = await api.snapshot(sessionId, token, needGeo.current);
       if (s.geo) {
         setGeo(s.geo);
         needGeo.current = false;
       }
-      setSnap(s);
+      // Keep `live` from the HTTP answer even when the rest is older than a push (kill switch).
+      setSnap((prev) => (prev && olderSnapshot(prev, s) ? { ...prev, live: s.live } : s));
       setError(null);
     } catch (e) {
       setError(e instanceof ApiError ? e.code : "network");
@@ -60,12 +66,48 @@ export function useHostSession(sessionId: string, token: string | null): HostSes
   useEffect(() => {
     if (!token) return;
     const first = setTimeout(refresh, 0);
-    const iv = setInterval(refresh, hidden ? HIDDEN_POLL_MS : POLL_MS);
+    // With the socket pushing, HTTP is only a 10 s watchdog; otherwise poll as before.
+    const poll = () => {
+      if (hostPollDue({ wsReady: wsReady.current, lastPushAt: lastPushAt.current, lastHttpAt: lastHttpAt.current, now: Date.now() })) void refresh();
+    };
+    const iv = setInterval(poll, hidden ? HIDDEN_POLL_MS : POLL_MS);
     return () => {
       clearTimeout(first);
       clearInterval(iv);
     };
   }, [token, hidden, refresh]);
+
+  // Session room socket (when the snapshot offers one): pushed host views + alarm nudges.
+  const livePath = snap?.live?.path ?? null;
+  const refreshRef = useRef(refresh);
+  useEffect(() => {
+    refreshRef.current = refresh;
+  });
+  useEffect(() => {
+    if (!token || !livePath) return;
+    const s = new LiveSocket({
+      path: livePath,
+      auth: { t: "auth", role: "host", hostToken: token },
+      onMsg: (m) => {
+        if (m.t === "host") {
+          lastPushAt.current = Date.now();
+          setSnap((prev) => (prev && !olderSnapshot(prev, m.v) ? mergeHostPush(prev, m.v) : prev));
+          setError(null);
+        } else if (m.t === "alarm") {
+          void refreshRef.current();
+        }
+      },
+      onState: (state) => {
+        wsReady.current = state === "ready";
+        if (state !== "ready") void refreshRef.current(); // back to HTTP at once
+      },
+    });
+    return () => {
+      s.close();
+      wsReady.current = false;
+      lastPushAt.current = null;
+    };
+  }, [token, livePath]);
 
   const onHint = useCallback(() => void refresh(), [refresh]);
   useChannel(token ? channels.host(sessionId) : null, onHint);
