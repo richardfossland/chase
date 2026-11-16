@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ApiError, api, type HostAction, type SessionGeo, type Snapshot } from "@/lib/client/api";
 import { audioReady, playBuzzer, playSiren } from "@/lib/client/sound";
-import { LiveSocket, hostPollDue, mergeHostPush } from "@/lib/client/live";
+import { LiveSocket, hostPollDue, mergeHostPush, olderSnapshot } from "@/lib/client/live";
 import { useChannel } from "@/lib/client/useChannel";
 import { useTabHidden } from "@/lib/client/useTabHidden";
 import { channels } from "@/lib/realtime";
@@ -53,7 +53,8 @@ export function useHostSession(sessionId: string, token: string | null): HostSes
         setGeo(s.geo);
         needGeo.current = false;
       }
-      setSnap(s);
+      // Keep `live` from the HTTP answer even when the rest is older than a push (kill switch).
+      setSnap((prev) => (prev && olderSnapshot(prev, s) ? { ...prev, live: s.live } : s));
       setError(null);
     } catch (e) {
       setError(e instanceof ApiError ? e.code : "network");
@@ -90,7 +91,7 @@ export function useHostSession(sessionId: string, token: string | null): HostSes
       onMsg: (m) => {
         if (m.t === "host") {
           lastPushAt.current = Date.now();
-          setSnap((prev) => (prev ? mergeHostPush(prev, m.v) : prev));
+          setSnap((prev) => (prev && !olderSnapshot(prev, m.v) ? mergeHostPush(prev, m.v) : prev));
           setError(null);
         } else if (m.t === "alarm") {
           void refreshRef.current();

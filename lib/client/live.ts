@@ -11,7 +11,15 @@ const TERMINAL = new Set<number>([CLOSE.ended, CLOSE.kicked, CLOSE.not_found, CL
 export const isTerminalClose = (code: number): boolean => TERMINAL.has(code);
 
 export const PING_MS = 5000;
+/** No frame at all this long after the socket opened (auth never answered): dead. */
 export const SILENCE_MS = 7000;
+/**
+ * A ping unanswered this long: dead. The timer is armed when a ping goes out, not
+ * when the last frame came in: in a background tab (Chrome throttles timers to
+ * once a minute, iOS freezes them) a "7 s since the last frame" timer fires on
+ * wake before the ping it would wait for was even sent, and drops a healthy socket.
+ */
+export const PONG_WAIT_MS = SILENCE_MS - PING_MS;
 export const BACKOFF_MIN_MS = 500;
 export const BACKOFF_MAX_MS = 8000;
 
@@ -92,14 +100,14 @@ export class LiveSocket {
     ws.onopen = () => {
       if (this.ws !== ws) return;
       ws.send(JSON.stringify(this.opts.auth)); // token only in this first frame
-      this.armSilence();
-      this.pinger = setInterval(() => {
-        if (ws.readyState === OPEN) ws.send(PING);
-      }, PING_MS);
+      this.armSilence(SILENCE_MS);
+      this.pinger = setInterval(() => this.ping(), PING_MS);
     };
     ws.onmessage = (ev) => {
       if (this.ws !== ws) return;
-      this.armSilence();
+      // Any frame proves the link is alive; the next ping arms the deadline again.
+      if (this.silence) clearTimeout(this.silence);
+      this.silence = null;
       if (typeof ev.data !== "string" || ev.data === "pong") return;
       let m: ServerMsg;
       try {
@@ -130,12 +138,32 @@ export class LiveSocket {
     };
   }
 
-  private armSilence() {
+  /** Ping and expect an answer within PONG_WAIT_MS (an earlier pending deadline stays). */
+  private ping() {
+    const ws = this.ws;
+    if (!ws || ws.readyState !== OPEN) return;
+    if (!this.silence) this.armSilence(PONG_WAIT_MS);
+    try {
+      ws.send(PING);
+    } catch {
+      /* onclose follows */
+    }
+  }
+
+  private armSilence(ms: number) {
     if (this.silence) clearTimeout(this.silence);
+    const armedAt = Date.now();
     this.silence = setTimeout(() => {
-      // Nothing (not even a pong) for SILENCE_MS: the link is dead. Drop it and reconnect.
+      this.silence = null;
       const ws = this.ws;
       if (!ws) return;
+      // Fired far too late: the page was frozen (locked iPhone, throttled tab), so the
+      // answer had no chance to arrive. Ask again instead of dropping a healthy socket.
+      if (Date.now() - armedAt > ms + 1000) {
+        this.ping();
+        return;
+      }
+      // No answer in time (not even a pong): the link is dead. Drop it and reconnect.
       this.ws = null;
       this.clearTimers();
       try {
@@ -145,7 +173,7 @@ export class LiveSocket {
       }
       this.set("closed", { terminal: false });
       this.scheduleRetry();
-    }, SILENCE_MS);
+    }, ms);
   }
 
   private scheduleRetry() {
@@ -167,7 +195,7 @@ export class LiveSocket {
   private reconnectNow = () => {
     if (this.stopped || this.state === "connecting") return;
     if (this.state === "ready") {
-      if (this.ws?.readyState === OPEN) this.ws.send(PING); // the silence timer judges the answer
+      this.ping(); // back from background: a dead socket shows within PONG_WAIT_MS
       return;
     }
     this.clearTimers();
@@ -218,7 +246,7 @@ export function fixDelayMs(now: number, lastSentAt: number | null): number {
   return Math.max(0, lastSentAt + MIN_FIX_GAP_MS - now);
 }
 
-export const HOST_PUSH_STALE_MS = 6000; // no push for this long: poll fast again
+export const HOST_PUSH_STALE_MS = 4500; // no push for this long (one missed 2 s push + slack): poll fast again
 export const HOST_WATCHDOG_MS = 10000; // HTTP poll interval while pushes arrive
 
 /** Should the host's poll timer fetch over HTTP now? */
@@ -233,4 +261,16 @@ export function mergeHostPush<T extends object>(prev: T, v: Record<string, unkno
   const { geo: _geo, live: _live, ...rest } = v;
   void _geo; void _live;
   return { ...prev, ...rest } as T;
+}
+
+/**
+ * True when `next` was taken before `prev` (server_now). An HTTP snapshot started
+ * before an alarm can land after the push that carried it; it must not replace the
+ * newer view and hide the alarm until the next push (rule 4).
+ */
+export function olderSnapshot(prev: { server_now?: unknown } | null, next: { server_now?: unknown }): boolean {
+  if (!prev || typeof prev.server_now !== "string" || typeof next.server_now !== "string") return false;
+  const a = Date.parse(prev.server_now);
+  const b = Date.parse(next.server_now);
+  return Number.isFinite(a) && Number.isFinite(b) && b < a;
 }

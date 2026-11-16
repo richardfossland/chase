@@ -152,10 +152,19 @@ export type RoomStats = {
   sockets: number; players: number; hosts: number; pending: number;
   flushes: number; entries: number; busy: number; rpcErrors: number; drops: number; connects: number;
   flushP50: number; flushP95: number; batchP50: number; batchMax: number;
+  /** ms between flush starts; ms a written entry waited in the room (first coalesced fix received → flush start), last 1000–2000 samples. */
+  everyP50: number; everyP95: number; waitP50: number; waitP95: number; waitMax: number;
+  /** Fixes left pending at a flush only because of the per-player 1.9 s gap. */
+  held: number;
   hostSnapshots: number; hostPushes: number; hostSnapshotErrors: number;
   watchdogRuns: number; watchdogHints: number; notifies: number;
   status: string | null; watchdogArmed: boolean;
 };
+
+function push(xs: number[], v: number): void {
+  xs.push(v);
+  if (xs.length > 2000) xs.splice(0, 1000);
+}
 
 function pct(xs: number[], p: number): number {
   if (!xs.length) return 0;
@@ -189,6 +198,9 @@ export class RoomCore<S> {
   };
   private flushMs: number[] = [];
   private batchSizes: number[] = [];
+  private everyMs: number[] = [];
+  private waitMs: number[] = [];
+  private held = 0;
 
   constructor(readonly session: string, private d: RoomDeps<S>) {}
 
@@ -383,7 +395,10 @@ export class RoomCore<S> {
     if (!due.length) return this.schedule();
 
     this.flushing = true;
+    if (Number.isFinite(this.lastFlushStart)) push(this.everyMs, start - this.lastFlushStart);
     this.lastFlushStart = start;
+    this.held += this.pending.size - due.length;
+    for (const [, p] of due) push(this.waitMs, start - p.receivedAt);
     for (const [id] of due) this.pending.delete(id);
     try {
       for (let i = 0; i < due.length && !this.ended; i += CHUNK) {
@@ -730,6 +745,9 @@ export class RoomCore<S> {
       sockets: this.conns.size, players, hosts, pending: this.pending.size, ...this.st,
       status: this.lastStatus, watchdogArmed: this.wdDue !== null,
       flushP50: pct(this.flushMs, 50), flushP95: pct(this.flushMs, 95),
+      everyP50: pct(this.everyMs, 50), everyP95: pct(this.everyMs, 95),
+      waitP50: pct(this.waitMs, 50), waitP95: pct(this.waitMs, 95), waitMax: this.waitMs.length ? Math.max(...this.waitMs) : 0,
+      held: this.held,
       batchP50: pct(this.batchSizes, 50), batchMax: this.batchSizes.length ? Math.max(...this.batchSizes) : 0,
     };
   }

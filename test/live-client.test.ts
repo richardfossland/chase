@@ -7,6 +7,7 @@ import {
   fixDelayMs,
   hostPollDue,
   mergeHostPush,
+  olderSnapshot,
   type LiveState,
   type WsLike,
 } from "@/lib/client/live";
@@ -102,6 +103,39 @@ describe("LiveSocket", () => {
     expect(FakeWs.all).toHaveLength(2);
   });
 
+  it("deadline is armed by the ping, not by the last frame", () => {
+    const { ws } = make();
+    ws().open();
+    ws().recv(READY);
+    const sock = ws();
+    const origSend = sock.send.bind(sock);
+    sock.send = (d: string) => {
+      origSend(d);
+      if (d === "ping") sock.recv("pong");
+    };
+    vi.advanceTimersByTime(120_000);
+    expect(FakeWs.all).toHaveLength(1);
+    sock.send = origSend; // now the link goes quiet
+    vi.advanceTimersByTime(5000); // next ping, unanswered
+    vi.advanceTimersByTime(2100 + 600);
+    expect(FakeWs.all).toHaveLength(2);
+  });
+
+  it("a deadline that fires late (frozen page) pings again instead of dropping", () => {
+    const { ws } = make();
+    ws().open();
+    ws().recv(READY);
+    vi.advanceTimersByTime(5000); // ping, deadline armed for 2 s
+    const now = Date.now();
+    vi.setSystemTime(now + 30_000); // page frozen 30 s, timers did not run
+    vi.advanceTimersByTime(2000); // the deadline fires late
+    expect(FakeWs.all).toHaveLength(1);
+    expect(ws().sent.at(-1)).toBe("ping");
+    ws().recv("pong");
+    vi.advanceTimersByTime(4000);
+    expect(FakeWs.all).toHaveLength(1);
+  });
+
   it("backs off 0.5 -> 8 s and resets on ready", () => {
     expect([0, 1, 2, 3, 4, 5, 9].map(backoffMs)).toEqual([500, 1000, 2000, 4000, 8000, 8000, 8000]);
     make();
@@ -163,9 +197,19 @@ describe("pure helpers", () => {
     const base = { wsReady: true, lastPushAt: 1000, lastHttpAt: 1000, now: 3000 };
     expect(hostPollDue(base)).toBe(false);
     expect(hostPollDue({ ...base, now: 11_000, lastPushAt: 10_000 })).toBe(true); // watchdog
-    expect(hostPollDue({ ...base, now: 8000 })).toBe(true); // push stale (>6 s)
+    expect(hostPollDue({ ...base, now: 8000 })).toBe(true); // push stale
+    expect(hostPollDue({ ...base, now: 5600 })).toBe(true); // > 4.5 s: one 2 s push missed, poll fast again
     expect(hostPollDue({ ...base, wsReady: false })).toBe(true);
     expect(hostPollDue({ ...base, lastPushAt: null })).toBe(true);
+  });
+
+  it("olderSnapshot: an HTTP answer taken before a push must not replace it", () => {
+    const prev = { server_now: "2026-11-15T10:00:02.000Z" };
+    expect(olderSnapshot(prev, { server_now: "2026-11-15T10:00:01.500Z" })).toBe(true);
+    expect(olderSnapshot(prev, { server_now: "2026-11-15T10:00:02.000Z" })).toBe(false);
+    expect(olderSnapshot(prev, { server_now: "2026-11-15T10:00:03.000Z" })).toBe(false);
+    expect(olderSnapshot(null, { server_now: "x" })).toBe(false);
+    expect(olderSnapshot(prev, {})).toBe(false);
   });
 
   it("mergeHostPush keeps geo and live from the last snapshot", () => {

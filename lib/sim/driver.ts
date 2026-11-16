@@ -11,6 +11,8 @@
 import { relayBatons } from "@/lib/rules/relay";
 import { powerupCheck } from "@/lib/rules/events";
 
+import { fixDelayMs } from "@/lib/client/live";
+
 import { rng } from "./rng";
 import { WsLink, type ServerLike, type WsCtor } from "./ws";
 import { createBot, type Behaviour, type Bot, type BotFix, type SimGeo } from "./behaviours";
@@ -37,17 +39,31 @@ export interface SimPlayer {
   prevExpect: Set<string>;
   /** ws transport: this bot's socket, send times of fixes not yet answered, last fix sent. */
   link?: WsLink;
-  pendingFix?: number[];
+  pendingFix?: { at: number; kind: FixKind; sampledAt: number }[];
+  /** When the bot took its current position (its step); the fix's age is counted from here. */
+  lastFixSampledAt?: number;
   lastFixSentAt?: number;
+  /** A fix held back by the 1.9 s client throttle (useLiveTick's `pending`). */
+  deferredFix?: ReturnType<typeof setTimeout> | null;
   /** Terminal close (ended/kicked/...): the bot is finished. */
   done?: boolean;
   /** 4003 (kill switch): HTTP only from now on. */
   httpOnly?: boolean;
 }
 
+/** Why a fix went out: the 2 s interval, a hint from the room, or late because of the 1.9 s throttle. */
+export type FixKind = "interval" | "hint" | "deferred";
+
 /** Counters for the ws transport (SimStats.ws is set only in ws mode). */
 export interface WsStats {
-  fixView: number[];            // ms from fix sent → {t:"view"}
+  fixView: number[];            // ms from the newest unanswered fix sent → {t:"view"}
+  fixViewBy: Record<FixKind, number[]>;
+  /** ms from the position being taken (bot step) → its view: what a geofence alarm waits for. */
+  sampleView: number[];
+  /** Fixes the room replaced by a newer one before writing (or whose view was lost): not latency samples. */
+  superseded: number;
+  /** Fixes held back by the client's 1.9 s throttle and sent later (like useLiveTick). */
+  deferred: number;
   reconnects: number;
   iphoneDrops: number;
   httpFallbackTicks: number;
@@ -179,7 +195,7 @@ export function startSwarm(opts: SwarmOptions) {
   };
   const wsOn = !!opts.ws;
   if (wsOn) {
-    stats.ws = { fixView: [], reconnects: 0, iphoneDrops: 0, httpFallbackTicks: 0, hints: 0, wsErrors: {}, closes: {}, terminal: {},
+    stats.ws = { fixView: [], fixViewBy: { interval: [], hint: [], deferred: [] }, sampleView: [], superseded: 0, deferred: 0, reconnects: 0, iphoneDrops: 0, httpFallbackTicks: 0, hints: 0, wsErrors: {}, closes: {}, terminal: {},
       hostPushes: 0, hostAlarmMsgs: 0, hostConnected: false, kill: null, connectedNow: 0 };
   }
   let hostLink: WsLink | null = null;
@@ -215,8 +231,9 @@ export function startSwarm(opts: SwarmOptions) {
       return;
     }
     p.lastFix = s.fix;
+    p.lastFixSampledAt = now;
     if (p.link?.connected && !p.httpOnly) {
-      sendFix(p, s.fix);
+      wsTick(p, "interval");
       return;
     }
     if (wsOn) stats.ws!.httpFallbackTicks++;
@@ -240,7 +257,28 @@ export function startSwarm(opts: SwarmOptions) {
     else err(`tick_${r.status}_${String(r.data.error ?? "")}`);
   }
 
-  function sendFix(p: SimPlayer, fix: BotFix) {
+  /**
+   * Mirror of useLiveTick.wsSend: the same fixDelayMs throttle (1.9 s since the last send);
+   * a tick (interval or hint) inside that window is sent once, at the earliest allowed
+   * moment, with the then newest position.
+   */
+  function wsTick(p: SimPlayer, kind: FixKind) {
+    if (!p.lastFix || p.done) return;
+    const wait = fixDelayMs(Date.now(), p.lastFixSentAt ?? null);
+    if (wait > 0) {
+      if (!p.deferredFix) {
+        stats.ws!.deferred++;
+        p.deferredFix = setTimeout(() => {
+          p.deferredFix = null;
+          if (!stopped && p.link?.connected && !p.httpOnly) wsTick(p, "deferred");
+        }, wait);
+      }
+      return;
+    }
+    sendFix(p, p.lastFix, kind);
+  }
+
+  function sendFix(p: SimPlayer, fix: BotFix, kind: FixKind) {
     const now = Date.now();
     const sent = p.link!.send({
       t: "fix",
@@ -253,7 +291,7 @@ export function startSwarm(opts: SwarmOptions) {
     });
     if (!sent) return;
     p.pendingFix ??= [];
-    p.pendingFix.push(now);
+    p.pendingFix.push({ at: now, kind, sampledAt: p.lastFixSampledAt ?? now });
     p.lastFixSentAt = now;
   }
 
@@ -261,17 +299,27 @@ export function startSwarm(opts: SwarmOptions) {
     const w = stats.ws!;
     if (m.t === "view" && m.v) {
       const now = Date.now();
+      // The room coalesces: a flush writes the player's NEWEST fix and answers it once.
+      // So a view answers the newest fix sent; older unanswered ones were superseded (or
+      // their view was lost while the socket was down) and are not latency samples.
+      // With the throttle a fix cannot be sent during the flush that answers the
+      // previous one (flush ≈ 0.1 s), so "newest" is the answered one.
       const q = (p.pendingFix ??= []);
-      while (q.length && now - q[0] > 10_000) q.shift();   // coalesced or dropped: do not leak
-      const t0 = q.shift();
-      if (t0 !== undefined) {
-        w.fixView.push(now - t0);
+      const f = q.pop();
+      w.superseded += q.length;
+      q.length = 0;
+      if (f !== undefined) {
+        w.fixView.push(now - f.at);
+        w.fixViewBy[f.kind].push(now - f.at);
+        w.sampleView.push(now - f.sampledAt);
+        if (w.sampleView.length > 200_000) w.sampleView.splice(0, 100_000);
         if (w.fixView.length > 200_000) w.fixView.splice(0, 100_000);
+        if (w.fixViewBy[f.kind].length > 200_000) w.fixViewBy[f.kind].splice(0, 100_000);
       }
       void applyView(p, m.v, p.lastFix);
     } else if (m.t === "hint") {
       w.hints++;
-      if (p.lastFix && Date.now() - (p.lastFixSentAt ?? 0) >= 2000) sendFix(p, p.lastFix);
+      wsTick(p, "hint"); // like useLiveTick: a hint is a tick, subject to the same 1.9 s throttle
     } else if (m.t === "err") {
       const k = `ws_err_${String(m.error ?? "")}`;
       err(k);
@@ -544,7 +592,14 @@ export function startSwarm(opts: SwarmOptions) {
         auth: { t: "auth", role: "player", playerId: p.playerId, token: p.token },
         onMessage: (m) => onPlayerMsg(p, m),
         onReconnect: () => void w.reconnects++,
-        onClose: (code) => void (w.closes[code] = (w.closes[code] ?? 0) + 1),
+        onClose: (code) => {
+          w.closes[code] = (w.closes[code] ?? 0) + 1;
+          // Fixes sent on a dead socket: their views may never come. Not latency samples.
+          w.superseded += p.pendingFix?.length ?? 0;
+          p.pendingFix = [];
+          if (p.deferredFix) clearTimeout(p.deferredFix);
+          p.deferredFix = null;
+        },
         onTerminal: (code) => {
           p.done = true;
           w.terminal[code] = (w.terminal[code] ?? 0) + 1;
@@ -685,7 +740,10 @@ export function startSwarm(opts: SwarmOptions) {
     kill: killAll,
     stop() {
       stopped = true;
-      for (const p of players) p.link?.stop();
+      for (const p of players) {
+        p.link?.stop();
+        if (p.deferredFix) clearTimeout(p.deferredFix);
+      }
       hostLink?.stop();
       for (const t of timers) {
         clearInterval(t);
@@ -781,6 +839,12 @@ export function summarizeWs(stats: SimStats) {
   const lat = w.fixView;
   const k = w.kill;
   return {
+    superseded: w.superseded,
+    deferred: w.deferred,
+    sampleView: { p50: percentile(w.sampleView, 50), p95: percentile(w.sampleView, 95), p99: percentile(w.sampleView, 99) },
+    fixViewBy: Object.fromEntries(
+      (Object.entries(w.fixViewBy) as [FixKind, number[]][]).map(([k, xs]) => [k, { n: xs.length, p50: percentile(xs, 50), p95: percentile(xs, 95) }]),
+    ),
     fixView: { n: lat.length, p50: percentile(lat, 50), p95: percentile(lat, 95), p99: percentile(lat, 99), max: lat.length ? Math.max(...lat) : 0 },
     reconnects: w.reconnects,
     iphoneDrops: w.iphoneDrops,

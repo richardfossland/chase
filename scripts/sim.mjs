@@ -247,7 +247,8 @@ async function runSession(k) {
 
   const problems = [];
   if (args.assert) {
-    if (summary.tickMs.p95 >= p95Limit) problems.push(`tick p95 ${summary.tickMs.p95} ms ≥ ${p95Limit} ms`);
+    // ws: fix→view includes waiting for the room's ~1 s batched write; the ws gate checks it instead.
+    if (cfg.transport !== "ws" && summary.tickMs.p95 >= p95Limit) problems.push(`tick p95 ${summary.tickMs.p95} ms ≥ ${p95Limit} ms`);
     if (hostToken) {
       if (summary.alarms.maxDelayS !== null && summary.alarms.maxDelayS > 5) problems.push(`alarm brukte ${summary.alarms.maxDelayS} s (> 5 s)`);
       const overdue = swarm.stats.alarms.filter((a) => a.seenAt === null && Date.now() - a.expectedAt > 5000);
@@ -452,8 +453,10 @@ function printTable(runs) {
       w ? `fix→view p50/p95/p99 ${w.fixView.p50}/${w.fixView.p95}/${w.fixView.p99} ms` : `tick p50/p95/p99 ${s.tickMs.p50}/${s.tickMs.p95}/${s.tickMs.p99} ms`,
       `alarm maks ${s.alarms.maxDelayS ?? "-"} s p95 ${s.alarms.p95S ?? "-"} s`,
       w ? `reconnects ${w.reconnects} (iPhone-drop ${w.iphoneDrops})` : "",
+      w ? `posisjon→view p50/p95/p99 ${w.sampleView.p50}/${w.sampleView.p95}/${w.sampleView.p99} ms` : "",
+      w ? `erstattet ${w.superseded} utsatt ${w.deferred} hint ${w.hints}` : "",
       w?.kill ? `kill: tilbake på ${w.kill.recoveryS ?? "aldri"} s, mistet alarmer ${w.kill.missedAlarms}` : "",
-      rs ? `rom: flush ${rs.flushes} batch maks ${rs.batchMax} snitt ${rs.flushes ? Math.round((rs.entries / rs.flushes) * 10) / 10 : 0} busy ${rs.busy} p50/p95 ${rs.flushP50}/${rs.flushP95} ms vert-push ${rs.hostPushes} vakthund ${rs.watchdogRuns}` : "",
+      rs ? `rom: flush ${rs.flushes} batch maks ${rs.batchMax} snitt ${rs.flushes ? Math.round((rs.entries / rs.flushes) * 10) / 10 : 0} busy ${rs.busy} p50/p95 ${rs.flushP50}/${rs.flushP95} ms vert-push ${rs.hostPushes} vakthund ${rs.watchdogRuns} intervall p50/p95 ${rs.everyP50}/${rs.everyP95} ms venting p50/p95/maks ${rs.waitP50}/${rs.waitP95}/${rs.waitMax} ms holdt ${rs.held}` : "",
     ].filter(Boolean).join(" | ");
   };
   console.log("\n" + runs.map(row).join("\n"));
