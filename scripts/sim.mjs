@@ -50,7 +50,7 @@
 //                     time until ≥ 95 % are back on ws and alarms missed meanwhile
 //   --live-stats URL  fetch <URL>/live/s/<id>/stats per session at the end (internal,
 //                     local wrangler port only: http://127.0.0.1:8787)
-//   --assert (ws)     adds: 0 5xx, alarm max < 5 s and p95 < 3 s, fix→view p95 < 1.5 s and
+//   --assert (ws)     adds: 0 5xx, alarm max < 5 s and p95 < 3 s, fix→view p95 < 2 s and
 //                     p99 < 3 s, recovery after --kill-at within 10 s
 //
 // Positions are generated, never read from real pupils, and never logged.

@@ -59,7 +59,7 @@ describe("ws gate", () => {
     expect(wsGateProblems({ ...ok, errors5xx: 2 })).toHaveLength(1);
     expect(wsGateProblems({ ...ok, alarmMaxS: WS_GATE.alarmMaxS })).toHaveLength(1);
     expect(wsGateProblems({ ...ok, alarmP95S: 3.1 })).toHaveLength(1);
-    expect(wsGateProblems({ ...ok, fixViewP95: 1500, fixViewP99: 3000 })).toHaveLength(2);
+    expect(wsGateProblems({ ...ok, fixViewP95: 2000, fixViewP99: 3000 })).toHaveLength(2);
     expect(wsGateProblems({ ...ok, fixViewN: 0 })).toHaveLength(1);
     expect(wsGateProblems({ ...ok, killAtS: 60, recoveryS: 10.5 })).toHaveLength(1);
     expect(wsGateProblems({ ...ok, killAtS: 60, recoveryS: null })).toHaveLength(1);

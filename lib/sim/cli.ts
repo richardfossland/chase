@@ -61,7 +61,7 @@ export interface WsGateInput {
   missedAlarmsAfterKill: number;
 }
 
-export const WS_GATE = { alarmMaxS: 5, alarmP95S: 3, fixViewP95Ms: 1500, fixViewP99Ms: 3000, recoveryS: 10 } as const;
+export const WS_GATE = { alarmMaxS: 5, alarmP95S: 3, fixViewP95Ms: 2000, // eier 11-16: 1,9 s-fartsregel + 1/s-skriving gir ~1,6 s; 2 s godtatt fixViewP99Ms: 3000, recoveryS: 10 } as const;
 
 export function wsGateProblems(g: WsGateInput): string[] {
   const p: string[] = [];
