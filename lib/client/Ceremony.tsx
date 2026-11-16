@@ -80,7 +80,7 @@ export function PodiumCard({ podium, big = false, build = false }: { podium: Cer
             key={e.place}
             style={build ? ({ "--i": n - 1 - i } as CSSProperties) : undefined}
             className={`flex items-center gap-3 rounded-2xl px-4 py-3 ${e.me ? "bg-gold text-on-accent" : "bg-ink-3"} ${
-              big && e.place === 1 ? "text-3xl" : "text-xl"
+              big && e.place === 1 ? "text-2xl sm:text-3xl" : "text-xl"
             } ${build && e.place === 1 ? "ring-2 ring-gold/70" : ""} font-black`}
           >
             <span
@@ -95,7 +95,7 @@ export function PodiumCard({ podium, big = false, build = false }: { podium: Cer
             {e.color && (
               <span className="inline-block h-5 w-5 flex-none rounded-full border-2 border-white/60" style={{ background: e.color }} aria-hidden />
             )}
-            <span className="min-w-0 flex-1 truncate">{e.nickname}</span>
+            <span className="min-w-0 flex-1 leading-tight [overflow-wrap:anywhere]">{e.nickname}</span>
             <span className="tabular-nums opacity-80">{c.value(podium.cat, e.value === null ? null : Number(e.value))}</span>
           </li>
         ))}

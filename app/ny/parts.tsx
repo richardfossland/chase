@@ -2,7 +2,7 @@
 
 // Small presentation pieces shared by the wizard steps.
 
-import { useId } from "react";
+import { useId, useRef } from "react";
 
 import { cx } from "@/lib/client/ui";
 import { IconAlert, IconChevronDown } from "@/lib/client/ui/icons";
@@ -109,10 +109,17 @@ export function Disclosure(props: {
   children: React.ReactNode;
 }) {
   const id = useId();
+  const box = useRef<HTMLDivElement>(null);
+  const toggle = () => {
+    // Opening near the bottom of the sheet would otherwise show nothing new.
+    if (!props.open) setTimeout(() => box.current?.scrollIntoView({ block: "start" }), 420);
+    props.onToggle();
+  };
   return (
     <div
+      ref={box}
       className={cx(
-        "mt-4 rounded-2xl transition-colors duration-[var(--dur-2)]",
+        "mt-4 scroll-mt-3 rounded-2xl transition-colors duration-[var(--dur-2)]",
         props.flat ? "" : cx("border bg-ink-2", props.open ? "border-gold/50" : "border-line"),
       )}
     >
@@ -121,7 +128,7 @@ export function Disclosure(props: {
         className="ui-press flex min-h-14 w-full items-center gap-3 rounded-2xl px-4 text-left hover:bg-ink"
         aria-expanded={props.open}
         aria-controls={id}
-        onClick={props.onToggle}
+        onClick={toggle}
         data-testid={props.testId}
       >
         <span className="min-w-0 flex-1 font-extrabold">{props.title}</span>

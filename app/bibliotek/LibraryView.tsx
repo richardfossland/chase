@@ -337,7 +337,7 @@ function NameEdit({ name, onSave, onCancel }: { name: string; onSave: (n: string
 }
 
 const UseLink = ({ href }: { href: string }) => (
-  <Link href={href} className={cx(btn, "flex-none")}>
+  <Link href={href} className={cx(btn, "ml-auto flex-none")}>
     {t.use}
   </Link>
 );
@@ -347,13 +347,14 @@ function AreaRow({ a, onRename, onRemove }: { a: LibArea; onRename: (n: string) 
   return (
     <li className={cx(card, "flex flex-wrap items-center gap-x-4 gap-y-3")} data-testid="lib-area">
       <AreaThumb area={a} size={64} />
-      <div className="min-w-0 flex-1">
+      <div className="min-w-40 flex-1">
         <p className="truncate font-extrabold">{a.name}</p>
         <p className="mt-1 flex items-center gap-2 text-sm text-txt-dim">
           <KindTag kind={a.kind} />
           <span className="truncate">{no.map.area(a.area_m2)}</span>
         </p>
       </div>
+      <div className="ml-auto flex flex-none items-center gap-4">
       <UseLink href={`/ny?area=${a.id}`} />
       <MoreMenu
         items={[
@@ -361,6 +362,7 @@ function AreaRow({ a, onRename, onRemove }: { a: LibArea; onRename: (n: string) 
           { label: t.remove, icon: IconTrash, danger: true, onClick: onRemove },
         ]}
       />
+      </div>
       {editing && (
         <NameEdit
           name={a.kind === "recent" ? "" : a.name}
@@ -380,13 +382,14 @@ function PlanRow({ p, onRename, onRemove, onShare }: { p: LibPlan; onRename: (n:
   const meta = [t.rounds(p.plan.rounds.length), t.minutes(s.minutes), p.plan.missions?.length ? t.missionsN(p.plan.missions.length) : null].filter(Boolean).join(" · ");
   return (
     <li className={cx(card, "flex flex-wrap items-center gap-x-4 gap-y-3")} data-testid="lib-plan">
-      <div className="min-w-0 flex-1">
+      <div className="min-w-40 flex-1">
         <p className="truncate font-extrabold">{p.name}</p>
         <p className="mt-1 flex items-center gap-2 text-sm text-txt-dim">
           <KindTag kind={p.kind} />
           <span className="truncate">{meta}</span>
         </p>
       </div>
+      <div className="ml-auto flex flex-none items-center gap-4">
       <UseLink href={`/ny?plan=${p.id}`} />
       <MoreMenu
         items={[
@@ -395,6 +398,7 @@ function PlanRow({ p, onRename, onRemove, onShare }: { p: LibPlan; onRename: (n:
           { label: t.remove, icon: IconTrash, danger: true, onClick: onRemove },
         ]}
       />
+      </div>
       {editing && (
         <NameEdit
           name={p.kind === "recent" ? "" : p.name}

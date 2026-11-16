@@ -65,7 +65,7 @@ export default function BigScreen({ sessionId }: { sessionId: string }) {
         {c.step === 0 || !last ? (
           <p className="m-rise-in mt-12 text-8xl font-black tracking-tight">{prize.intro}</p>
         ) : (
-          <div key={c.step} className="m-scale-in mt-10 w-full max-w-3xl">
+          <div key={c.step} className="m-scale-in mt-10 w-full max-w-3xl xl:[zoom:1.4]">
             <p className="mb-5 text-center text-2xl font-bold text-txt-dim">{prize.of(Math.min(c.step, c.total), c.total)}</p>
             <PodiumCard podium={last} big />
           </div>
