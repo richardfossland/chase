@@ -4,7 +4,9 @@ import { defer } from "@/lib/server/defer";
 import { fail, isUuid } from "@/lib/server/http";
 import { guarded, respond, rpc } from "@/lib/server/rpc";
 import { limited, parseBody } from "@/lib/server/route";
+import { roomTickBody } from "@/lib/live/protocol";
 import { tickBody } from "@/lib/server/schemas";
+import { liveFetch, liveNotify, liveTransport } from "@/lib/server/live";
 import { sha256Hex } from "@/lib/server/tokens";
 
 // The hot path (PLAN §9.2): one call per player every 2 s in a round.
@@ -17,9 +19,25 @@ export const POST = guarded(async (req, ctx) => {
   const rl = limited(`tick:${body.playerId}`, 90);
   if (rl) return rl;
 
+  const tokenHash = await sha256Hex(body.token);
+
+  // Durable Object transport: the room runs the tick and pushes its own alarm/hint
+  // batches, so nothing is broadcast here. Unreachable/timeout/5xx → direct RPC below.
+  if (liveTransport() === "ws") {
+    const { token: _t, ...fix } = body;
+    void _t;
+    const payload = roomTickBody.safeParse({ ...fix, tokenHash });
+    if (payload.success) {
+      const live = await liveFetch(id, "tick", payload.data);
+      if (live && live.status < 500) {
+        return Response.json(live.json, { status: live.status, headers: { "Cache-Control": "no-store" } });
+      }
+    }
+  }
+
   const r = await rpc("tick", {
     p_player: body.playerId,
-    p_token_hash: await sha256Hex(body.token),
+    p_token_hash: tokenHash,
     p_lat: body.lat,
     p_lng: body.lng,
     p_acc: body.acc,
@@ -30,8 +48,10 @@ export const POST = guarded(async (req, ctx) => {
   });
   // Safety first: push the host a refetch hint the moment an alarm is new or escalated.
   if (r.ok && r.alert_host) defer(() => broadcast(channels.host(id), events.alarm), "tick-alarm");
+  if (r.ok && r.alert_host) defer(() => liveNotify(id, "alarm"), "tick-alarm-live");
   // A phase changed or a golden post appeared: every phone ticks now instead of on its next interval.
   if (r.ok && r.hint_all) defer(() => broadcast(channels.all(id), events.state), "tick-advance");
+  if (r.ok && r.hint_all) defer(() => liveNotify(id, "state"), "tick-advance-live");
   return respond(r, (x) => {
     const { ok: _ok, alert_host: _a, session_id: _s, hint_all: _h, ...view } = x;
     void _ok; void _a; void _s; void _h;

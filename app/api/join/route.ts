@@ -1,5 +1,6 @@
 import { generateResumeCode, normalizeResumeCode } from "@/lib/codes";
 import { isBlockedNickname, normalizeNickname } from "@/lib/nickname";
+import { liveNotify } from "@/lib/server/live";
 import { defer } from "@/lib/server/defer";
 import { broadcast } from "@/lib/server/broadcast";
 import { fail } from "@/lib/server/http";
@@ -33,6 +34,7 @@ export const POST = guarded(async (req) => {
     if (r.ok) {
       const session = String(r.session_id);
       defer(() => broadcast(channels.host(session), events.roster), "join");
+      defer(() => liveNotify(session, "state"), "join-live");
     }
     return respond(r, (x) => ({
       sessionId: x.session_id,

@@ -1,7 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 
-import { RoomCore, type Attachment } from "../../lib/live/core";
-import { CLOSE, PING, PONG, roomTickBody, type ServerMsg } from "../../lib/live/protocol";
+import { RoomCore, type Attachment, type WatchdogState } from "../../lib/live/core";
+import { CLOSE, PING, PONG, notifyBody, roomTickBody, type ServerMsg } from "../../lib/live/protocol";
 import { sha256Hex } from "../../lib/server/tokens";
 import { createDb } from "./db";
 
@@ -15,6 +15,7 @@ type SockMeta = Attachment & { session: string };
 
 export class SessionRoom extends DurableObject<Env> {
   private core: RoomCore<WebSocket> | null = null;
+  private loaded: Promise<void> | null = null;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -24,6 +25,13 @@ export class SessionRoom extends DurableObject<Env> {
 
   private enabled(): boolean {
     return String(this.env.LIVE_ENABLED) !== "0";
+  }
+
+  /** Room with its stored watchdog state loaded (hibernation wake-up). */
+  private async getRoom(session: string): Promise<RoomCore<WebSocket>> {
+    const core = this.room(session);
+    await this.loaded;
+    return core;
   }
 
   private room(session: string): RoomCore<WebSocket> {
@@ -49,9 +57,26 @@ export class SessionRoom extends DurableObject<Env> {
         }
       },
       attach: (ws, a) => ws.serializeAttachment({ ...a, session } satisfies SockMeta),
+      // Storage holds only the session id, status and watchdog deadline: never positions.
+      watchdog: {
+        setAlarm: (at) => void this.ctx.storage.setAlarm(at),
+        deleteAlarm: () => void this.ctx.storage.deleteAlarm(),
+        save: (state) => void this.ctx.storage.put({ session, wd: state }),
+        wipe: () => {
+          void (async () => {
+            await this.ctx.storage.deleteAlarm();
+            await this.ctx.storage.deleteAll();
+          })();
+        },
+      },
     });
     // Woken from hibernation: the runtime kept the sockets, memory starts empty.
-    for (const ws of this.ctx.getWebSockets()) core.restore(ws, ws.deserializeAttachment() as SockMeta | null);
+    // Stored state first, then the sockets: a restored host socket starts a
+    // snapshot whose observe() must not be overwritten by the older stored state.
+    this.loaded = this.ctx.storage.get<WatchdogState>("wd").then((s) => {
+      core.restoreState(s ?? null);
+      for (const ws of this.ctx.getWebSockets()) core.restore(ws, ws.deserializeAttachment() as SockMeta | null);
+    });
     this.core = core;
     return core;
   }
@@ -60,7 +85,7 @@ export class SessionRoom extends DurableObject<Env> {
     const session = req.headers.get("x-chase-session");
     if (!session) return Response.json({ error: "not_found" }, { status: 404 });
     const kind = new URL(req.url).pathname.split("/").pop();
-    const core = this.room(session);
+    const core = await this.getRoom(session);
 
     if (kind === "ws") {
       if (req.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
@@ -88,6 +113,14 @@ export class SessionRoom extends DurableObject<Env> {
       return Response.json(r.body, { status: r.status });
     }
 
+    if (kind === "notify" && req.method === "POST") {
+      const parsed = notifyBody.safeParse(await req.json().catch(() => null));
+      if (!parsed.success) return Response.json({ error: "bad_request" }, { status: 400 });
+      // Answer at once; the work runs on after the response.
+      this.ctx.waitUntil(core.notify(parsed.data.kind).catch(() => {}));
+      return Response.json({ ok: true }, { status: 202 });
+    }
+
     if (kind === "stats") return Response.json(core.stats());
     return Response.json({ error: "not_found" }, { status: 404 });
   }
@@ -98,7 +131,7 @@ export class SessionRoom extends DurableObject<Env> {
       ws.close(CLOSE.server, "no session");
       return;
     }
-    const core = this.room(meta.session);
+    const core = await this.getRoom(meta.session);
     if (!this.enabled()) {
       core.closeAll(CLOSE.disabled, "disabled");
       return;
@@ -109,6 +142,16 @@ export class SessionRoom extends DurableObject<Env> {
       return;
     }
     await core.message(ws, message);
+  }
+
+  /** Watchdog: runs every 5 s in an active phase, even with no sockets connected. */
+  async alarm(): Promise<void> {
+    const session = await this.ctx.storage.get<string>("session");
+    if (!session) return;
+    const core = await this.getRoom(session);
+    if (core.isEnded) return;
+    const { again } = await core.watchdog();
+    if (!again) await this.ctx.storage.deleteAlarm();
   }
 
   async webSocketClose(ws: WebSocket, code: number): Promise<void> {

@@ -1,9 +1,12 @@
 import { channels, events } from "@/lib/realtime";
 import { broadcast } from "@/lib/server/broadcast";
+import { liveNotify } from "@/lib/server/live";
 import { defer } from "@/lib/server/defer";
 import { guarded, respond, rpc } from "@/lib/server/rpc";
 import { limited, parseBody } from "@/lib/server/route";
 import { snapshotBody } from "@/lib/server/schemas";
+import { livePath } from "@/lib/live/protocol";
+import { liveTransport } from "@/lib/server/live";
 import { sha256Hex } from "@/lib/server/tokens";
 import { isUuid, fail } from "@/lib/server/http";
 
@@ -22,10 +25,12 @@ export const POST = guarded(async (req, ctx) => {
   });
   // A new signal-loss alarm: wake any other host device too.
   if (r.ok && r.alert_host) defer(() => broadcast(channels.host(id), events.alarm), "snapshot-alarm");
+  if (r.ok && r.alert_host) defer(() => liveNotify(id, "alarm"), "snapshot-alarm-live");
   if (r.ok && r.hint_all) defer(() => broadcast(channels.all(id), events.state), "snapshot-advance");
+  if (r.ok && r.hint_all) defer(() => liveNotify(id, "state"), "snapshot-advance-live");
   return respond(r, (x) => {
     const { ok: _ok, alert_host: _a, hint_all: _h, ...rest } = x;
     void _ok; void _a; void _h;
-    return rest;
+    return { ...rest, live: liveTransport() === "ws" ? { path: livePath(id) } : null };
   });
 });

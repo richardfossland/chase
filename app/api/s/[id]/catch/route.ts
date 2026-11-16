@@ -1,5 +1,6 @@
 import { channels, events } from "@/lib/realtime";
 import { broadcast } from "@/lib/server/broadcast";
+import { liveNotify } from "@/lib/server/live";
 import { defer } from "@/lib/server/defer";
 import { fail, isUuid } from "@/lib/server/http";
 import { guarded, respond, rpc } from "@/lib/server/rpc";
@@ -30,6 +31,7 @@ export const POST = guarded(async (req, ctx) => {
       await broadcast(channels.host(id), events.roster);
       if (r.last) await broadcast(channels.all(id), events.state);
     }, "catch");
+    defer(() => liveNotify(id, "state"), "catch-live");
   }
   return respond(r, (x) => ({
     nickname: x.nickname,

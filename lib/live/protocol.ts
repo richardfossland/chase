@@ -46,6 +46,19 @@ export const roomTickBody = fixFields.extend({
 });
 export type RoomTickBody = z.infer<typeof roomTickBody>;
 
+/**
+ * Internal nudge (Next route → room): POST /live/s/<id>/notify. Fire-and-forget.
+ *  - state: something changed for everybody (phase, catch, claim, host action):
+ *           push {t:"hint"} to players (they send a fix now), refresh hosts.
+ *  - alarm: a new or escalated alarm (incl. SOS): refresh host screens now.
+ *  - end:   the session ended: push a final view, close all sockets 4410, clear storage.
+ */
+export const notifyBody = z.object({ kind: z.enum(["state", "alarm", "end"]) });
+export type NotifyKind = z.infer<typeof notifyBody>["kind"];
+
+/** Socket path for a session; what /me and the host snapshot return as live.path. */
+export const livePath = (session: string) => `/live/s/${session}/ws`;
+
 /** A tick's personal view as the HTTP route returns it (internal flags stripped). */
 export type TickView = Record<string, unknown>;
 
@@ -53,8 +66,9 @@ export type ServerMsg =
   | { t: "ready"; role: "player" | "host"; server_now: string }
   | { t: "view"; v: TickView }
   | { t: "err"; error: string }
-  | { t: "hint" } // something changed for everybody: expect a fresh view soon
-  | { t: "alarm" }; // host only: a new or escalated alarm, refetch now
+  | { t: "hint" } // something changed for everybody: send a fix now to get a fresh view
+  | { t: "alarm" } // host only: a new or escalated alarm, refetch now
+  | { t: "host"; v: Record<string, unknown> }; // host only: pushed host_snapshot (same shape as GET /api/s/[id]/host)
 
 /** Same stripping as app/api/s/[id]/tick/route.ts. */
 export function stripView(r: Record<string, unknown>): TickView {

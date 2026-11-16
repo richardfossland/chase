@@ -5,8 +5,12 @@ import {
   FLUSH_EVERY_MS,
   HTTP_WAIT_MS,
   MIN_PLAYER_GAP_MS,
+  HOST_DEBOUNCE_MS,
+  HOST_EVERY_MS,
   RETRY_MS,
   RoomCore,
+  WATCHDOG_EVERY_MS,
+  type WatchdogState,
   type Attachment,
   type BatchResult,
   type RoomDb,
@@ -62,10 +66,22 @@ const okBatch: BatchFn = async (entries) => ({
   ok: true, server_now: "now", status: "live", hint_all: false, alert_host: false, results: entries.map(okView),
 });
 
+type Snap = Record<string, unknown>;
+type SnapFn = () => Promise<Snap>;
+
 function setup(opts: { batch?: BatchFn; auth?: RoomDb["playerAuth"] } = {}) {
   const clock = new Clock();
   const calls: TickEntry[][] = [];
   let batch = opts.batch ?? okBatch;
+  let snap: SnapFn = async () => ({ ok: true, status: "live", players: [] });
+  let snapCalls = 0;
+  const wd = {
+    alarm: null as number | null, alarmSets: 0, saved: null as WatchdogState | null, wiped: false,
+    setAlarm: (at: number) => void ((wd.alarm = at), wd.alarmSets++),
+    deleteAlarm: () => void (wd.alarm = null),
+    save: (s: WatchdogState) => void (wd.saved = s),
+    wipe: () => void ((wd.wiped = true), (wd.alarm = null)),
+  };
   const db: RoomDb = {
     tickBatch: (_s, entries) => {
       calls.push(entries);
@@ -73,6 +89,10 @@ function setup(opts: { batch?: BatchFn; auth?: RoomDb["playerAuth"] } = {}) {
     },
     playerAuth: opts.auth ?? (async () => ({ ok: true })),
     hostAuth: async (_s, h) => ({ ok: h === (await sha256Hex(tok(999))) }),
+    hostSnapshot: () => {
+      snapCalls++;
+      return snap();
+    },
   };
   const core = new RoomCore<Sock>(SESSION, {
     now: () => clock.t,
@@ -83,6 +103,7 @@ function setup(opts: { batch?: BatchFn; auth?: RoomDb["playerAuth"] } = {}) {
     send: (s, m) => void s.sent.push(m),
     close: (s, code, reason) => void (s.closed = { code, reason }),
     attach: (s, a) => void (s.att = a),
+    watchdog: wd,
   });
   let n = 0;
   const sock = (): Sock => {
@@ -97,7 +118,17 @@ function setup(opts: { batch?: BatchFn; auth?: RoomDb["playerAuth"] } = {}) {
   };
   const fix = (s: Sock, lat = 59.91, extra: Record<string, unknown> = {}) =>
     core.message(s, JSON.stringify({ t: "fix", lat, lng: 10.75, acc: 5, ...extra }));
-  return { clock, core, calls, sock, player, fix, setBatch: (b: BatchFn) => (batch = b) };
+  const host = async () => {
+    const s = sock();
+    await core.message(s, JSON.stringify({ t: "auth", role: "host", hostToken: tok(999) }));
+    return s;
+  };
+  return {
+    clock, core, calls, sock, player, fix, host, wd,
+    setBatch: (b: BatchFn) => (batch = b),
+    setSnap: (f: SnapFn) => (snap = f),
+    snapCalls: () => snapCalls,
+  };
 }
 
 const views = (s: Sock) => s.sent.filter((m) => m.t === "view");
@@ -357,6 +388,45 @@ describe("RoomCore HTTP fallback", () => {
     await expect(p).resolves.toMatchObject({ status: 503 });
   });
 
+  it("withdraws a still-queued fix on timeout, so the route's fallback does not tick it twice", async () => {
+    const { clock, core, setBatch, calls } = setup();
+    let fail = true;
+    setBatch(async (entries) => {
+      if (fail) throw new Error("down");
+      return { ok: true, server_now: "n", status: "live", hint_all: false, alert_host: false,
+        results: entries.map((e) => ({ player: e.player, r: { ok: true, status: "live" } })) };
+    });
+    const p = core.httpTick(pid(2), "h".repeat(64), { lat: 59.5, lng: 10, acc: 5, speed: null, steps: 10 });
+    await clock.advance(HTTP_WAIT_MS + 10);
+    await expect(p).resolves.toMatchObject({ status: 503 });
+    fail = false;
+    const n = calls.flat().length;
+    await clock.advance(5000);
+    expect(calls.flat()).toHaveLength(n);
+    expect(core.stats().pending).toBe(0);
+  });
+
+  it("does not requeue an in-flight fix whose HTTP waiter timed out", async () => {
+    const { clock, core, setBatch, calls } = setup();
+    let release: (() => void) | null = null;
+    setBatch(() => new Promise((_res, rej) => (release = () => rej(new Error("down")))));
+    const p = core.httpTick(pid(2), "h".repeat(64), { lat: 59.5, lng: 10, acc: 5, speed: null });
+    await clock.advance(HTTP_WAIT_MS + 10);
+    await expect(p).resolves.toMatchObject({ status: 503 });
+    setBatch(async () => {
+      throw new Error("still down");
+    });
+    (release as (() => void) | null)?.();
+    await clock.advance(400); // the retry fails too → requeue
+    setBatch(async (entries) => ({ ok: true, server_now: "n", status: "live", hint_all: false, alert_host: false,
+      results: entries.map((e) => ({ player: e.player, r: { ok: true, status: "live" } })) }));
+    const n = calls.flat().length;
+    expect(n).toBe(2);
+    await clock.advance(5000);
+    expect(calls.flat()).toHaveLength(n);
+    expect(core.stats().pending).toBe(0);
+  });
+
   it("maps errors to the tick route's statuses", async () => {
     const { clock, core, setBatch } = setup();
     setBatch(async (entries) => ({ ok: true, server_now: "n", status: "live", hint_all: false, alert_host: false,
@@ -364,5 +434,245 @@ describe("RoomCore HTTP fallback", () => {
     const p = core.httpTick(pid(2), "h".repeat(64), { lat: 59.5, lng: 10, acc: 5, speed: null });
     await clock.advance(60);
     await expect(p).resolves.toEqual({ status: 409, body: { error: "stale" } });
+  });
+});
+
+const hostMsgs = (s: Sock) => s.sent.filter((m) => m.t === "host");
+const hints = (s: Sock) => s.sent.filter((m) => m.t === "hint");
+
+describe("RoomCore host push", () => {
+  it("makes one DB call per tick for any number of hosts and stops without hosts", async () => {
+    const { clock, host, snapCalls, core } = setup();
+    const hs = [await host(), await host(), await host()];
+    await clock.advance(HOST_DEBOUNCE_MS + 10);
+    const base = snapCalls(); // join refreshes: coalesced, not one per host
+    expect(base).toBeLessThanOrEqual(2);
+    await clock.advance(HOST_EVERY_MS * 3);
+    expect(snapCalls() - base).toBe(3); // 3 ticks, 3 hosts: still 3 calls
+    for (const h of hs) expect(hostMsgs(h).length).toBeGreaterThanOrEqual(3);
+    expect(core.stats().hostPushes).toBe(base + 3);
+    for (const h of hs) core.closed(h);
+    const n = snapCalls();
+    await clock.advance(HOST_EVERY_MS * 5);
+    expect(snapCalls()).toBe(n);
+  });
+
+  it("strips internal flags from the pushed snapshot", async () => {
+    const { clock, host, setSnap } = setup();
+    setSnap(async () => ({ ok: true, status: "live", alert_host: false, hint_all: false, players: [1] }));
+    const h = await host();
+    await clock.advance(10);
+    expect(hostMsgs(h)[0]).toEqual({ t: "host", v: { status: "live", players: [1] } });
+  });
+
+  it("never has two snapshots in flight", async () => {
+    const { clock, host, setSnap, snapCalls, core } = setup();
+    let release: (v: Snap) => void = () => {};
+    setSnap(() => new Promise<Snap>((r) => (release = r)));
+    await host();
+    await clock.advance(1000);
+    void core.notify("alarm");
+    await clock.advance(HOST_DEBOUNCE_MS * 3);
+    expect(snapCalls()).toBe(1);
+    release({ ok: true, status: "live" });
+    await clock.advance(HOST_DEBOUNCE_MS * 3);
+    expect(snapCalls()).toBe(2); // the queued refresh, once
+  });
+
+  it("alert_host in a flush triggers an immediate refresh; bursts are debounced", async () => {
+    const { clock, host, player, fix, setBatch, snapCalls, setSnap } = setup();
+    const h = await host();
+    await clock.advance(HOST_DEBOUNCE_MS + 10);
+    const before = snapCalls();
+    setSnap(async () => ({ ok: true, status: "live", alarms: [1] }));
+    setBatch(async (entries) => ({
+      ok: true, server_now: "n", status: "live", hint_all: false, alert_host: true, results: entries.map(okView),
+    }));
+    const p1 = await player(1);
+    const p2 = await player(2);
+    await fix(p1);
+    await fix(p2);
+    await clock.advance(60);
+    expect(h.sent.some((m) => m.t === "alarm")).toBe(true);
+    expect(snapCalls() - before).toBe(1);
+    expect(hostMsgs(h).at(-1)).toMatchObject({ v: { alarms: [1] } });
+  });
+
+  it("debounces event refreshes: first at once, the burst coalesces into one 200 ms later", async () => {
+    const { clock, host, core, snapCalls } = setup();
+    await host();
+    await clock.advance(HOST_DEBOUNCE_MS + 10);
+    const n = snapCalls();
+    await core.notify("alarm");
+    await core.notify("alarm");
+    await core.notify("alarm");
+    await settle();
+    expect(snapCalls() - n).toBe(1);
+    await clock.advance(HOST_DEBOUNCE_MS + 1);
+    expect(snapCalls() - n).toBe(2);
+    await clock.advance(HOST_DEBOUNCE_MS * 3);
+    expect(snapCalls() - n).toBe(2);
+  });
+
+  it("closes everything when the snapshot says not_found, ends on error ended", async () => {
+    const { clock, host, setSnap, core } = setup();
+    const h = await host();
+    setSnap(async () => ({ ok: false, error: "ended" }));
+    await clock.advance(HOST_EVERY_MS + 10);
+    expect(core.isEnded).toBe(true);
+    expect(h.closed?.code).toBe(CLOSE.ended);
+  });
+});
+
+describe("RoomCore notify", () => {
+  it("alarm refreshes hosts at once", async () => {
+    const { clock, host, core, snapCalls } = setup();
+    await host();
+    await clock.advance(500);
+    const n = snapCalls();
+    await core.notify("alarm");
+    await settle();
+    expect(snapCalls()).toBe(n + 1);
+  });
+
+  it("state hints players and refreshes hosts, but never re-ticks a remembered fix", async () => {
+    const { clock, core, player, fix, host, calls, snapCalls } = setup();
+    const a = await player(1);
+    const b = await player(2);
+    await fix(a);
+    await clock.advance(100);
+    await fix(b, 59.5);
+    await clock.advance(1100);
+    expect(calls.flat()).toHaveLength(2);
+    const h = await host();
+    await clock.advance(HOST_DEBOUNCE_MS + 10);
+    const n = snapCalls();
+    await core.notify("state");
+    await settle();
+    expect(hints(a)).toHaveLength(1);
+    expect(hints(b)).toHaveLength(1);
+    expect(hints(h)).toHaveLength(0);
+    expect(snapCalls()).toBe(n + 1);
+    // A re-tick of an old fix would stamp fix_at = now and clear signal alarms (rule 4).
+    await clock.advance(MIN_PLAYER_GAP_MS + 5000);
+    expect(calls.flat()).toHaveLength(2);
+  });
+
+  it("end pushes a final host view, closes all sockets 4410 and wipes", async () => {
+    const { clock, core, player, host, wd, setSnap } = setup();
+    const a = await player(1);
+    const h = await host();
+    await clock.advance(10);
+    setSnap(async () => ({ ok: true, status: "ended", players: [] }));
+    const before = hostMsgs(h).length;
+    await core.notify("end");
+    expect(hostMsgs(h).length).toBe(before + 1);
+    expect(a.closed?.code).toBe(CLOSE.ended);
+    expect(h.closed?.code).toBe(CLOSE.ended);
+    expect(core.isEnded).toBe(true);
+    expect(wd.wiped).toBe(true);
+    expect(core.stats().hosts).toBe(0);
+    const n = h.sent.length;
+    await clock.advance(60_000);
+    expect(h.sent.length).toBe(n);
+    expect(wd.alarm).toBeNull();
+  });
+});
+
+describe("RoomCore watchdog", () => {
+  it("re-arms when the stored deadline is long past (lost alarm)", async () => {
+    const { clock, core, player, fix, wd } = setup();
+    core.restoreState({ status: "live", watchdogDue: clock.t - 60_000 });
+    const a = await player(1);
+    await fix(a);
+    await clock.advance(100);
+    expect(wd.alarm).not.toBeNull();
+    expect(wd.alarm!).toBeGreaterThan(clock.t);
+  });
+
+  it("arms on the first successful flush and re-arms in active phases without sockets", async () => {
+    const { clock, core, player, fix, wd, snapCalls } = setup();
+    const a = await player(1);
+    await fix(a);
+    await clock.advance(60);
+    expect(wd.alarm).not.toBeNull();
+    core.closed(a);
+    for (let i = 0; i < 3; i++) {
+      clock.t = wd.alarm!; wd.alarm = null;
+      const r = await core.watchdog();
+      expect(r.again).toBe(true);
+      expect(wd.alarm).toBe(clock.t + WATCHDOG_EVERY_MS);
+    }
+    expect(snapCalls()).toBe(3);
+    expect(wd.saved).toEqual({ status: "live", watchdogDue: wd.alarm });
+  });
+
+  it("arms on host auth", async () => {
+    const { clock, host, wd } = setup();
+    await host();
+    await clock.advance(10);
+    expect(wd.alarm).not.toBeNull();
+  });
+
+  it("a phase change nudges players and hosts", async () => {
+    const { clock, core, player, fix, host, setSnap, wd } = setup();
+    const a = await player(1);
+    await fix(a);
+    await clock.advance(60);
+    const h = await host();
+    await clock.advance(10);
+    const pushes = hostMsgs(h).length;
+    setSnap(async () => ({ ok: true, status: "breather", hint_all: true }));
+    clock.t = wd.alarm!; wd.alarm = null;
+    await core.watchdog();
+    await settle();
+    expect(hints(a).length).toBeGreaterThanOrEqual(1);
+    expect(hostMsgs(h).length).toBeGreaterThan(pushes);
+    expect(core.stats().watchdogHints).toBe(1);
+    expect(wd.alarm).not.toBeNull();
+  });
+
+  it("stops on lobby", async () => {
+    const { clock, core, player, fix, setSnap, wd } = setup();
+    await fix(await player(1));
+    await clock.advance(60);
+    setSnap(async () => ({ ok: true, status: "lobby" }));
+    clock.t = wd.alarm!; wd.alarm = null;
+    expect((await core.watchdog()).again).toBe(false);
+    expect(wd.alarm).toBeNull();
+  });
+
+  it("ends the room and wipes when the snapshot is ended", async () => {
+    const { clock, core, player, fix, setSnap, wd } = setup();
+    const a = await player(1);
+    await fix(a);
+    await clock.advance(60);
+    setSnap(async () => ({ ok: true, status: "ended" }));
+    clock.t = wd.alarm!; wd.alarm = null;
+    expect((await core.watchdog()).again).toBe(false);
+    expect(core.isEnded).toBe(true);
+    expect(wd.wiped).toBe(true);
+    expect(a.closed?.code).toBe(CLOSE.ended);
+    expect((await core.watchdog()).again).toBe(false);
+  });
+
+  it("keeps watching after a database error and stores no positions", async () => {
+    const { clock, core, player, fix, setSnap, wd } = setup();
+    await fix(await player(1));
+    await clock.advance(60);
+    setSnap(async () => {
+      throw new Error("down");
+    });
+    clock.t = wd.alarm!; wd.alarm = null;
+    expect((await core.watchdog()).again).toBe(true);
+    expect(Object.keys(wd.saved ?? {}).sort()).toEqual(["status", "watchdogDue"]);
+  });
+
+  it("restoreState resumes the stored status", async () => {
+    const { core, setSnap } = setup();
+    core.restoreState({ status: "live", watchdogDue: null });
+    setSnap(async () => ({ ok: true, status: "paused" }));
+    expect((await core.watchdog()).again).toBe(false);
+    expect(core.stats().status).toBe("paused");
   });
 });

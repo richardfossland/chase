@@ -1,5 +1,6 @@
 import { channels, events } from "@/lib/realtime";
 import { broadcast } from "@/lib/server/broadcast";
+import { liveNotify } from "@/lib/server/live";
 import { defer } from "@/lib/server/defer";
 import { fail, isUuid } from "@/lib/server/http";
 import { guarded, respond, rpc } from "@/lib/server/rpc";
@@ -20,5 +21,6 @@ export const POST = guarded(async (req, ctx) => {
     p_force: body.force === true,
   });
   if (r.ok) defer(() => broadcast(channels.all(id), events.state), "end");
+  if (r.ok) defer(() => liveNotify(id, "end"), "end-live");
   return respond(r);
 });

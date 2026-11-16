@@ -250,6 +250,8 @@ export interface Snapshot {
   posts: PostView[] | null;
   qr_cards: { n: number; code: string; value: number }[] | null;
   geo: SessionGeo | null;
+  /** Session room socket; null while the HTTP transport is in use. */
+  live?: { path: string } | null;
   referee_awards: string[];
   ceremony: CeremonyView | null;
   /** 0007: the current event (+ who reached it), what ⚡ may start now, the automatic switch. */
@@ -341,6 +343,8 @@ export interface PlayerBootstrap {
   teacherPhone: string | null;
   geo: SessionGeo;
   serverNow: string;
+  /** Session room socket (Durable Objects); null while the HTTP transport is in use. */
+  live: { path: string } | null;
 }
 
 export type HostAction =
