@@ -43,7 +43,9 @@ if (cmd === "snapshot") {
   let statements = null;
   try {
     statements = await q(
-      "select left(query, 160) as query, calls::float8 as calls, total_exec_time, rows::float8 as rows from pg_stat_statements where query ilike '%chase.%' order by total_exec_time desc limit 25",
+      // One row per (user, db, query id) → several rows can share a text: sum them. No top-N
+      // limit, or a statement missing from the "before" snapshot counts its whole history.
+      "select left(query, 160) as query, sum(calls)::float8 as calls, sum(total_exec_time)::float8 as total_exec_time, sum(rows)::float8 as rows from pg_stat_statements where query ilike '%chase.%' group by 1 order by 3 desc",
     );
   } catch {
     console.error("Merk: pg_stat_statements er ikke lesbar, hoppet over.");

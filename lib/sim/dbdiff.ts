@@ -37,8 +37,8 @@ export function diffSnapshots(a: DbSnapshot, b: DbSnapshot) {
     .sort((x, y) => y.totalMs - x.totalMs);
   let statements: Array<{ query: string; calls: number; callsPerSec: number; totalMs: number; avgMs: number; rows: number }> | null = null;
   if (a.statements && b.statements) {
-    const sa = new Map(a.statements.map((s) => [s.query, s]));
-    statements = b.statements
+    const sa = sumByQuery(a.statements);
+    statements = [...sumByQuery(b.statements).values()]
       .map((s) => {
         const o = sa.get(s.query);
         const calls = s.calls - (o?.calls ?? 0);
@@ -59,4 +59,16 @@ export function diffSnapshots(a: DbSnapshot, b: DbSnapshot) {
     functions,
     statements,
   };
+}
+
+type StatementRow = NonNullable<DbSnapshot["statements"]>[number];
+
+/** pg_stat_statements has one row per (user, db, query id), so one text can appear twice. */
+function sumByQuery(rows: StatementRow[]): Map<string, StatementRow> {
+  const m = new Map<string, StatementRow>();
+  for (const r of rows) {
+    const o = m.get(r.query);
+    m.set(r.query, o ? { ...o, calls: o.calls + r.calls, total_exec_time: o.total_exec_time + r.total_exec_time, rows: o.rows + r.rows } : { ...r });
+  }
+  return m;
 }
