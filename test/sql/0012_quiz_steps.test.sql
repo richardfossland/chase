@@ -49,6 +49,9 @@ begin
   pid := (chase.join_session(r ->> 'pin', 'qz', pg_temp.h('tok-qz'), pg_temp.h('res-qz')) ->> 'player_id')::uuid;
   perform chase.host_action(s, pg_temp.h('host-qz'), 'start');
   perform chase._advance(s);
+  -- Posts spawn at random in this ~100 m area; a claim is two ticks within 12 m. Park every
+  -- post in a corner (~59 m from the player) so only the post we place below can be claimed.
+  update chase.posts set pos = chase._pt(59.9101, 10.7501) where session_id = s;
 
   t := chase.tick(pid, pg_temp.h('tok-qz'), 59.91045, 10.7509, 5);
   assert not t ? 'quiz' and (t -> 'stats' ->> 'steps')::int = 0, 'no question before a post';
@@ -61,6 +64,8 @@ begin
   update chase.player_live set claim_post = v_post, claim_hits = 1, fix_at = now() - interval '3 seconds' where player_id = pid;
   t := chase.tick(pid, pg_temp.h('tok-qz'), 59.91045, 10.7509, 5, p_steps => 6);
   assert t -> 'claimed' is not null and t -> 'claimed' <> 'null'::jsonb, 'post claimed: ' || coalesce(t -> 'claimed', 'null')::text;
+  -- The claim spawned a replacement post at random: park it too, or it may be claimed next.
+  update chase.posts set pos = chase._pt(59.9101, 10.7501) where session_id = s and claimed_by is null;
   q := t -> 'quiz';
   assert q is not null and q ? 'q' and jsonb_array_length(q -> 'a') >= 2 and not q ? 'c', 'question shown, no answer key: ' || coalesce(q::text, 'null');
   assert (t -> 'stats' ->> 'steps')::int between 1 and 6, 'steps counted (capped): ' || (t -> 'stats' ->> 'steps');
