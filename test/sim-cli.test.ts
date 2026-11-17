@@ -112,4 +112,16 @@ describe("db diff", () => {
   it("rejects out-of-order snapshots", () => {
     expect(() => diffSnapshots(b, a)).toThrow();
   });
+  it("sums statement rows that share a text (one row per user/query id)", () => {
+    // Prod 11-17: two purge_expired rows, no new calls → must not report 18 calls at 476 ms.
+    const q = "select chase.purge_expired()";
+    const rows = [
+      { query: q, calls: 395, total_exec_time: 7822, rows: 395 },
+      { query: q, calls: 421, total_exec_time: 17115, rows: 421 },
+    ];
+    const d = diffSnapshots({ ...a, statements: rows }, { ...b, statements: rows.map((r) => ({ ...r })) });
+    expect(d.statements).toEqual([]);
+    const d2 = diffSnapshots({ ...a, statements: rows }, { ...b, statements: [rows[0], { ...rows[1], calls: 422, total_exec_time: 17155, rows: 422 }] });
+    expect(d2.statements).toEqual([{ query: q, calls: 1, callsPerSec: 0.03, totalMs: 40, avgMs: 40, rows: 1 }]);
+  });
 });
