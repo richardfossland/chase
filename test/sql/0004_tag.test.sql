@@ -132,7 +132,11 @@ begin
   perform pg_temp.at('cf', p1, 10, 0);
   perform pg_temp.at('cf', p2, 0, -45);
   assert pg_temp.catch('cf', p1, pg_temp.code('cf', p2)) ->> 'error' = 'not_hunter', 'prey cannot catch';
-  assert pg_temp.catch('cf', h, '0000') ->> 'error' in ('bad_code'), 'unknown code';
+  -- Catch codes are random 4-digit numbers, so a fixed '0000' can belong to a player: pick an unused one.
+  assert pg_temp.catch('cf', h, (select lpad(n::text, 4, '0') from generate_series(0, 9999) n
+                                  where lpad(n::text, 4, '0') not in (select catch_code from chase.players
+                                                                      where session_id = s and catch_code is not null)
+                                  limit 1)) ->> 'error' in ('bad_code'), 'unknown code';
   assert pg_temp.catch('cf', h, pg_temp.code('cf', p2)) ->> 'error' = 'too_far', '45 m > max(30, 10) → too far';
   -- Poor accuracy widens the radius (accA + accB), capped at 50 m.
   perform pg_temp.at('cf', p2, 0, -45, 30);
