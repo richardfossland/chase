@@ -19,9 +19,10 @@
 --   * Stillstandspling (bevegelsesprinsippet, PLAN § 1 punkt 2): en gjemmer som har stått innenfor
 --     still_radius (10 m, 0002) i ≥ kv('still_s') = 90 s gir jegerne et «pling»: en sirkel med radius
 --     kv('still_r_m') = 100 m rundt en TILFELDIG FORSKJØVET posisjon (20–70 m fra stillstandsankeret,
---     retning og avstand fra md5(spiller-id || still_since), stabil så lenge stillstanden varer, så
---     gjentatte tick ikke kan midles ut). Sirkelen inneholder alltid den ekte posisjonen, men gir aldri eksakt
---     posisjon. Plinget BEREGNES i _mode_tick ved visning fra player_live.still_anchor/still_since
+--     retning og avstand fra md5(spiller-id || runde || hemmelig salt fra sessions.host_token_hash): samme
+--     forskyvning for en gjemmer gjennom hele runden, så flere plinger (også etter at hen har flyttet seg)
+--     ikke kan trianguleres ut. Pling-id er en egen hash (annen input), aldri md5-biter fra offset-seeden).
+--     Sirkelen inneholder alltid den ekte posisjonen, men gir aldri eksakt posisjon. Plinget BEREGNES i _mode_tick ved visning fra player_live.still_anchor/still_since
 --     (UNLOGGED, finnes fra før); den forskjøvne posisjonen lagres ikke, og id-en er en hash, ikke spiller-id.
 --     Plinget forsvinner når gjemmeren flytter seg mer enn 10 m.
 --   * Poeng: gjemmere kv('pts_per_min') = 10 per hele minutt overlevd etter slipp (player_stats.hs_since/hs_pts,
@@ -336,17 +337,29 @@ language plpgsql
 set search_path = chase, extensions, public
 as $$
 declare
-  v_id uuid;
+  v_id  uuid;
+  v_rel timestamptz;
 begin
   if chase._is_hide(p_session) then
+    select (r.state -> 'hide' ->> 'release_at')::timestamptz into v_rel
+      from chase.sessions s join chase.rounds r on r.session_id = s.id and r.idx = s.round_idx where s.id = p_session;
+    -- Everybody who still has a hide clock banks the time (also those caught last); survivor points only for hiders
+    -- still free, and only when the release happened (a session ended before it penalises/rewards nobody).
     for v_id in select p.id from chase.players p join chase.player_stats st on st.player_id = p.id
-                 where p.session_id = p_session and p.role = 'prey' and p.status = 'active' and st.hs_since is not null loop
+                 where p.session_id = p_session and p.status = 'active' and st.hs_since is not null loop
       update chase.player_stats
-         set points = points + chase.kt('survivor_pts')::int, round_points = round_points + chase.kt('survivor_pts')::int,
-             hide_best_s = greatest(hide_best_s, floor(greatest(0, extract(epoch from p_at - hs_since)))::int)
+         set hide_best_s = greatest(hide_best_s, floor(greatest(0, extract(epoch from p_at - hs_since)))::int)
        where player_id = v_id;
-      perform chase._award_badges(v_id, array['survivor']);
     end loop;
+    if chase._hide_released(v_rel, p_at) then
+      for v_id in select p.id from chase.players p join chase.player_stats st on st.player_id = p.id
+                   where p.session_id = p_session and p.role = 'prey' and p.status = 'active' and st.hs_since is not null loop
+        update chase.player_stats
+           set points = points + chase.kt('survivor_pts')::int, round_points = round_points + chase.kt('survivor_pts')::int
+         where player_id = v_id;
+        perform chase._award_badges(v_id, array['survivor']);
+      end loop;
+    end if;
     update chase.player_stats set hs_since = null, hs_pts = 0 where session_id = p_session and (hs_since is not null or hs_pts <> 0);
   end if;
   perform chase._mode_finish_hs(p_session, p_at);
@@ -369,6 +382,11 @@ begin
   -- 0004's upkeep just pinged the prey; Gjemsel has no radar (the pling is derived at view time).
   update chase.player_live set ping_pos = null, ping_at = null, ping_stealth = false
    where session_id = p_session and ping_pos is not null;
+  -- A hider who became a hunter by other means than catch() (_tag_rebalance promotes one when nobody hunts) banks the time.
+  update chase.player_stats st
+     set hide_best_s = greatest(st.hide_best_s, floor(greatest(0, extract(epoch from now() - st.hs_since)))::int), hs_since = null, hs_pts = 0
+    from chase.players p
+   where p.id = st.player_id and st.session_id = p_session and st.hs_since is not null and p.role <> 'prey';
   -- A late joiner (prey via _tag_rebalance, current_survival_start set) starts hiding now.
   select (r.state -> 'hide' ->> 'release_at')::timestamptz into v_rel
     from chase.sessions s join chase.rounds r on r.session_id = s.id and r.idx = s.round_idx where s.id = p_session;
@@ -395,13 +413,15 @@ declare
   v_rel    timestamptz;
   v_rel_ok boolean;
   v_still  jsonb := '[]'::jsonb;
+  v_idx    int;
+  v_salt   text;
 begin
   -- Only Gjemsel gets past here (0004's view already carries the variant: no extra query for other modes).
   if v_out -> 'tag' ->> 'variant' is distinct from 'hide' then
     return v_out;
   end if;
-  select p.role, s.status, s.frozen_at, (r.state -> 'hide' ->> 'release_at')::timestamptz
-    into v_role, v_status, v_frozen, v_rel
+  select p.role, s.status, s.frozen_at, (r.state -> 'hide' ->> 'release_at')::timestamptz, s.round_idx, s.host_token_hash
+    into v_role, v_status, v_frozen, v_rel, v_idx, v_salt
     from chase.players p join chase.sessions s on s.id = p.session_id
     left join chase.rounds r on r.session_id = s.id and r.idx = s.round_idx
    where p.id = p_player;
@@ -421,21 +441,23 @@ begin
   if v_role = 'hunter' and v_status in ('live', 'paused') and jsonb_typeof(v_out -> 'tag') = 'object' then
     v_out := jsonb_set(v_out, '{tag,prey_near}', '0'::jsonb);
     if v_rel_ok and p_pos is not null then
-      select coalesce(jsonb_agg(jsonb_build_object('id', c.pid, 'pos', chase._latlng(c.centre), 'r_m', chase.kv('still_r_m')::int,
-                                                   'age_s', c.age_s) order by c.d), '[]'::jsonb)
+      -- The oldest plings first (LIMIT), the offset is computed only for those. The offset seed is secret
+      -- (session salt), stable per hider and round; the id is an independent hash.
+      select coalesce(jsonb_agg(jsonb_build_object('id', c.pid, 'pos', chase._latlng(ST_Project(c.anchor, c.o[2], radians(c.o[1]))::geography),
+                                                   'r_m', chase.kv('still_r_m')::int, 'age_s', c.age_s) order by c.age_s desc, c.pid), '[]'::jsonb)
         into v_still
-        from (select left(md5(l.player_id::text || l.still_since::text), 8) as pid,
-                     ST_Project(l.still_anchor, x.o[2], radians(x.o[1]))::geography as centre,
-                     floor(extract(epoch from now() - l.still_since) - chase.kv('still_s'))::int as age_s,
-                     ST_Distance(l.still_anchor, p_pos) as d
-                from chase.player_live l join chase.players q on q.id = l.player_id
-                cross join lateral (select chase._hide_offset(l.player_id::text || l.still_since::text) as o) x
-               where l.session_id = p_session and q.role = 'prey' and q.status = 'active'
-                 and l.still_anchor is not null and l.still_since is not null
-                 and l.still_since <= now() - make_interval(secs => chase.kv('still_s'))
-                 and l.fix_at > now() - make_interval(secs => chase.kt('fix_fresh_s'))
-               order by ST_Distance(l.still_anchor, p_pos)
-               limit chase.kv('still_max')::int) c;
+        from (select z.pid, z.anchor, z.age_s, chase._hide_offset(z.seed) as o
+                from (select left(md5('pling-id:' || l.player_id::text || ':' || v_idx::text), 8) as pid,
+                             l.still_anchor as anchor,
+                             floor(extract(epoch from now() - l.still_since) - chase.kv('still_s'))::int as age_s,
+                             l.player_id::text || ':' || v_idx::text || ':' || v_salt as seed
+                        from chase.player_live l join chase.players q on q.id = l.player_id
+                       where l.session_id = p_session and q.role = 'prey' and q.status = 'active'
+                         and l.still_anchor is not null and l.still_since is not null
+                         and l.still_since <= now() - make_interval(secs => chase.kv('still_s'))
+                         and l.fix_at > now() - make_interval(secs => chase.kt('fix_fresh_s'))
+                       order by l.still_since, l.player_id
+                       limit chase.kv('still_max')::int) z) c;
     end if;
   end if;
   if jsonb_typeof(v_out -> 'tag') = 'object' then
@@ -520,8 +542,8 @@ begin
 end;
 $$;
 
--- The radar power-up (0007, kept from an earlier round) shows every opponent's exact position for a few seconds:
--- not in Gjemsel, where the hiders are invisible. Other power-ups are untouched.
+-- Power-ups (0007, kept from earlier rounds) are off in Gjemsel: radar shows exact positions, decoy leaks a ring,
+-- shield answers `immune` and so reveals a role. The answer is the same for every kind.
 create or replace function chase.use_powerup(
   p_player     uuid,
   p_token_hash text,
@@ -533,7 +555,7 @@ security definer
 set search_path = chase, extensions, public
 as $$
 begin
-  if p_kind = 'radar' and chase._is_hide(p_session)
+  if chase._is_hide(p_session)
      and exists (select 1 from chase.players p where p.id = p_player and p.token_hash = p_token_hash and p.session_id = p_session) then
     return jsonb_build_object('ok', false, 'error', 'not_useful');
   end if;

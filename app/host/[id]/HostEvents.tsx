@@ -60,7 +60,8 @@ export function EventSheet({ snap, hs }: { snap: Snapshot; hs: HostSession }) {
   const [busy, setBusy] = useState(false);
   const ev = snap.event;
   const running = ev && !ev.done ? ev : null;
-  const kinds = snap.event_kinds ?? [];
+  // 0023 Gjemsel: no events (the server refuses event_start with `hide`); the buttons are hidden.
+  const kinds = snap.round?.variant === "hide" ? [] : (snap.event_kinds ?? []);
   const pending = snap.mission_pending ?? [];
 
   async function run(action: Parameters<HostSession["tryAct"]>[0], payload?: Record<string, unknown>) {

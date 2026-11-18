@@ -125,6 +125,8 @@ begin
   update chase.player_stats set powerups = array['radar'] where player_id = pg_temp.pid('hd', v_h[1]);
   assert chase.use_powerup(pg_temp.pid('hd', v_h[1]), pg_temp.h('tok-hd-' || v_h[1]), s, 'radar') ->> 'error' = 'not_useful', 'no radar power-up in Gjemsel';
   assert (select powerups from chase.player_stats where player_id = pg_temp.pid('hd', v_h[1])) = array['radar'], 'the power-up is not spent';
+  assert chase.use_powerup(pg_temp.pid('hd', v_p[1]), pg_temp.h('tok-hd-' || v_p[1]), s, 'shield') ->> 'error' = 'not_useful'
+     and chase.use_powerup(pg_temp.pid('hd', v_p[1]), pg_temp.h('tok-hd-' || v_p[1]), s, 'decoy') ->> 'error' = 'not_useful', 'no power-ups at all in Gjemsel';
 
   -- Hiders earn nothing before the release.
   select points into v_pts from chase.player_stats where player_id = pg_temp.pid('hd', v_p[2]);
@@ -178,6 +180,11 @@ begin
   assert ST_Distance(v_ctr, v_anchor) between 19 and 71, 'centre shifted 20–70 m from the hider: ' || ST_Distance(v_ctr, v_anchor);
   assert ST_Distance(v_ctr, v_anchor) < 100, 'the hider is inside the circle';
   assert not (v_still::text like '%' || pg_temp.pid('hd', v_p[3])::text || '%'), 'no player id in the pling';
+  assert v_still -> 0 ->> 'id' <> left(md5(pg_temp.pid('hd', v_p[3])::text || (select still_since::text from chase.player_live where player_id = pg_temp.pid('hd', v_p[3]))), 8), 'id is independent of the offset seed';
+  -- Same shift for the whole round, also after a new stillness stint (no triangulation by many plings).
+  update chase.player_live set still_since = now() - interval '130 seconds' where player_id = pg_temp.pid('hd', v_p[3]);
+  assert (pg_temp.tick('hd', v_h[1]) -> 'tag' -> 'hide' -> 'still' -> 0 -> 'pos') = v_still -> 0 -> 'pos', 'same centre when still_since changes (stable per hider and round)';
+  update chase.player_live set still_since = now() - interval '100 seconds' where player_id = pg_temp.pid('hd', v_p[3]);
   -- Stable while the stillness lasts (no averaging out).
   assert (pg_temp.tick('hd', v_h[1]) -> 'tag' -> 'hide' -> 'still') = v_still, 'same pling on the next tick';
   -- Hiders get no pling list; the teacher view is unchanged (host_snapshot carries still_s as before).
@@ -257,4 +264,36 @@ begin
   assert (select count(*) from chase.players where session_id = s and role = 'hunter') = 1, 'Smittejakt: ~15 % hunters (1 of 6)';
   assert pg_temp.act(s, 'hd3', 'event_start', '{"kind":"sprint"}') ->> 'error' is distinct from 'hide', 'events as before';
   raise notice '0023 Smittejakt unchanged: ok';
+end $$;
+
+-- The last hider found banks the time; a session ended before the release gives no survivor points.
+do $$
+declare s uuid; v_h int; v_p int; v_base geography; r jsonb;
+begin
+  s := pg_temp.mk('hd5', '{"rounds":[{"mode":"tag","variant":"hide","duration_s":300}],"countdown_s":0}', 2);
+  perform pg_temp.act(s, 'hd5', 'start');
+  perform chase._advance(s);
+  perform pg_temp.tick('hd5', 1);
+  perform pg_temp.tick('hd5', 2);
+  select substring(nickname from 5)::int into v_h from chase.players where session_id = s and role = 'hunter';
+  select substring(nickname from 5)::int into v_p from chase.players where session_id = s and role = 'prey';
+  perform pg_temp.release(s, 5);
+  update chase.player_stats set hs_since = now() - interval '100 seconds' where player_id = pg_temp.pid('hd5', v_p);
+  select pos::geography into v_base from chase.player_live where player_id = pg_temp.pid('hd5', v_h);
+  perform pg_temp.place('hd5', v_p, v_base, 3, 0);
+  r := pg_temp.catch(s, 'hd5', v_h, (select catch_code from chase.players where id = pg_temp.pid('hd5', v_p)));
+  assert (r ->> 'ok')::boolean and (r ->> 'last')::boolean, 'last hider found: ' || r::text;
+  assert (select hide_best_s from chase.player_stats where player_id = pg_temp.pid('hd5', v_p)) between 99 and 101, 'last hider banks the time';
+  assert (select hs_since is null from chase.player_stats where player_id = pg_temp.pid('hd5', v_p)), 'clock cleared';
+
+  s := pg_temp.mk('hd6', '{"rounds":[{"mode":"tag","variant":"hide","duration_s":300}],"countdown_s":0}', 6);
+  perform pg_temp.act(s, 'hd6', 'start');
+  perform chase._advance(s);
+  for i in 1 .. 6 loop perform pg_temp.tick('hd6', i); end loop;
+  update chase.sessions set phase_ends_at = now() where id = s;   -- over before the release
+  perform chase._advance(s);
+  assert (select status from chase.sessions where id = s) = 'gathering', 'round over';
+  assert not exists (select 1 from chase.player_stats where session_id = s and 'survivor' = any(badges)), 'no survivor bonus before the release';
+  assert (select max(hide_best_s) from chase.player_stats where session_id = s) = 0, 'no hiding time before the release';
+  raise notice '0023 banking and early end: ok';
 end $$;

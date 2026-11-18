@@ -58,7 +58,7 @@ export default function BigScreen({ sessionId }: { sessionId: string }) {
   const teams = [...(snap.teams ?? [])].sort((a, b) => a.n - b.n);
   const ev = snap.event && !snap.event.done ? snap.event : null;
   // 0023 Gjemsel: the projector shows no player dots while the hunt is on (the teacher's own panel still sees everybody).
-  const hideLive = r?.variant === "hide" && snap.status === "live";
+  const hideLive = r?.variant === "hide" && (snap.status === "live" || snap.status === "paused");
   const hideLeft = hideLive ? (phaseLeftS(r?.hide?.release_at ?? null, offset, now) ?? 0) : 0;
 
   if (snap.status === "ceremony" && snap.ceremony) {
