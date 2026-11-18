@@ -284,6 +284,7 @@ Fysiske oppdrag gjøres der eleven er, aldri som en betingelse for å slippe str
 | Skritt (sum fra mobilens skritteller, valgfri) | `player_live.steps` (UNLOGGED) | **Slettes ved øktslutt** |
 | Stafett: om eleven har pinnen, hvilken post, på vei tilbake, når pinnen ble gitt, antall etapper | `player_stats.relay_*`, `round_relay` | 24 t etter slutt. Ingen posisjoner. |
 | Stafettløype (base og poster: punkter i området, ikke elevposisjoner) og etapper per lag | `rounds.state` | Som økta |
+| Prøverunde og poengorientering (0020): om statistikken er frosset (`practice`), ankomsttid til møteplassen (`so_home_since`, `so_arrived_at`: tider uten posisjon), forsinkelse og poengtrekk, klaimfremdrift og sum score-O-poeng | `player_stats.practice`, `so_*` | 24 t etter slutt. Ankomsttidene nullstilles ved rundeslutt og i `_end_session`. Ingen posisjoner. |
 | Lagvisnings-cache (lagkameratenes posisjoner og lagbeskjeder, bygges hvert sekund) | `team_clock`, `session_clock.team_cache` (UNLOGGED) | **Slettes ved øktslutt** (fra 0013; før det fulgte den økta i 24 t) |
 | **Lærerbibliotek** (lagrede og sist brukte områder, opplegg, oppdragspakker), knyttet til en anonym lærernøkkel (bare hash lagres). Ingen elevdata. | `teachers`, `areas`, `plans`, `challenge_packs` | Til læreren sletter det, eller **13 måneder uten bruk** (`purge_expired`). Bare de 5 siste «sist brukt» per type beholdes. |
 | Delelenker (kopi av et opplegg og ev. et område, ingen info om læreren) | `shares` | Til læreren trekker lenken tilbake (raden slettes), eller med biblioteket |
@@ -656,8 +657,8 @@ Valgt av eier 2026-11-18. Sonnet-agenter bygger, én samlet Opus-review, én dep
 4. **Ferdige quizpakker.** 8–12 pakker etter LK20 (5.–10. trinn), som velges i veiviseren og legges på Postjakt.
 5. **Øktrapport.** Ved premieutdeling eller avslutning: aktive minutter, distanse, poster og fangster for klassen og per kallenavn, til utskrift eller PDF. Rapporten lages i lærerens nettleser før økta slettes og lagres ikke (§ 8 er uendret).
 6. **Prøv med boter.** Lærere kan starte en demo-økt (`is_sim`) med 8–20 simulerte elever i nettleseren, med tak og rate-limit. Prod-simer merkes også `is_sim`.
-7. **Prøverunde** (migr. 0020). En rundetype på 60 s som ikke teller, med hint om knappene, posten og fangst.
-8. **Poengorientering** (migr. 0020). Poster med ulik verdi (mer jo lenger unna), fast tidsgrense, og poengtrekk per påbegynte 10 s for sent tilbake på møteplassen.
+7. **Prøverunde** (migr. 0020). En rundetype på 60 s som ikke teller, med hint om knappene, posten og fangst. Flagget `practice` på en Postjakt- eller Smittejakt-runde: poeng, merker og fangst-/postantall fryses i databasen, distanse og aktive sekunder teller.
+8. **Poengorientering** (migr. 0020, modus `scoreo`). 12 poster med verdi 10/20/30/40 etter avstand fra møteplassen, hver spiller tar hver post én gang, fast tidsgrense (rundens lengde) og 120 s innkomst. For sent tilbake på møteplassen: −5 p per påbegynte 10 s, aldri mer enn rundens poeng; ikke inne innen fasen er slutt = alle rundepoengene. Pall «Orienterer».
 9. **Gjemsel** (migr. 0021). Gjemmerne får forsprang og må holde seg i sin sone. Jegerne snevrer inn med Snus og Termometer og fanger med kode.
 
 **Ferdig når:** alle ni punktene er levert, prod-sim er grønn, og ekte-iPhone-punktene står i PILOT.md.

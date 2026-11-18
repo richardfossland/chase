@@ -56,10 +56,11 @@ import { useHostSession, type HostSession } from "./useHostSession";
 
 const h = no.host;
 
-function roundName(r: { mode: string; variant?: string | null; zone?: unknown; zoned?: boolean; team?: boolean }): string {
+function roundName(r: { mode: string; variant?: string | null; zone?: unknown; zoned?: boolean; team?: boolean; practice?: boolean }): string {
   const base = r.mode === "tag" ? h.round.variants[r.variant ?? "convert"] : h.round.modes[r.mode];
   const teamed = r.team === true && r.mode !== "flag" && r.mode !== "king" && r.mode !== "relay" ? base + h.round.teamTag : base;
-  return r.zoned || r.zone === true ? teamed + h.round.zoneTag : teamed;
+  const zoned = r.zoned || r.zone === true ? teamed + h.round.zoneTag : teamed;
+  return r.practice === true ? zoned + h.round.practiceTag : zoned;
 }
 
 type Sheet =
@@ -1246,14 +1247,19 @@ function RoundBar({ snap, act }: { snap: Snapshot; act: HostSession["act"] }) {
       </div>
     );
   }
-  const left = phaseLeftS(r.phase_ends_at, offset, now);
+  // 0020 Poengorientering: the clock counts to the time limit first, then to the end of the return window.
+  const soLimitLeft = r.mode === "scoreo" && r.scoreo ? phaseLeftS(r.scoreo.limit_at, offset, now) : null;
+  const soPast = r.mode === "scoreo" && !!r.scoreo && soLimitLeft === 0;
+  const left = soLimitLeft && !soPast ? soLimitLeft : phaseLeftS(r.phase_ends_at, offset, now);
   const live = snap.status === "live";
   const paused = snap.status === "paused";
   const between = snap.status === "countdown" || snap.status === "breather";
   const open = (snap.posts ?? []).filter((p) => !p.claimed_by).length;
   const taken = (snap.posts ?? []).filter((p) => p.claimed_by).length;
   const detail =
-    live && r.mode === "posts"
+    live && r.mode === "scoreo"
+      ? soPast ? `${h.round.scoreoLimit} ${h.round.scoreo(r.scoreo?.in ?? 0, r.scoreo?.of ?? 0)}` : h.round.scoreoPosts(r.scoreo?.total ?? 0)
+    : live && r.mode === "posts"
       ? h.round.posts(open, taken)
       : live && r.mode === "tag"
         ? r.variant === "fox"
@@ -1262,7 +1268,7 @@ function RoundBar({ snap, act }: { snap: Snapshot; act: HostSession["act"] }) {
         : live && r.relay
           ? h.round.relay((snap.teams ?? []).map((t) => `${t.name} ${r.relay?.legs[String(t.n)] ?? 0}`).join(" · "))
           : null;
-  const sub = [h.round.of(r.idx + 1, r.count), live ? null : status, detail].filter(Boolean).join(" · ");
+  const sub = [h.round.of(r.idx + 1, r.count), live ? null : status, r.practice ? h.round.practice : null, detail].filter(Boolean).join(" · ");
   return (
     <div
       className={cx(

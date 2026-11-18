@@ -53,7 +53,7 @@ export const play = {
     // Phase 2: playlist, Postjakt, points, feedback.
     countdown: "Gjør deg klar",
     roundOf: (i: number, n: number) => `Runde ${i} av ${n}`,
-    modes: { posts: "Postjakt", free: "Løp!", tag: "Smittejakt", flag: "Flaggjakt", king: "Konge på haugen", relay: "Stafett" } as Record<string, string>,
+    modes: { posts: "Postjakt", free: "Løp!", tag: "Smittejakt", flag: "Flaggjakt", king: "Konge på haugen", relay: "Stafett", scoreo: "Poengorientering" } as Record<string, string>,
     variants: { convert: "Smittejakt", swap: "Sisten", fox: "Revejakt" } as Record<string, string>,
     teamTag: " · lag",
     modeHint: {
@@ -64,6 +64,7 @@ export const play = {
       tag: "Jegere fanger. Bytter løper.",
       fox: "Fang reven, så blir du reven.",
       relay: "Har du pinnen: løp til posten og tilbake.",
+      scoreo: "Ta så mange poster du rekker. Lengre unna gir mer poeng.",
     } as Record<string, string>,
     zoneTag: " + sone",
     zoneHint: "Hold deg inne i den røde ringen.",
@@ -161,6 +162,30 @@ export const play = {
     qrTooFar: "Du må stå ved posten, og GPS må være på. Prøv igjen om litt.",
     qrError: "Fikk ikke kontakt. Prøv igjen.",
     dirs: ["nord", "nordøst", "øst", "sørøst", "sør", "sørvest", "vest", "nordvest"],
+  },
+  // Fase 10.7: prøverunde.
+  practice: {
+    badge: "Prøverunde – teller ikke",
+    posts: "Løp til posten og stå i ringen.",
+    qr: "Skann koden eller tast den.",
+    hunter: "Du er jeger: fang noen.",
+    prey: "Du er bytte: ikke bli tatt.",
+    zero: "0 p (prøve)",
+  },
+  // Fase 10.8: Poengorientering.
+  scoreo: {
+    title: "Poengorientering",
+    got: (n: number, of: number) => `${n} av ${of} poster`,
+    valueOn: (v: number) => `${v} p`,
+    back: "Tilbake til møteplassen!",
+    backIn: (s: number) => `Tilbake til møteplassen om ${s} s`,
+    backM: (m: number) => `${m} m igjen`,
+    late: (s: number) => `Du er ${s} s for sen. Hver 10. sekund koster poeng.`,
+    inTime: "Du er inne. Bra!",
+    arrivedLate: (p: number) => (p > 0 ? `Inne, men for sent: −${p} p` : "Inne"),
+    limitLabel: "Tilbake om",
+    done: (got: number, of: number, pen: number) => `${got} av ${of} poster${pen > 0 ? ` · −${pen} p for sent` : ""}`,
+    penalty: (p: number) => `−${p} p`,
   },
   fox: {
     you: "REV",

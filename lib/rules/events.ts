@@ -45,9 +45,11 @@ export type Powerup = (typeof POWERUPS)[number];
 /** Same as chase._ev_kinds(): what the teacher (auto = false) or the automatic picker may start. */
 export function eventKinds(mode: RoundMode, qr: boolean, auto: boolean): EventKind[] {
   // 0013: a relay keeps its runners on the course — only the teacher's missions.
-  const out: EventKind[] = mode === "relay" ? [] : ["sprint"];
+  // 0020: the same in score-O (no sprint or gathering that pulls players off their routes).
+  const still = mode === "relay" || mode === "scoreo";
+  const out: EventKind[] = still ? [] : ["sprint"];
   if (!auto || qr) out.push("mission");
-  if (mode !== "relay") out.push("gather");
+  if (!still) out.push("gather");
   if (mode === "posts" && !auto) out.push("golden");
   if (mode === "tag") out.push("storm", "blackout");
   return out;

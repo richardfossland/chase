@@ -37,7 +37,7 @@ import {
   type LngLat,
 } from "@/lib/geo";
 import { no } from "@/lib/locale/no";
-import { DEFAULT_PLAN, planTotalS, type Plan } from "@/lib/rules/game";
+import { DEFAULT_PLAN, planTotalS, withPractice, type Plan } from "@/lib/rules/game";
 import { POSTS_MAX, fixedPostsOk, newPostCode, type FixedPost } from "@/lib/rules/library";
 import type { StarterPack } from "@/lib/starter";
 import { loadMapLibre } from "@/lib/map/maplibre";
@@ -160,7 +160,7 @@ export default function Wizard() {
     );
   }, []);
   const [phone, setPhone] = useState("");
-  const [plan, setPlan] = useState<Plan>(DEFAULT_PLAN);
+  const [plan, setPlan] = useState<Plan>(() => withPractice(DEFAULT_PLAN));
   const [voice, setVoice] = useState(false);
   const [checks, setChecks] = useState<boolean[]>(t.ready.checks.map(() => false));
   // 0010: the teacher's library («Samme som sist», mission and quiz packs).

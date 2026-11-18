@@ -139,6 +139,11 @@ export interface SimStats {
     relayBatonCap: number;
     capKeys: Set<string>;
     relayLegsByRound: Map<number, number>;
+    /** 0020 Poengorientering: claims counted per player+post (two players may take the same post), repeat claims, players who got a late penalty / came in. */
+    scoreoKeys: Set<string>;
+    scoreoDup: number;
+    scoreoLate: Set<string>;
+    scoreoIn: Set<string>;
     msgsSent: number;
     msgsSeen: number;
     msgKeys: Set<string>;
@@ -197,7 +202,7 @@ export function startSwarm(opts: SwarmOptions) {
     alarms: [],
     game: { claims: 0, golden: 0, lost: 0, qr: 0, duplicateClaims: 0, claimedIds: new Set(), statuses: [], playlistDone: false, rounds: 0, catches: 0, catchFails: {}, zoneHits: 0, zonePen: 0, bestCards: 0, votes: 0,
       events: {}, eventKeys: new Set(), sprintMax: 0, prizes: 0, powerupsGot: 0, powerupsUsed: 0, powerupFails: {}, hotcoldUsed: {}, hotcoldFails: {}, missionsDone: 0, missionsConfirmed: 0,
-      teamSizes: null, teamPoints: {}, flagCaptures: 0, hillHolds: 0, relayLegs: 0, relayBatonMax: 0, relayBatonCap: 0, relayLegsByRound: new Map(), capKeys: new Set(), msgsSent: 0, msgsSeen: 0, msgKeys: new Set(), quizAnswered: 0, quizRight: 0, steps: 0 },
+      teamSizes: null, teamPoints: {}, flagCaptures: 0, hillHolds: 0, relayLegs: 0, relayBatonMax: 0, relayBatonCap: 0, relayLegsByRound: new Map(), capKeys: new Set(), scoreoKeys: new Set(), scoreoDup: 0, scoreoLate: new Set(), scoreoIn: new Set(), msgsSent: 0, msgsSeen: 0, msgKeys: new Set(), quizAnswered: 0, quizRight: 0, steps: 0 },
   };
   const wsOn = !!opts.ws;
   if (wsOn) {
@@ -373,6 +378,15 @@ export function startSwarm(opts: SwarmOptions) {
       if (stats.game.claimedIds.has(claimed.post_id)) stats.game.duplicateClaims++;
       stats.game.claimedIds.add(claimed.post_id);
     }
+    const sc = (data as { scoreo?: { claimed?: { post_id: string } | null; arrived?: boolean; penalty?: number; done?: boolean } }).scoreo;
+    if (sc?.claimed) {
+      stats.game.claims++;
+      const k = `${p.playerId}:${sc.claimed.post_id}`;
+      if (stats.game.scoreoKeys.has(k)) stats.game.scoreoDup++;
+      stats.game.scoreoKeys.add(k);
+    }
+    if (sc?.arrived) stats.game.scoreoIn.add(p.playerId);
+    if ((sc?.penalty ?? 0) > 0) stats.game.scoreoLate.add(p.playerId);
     if (data.lost) stats.game.lost++;
     void tryCatch(p);
     void tryEvent(p, prevView);
@@ -810,6 +824,9 @@ export function summarize(stats: SimStats) {
       golden: stats.game.golden,
       lost: stats.game.lost,
       duplicateClaims: stats.game.duplicateClaims,
+      scoreoDup: stats.game.scoreoDup,
+      scoreoIn: stats.game.scoreoIn.size,
+      scoreoLate: stats.game.scoreoLate.size,
       rounds: stats.game.rounds,
       playlistDone: stats.game.playlistDone,
       catches: stats.game.catches,
