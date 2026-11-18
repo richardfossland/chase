@@ -87,6 +87,8 @@ export const wizard = {
       zoneHint: "Sonen krymper i tre steg. Utenfor koster poeng.",
       teamToggle: "Som lag",
       moreOptions: "Flere valg",
+      voice: "Talte varsler",
+      voiceHint: "Mobilene sier for eksempel «Sonen krymper» høyt. Lyd og blink er som før.",
       breather: "Pustepause",
       breatherNone: "Ingen",
       breatherS: (s: number) => `${s} s`,

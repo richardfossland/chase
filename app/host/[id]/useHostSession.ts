@@ -23,6 +23,9 @@ export interface HostSession {
   /** Like act, but hands back the error code (null = done) for messages in a sheet. */
   tryAct: (action: HostAction, payload?: Record<string, unknown>) => Promise<string | null>;
   ack: (alarmId: string) => Promise<void>;
+  setVoice: (on: boolean) => Promise<void>;
+  /** Et setVoice-kall pågår: bryteren skal være deaktivert. */
+  voiceBusy: boolean;
   end: (force: boolean) => Promise<{ ok: true } | { ok: false; missing: { id: string; nickname: string }[] }>;
 }
 
@@ -184,6 +187,22 @@ export function useHostSession(sessionId: string, token: string | null): HostSes
     [sessionId, token, refresh],
   );
 
+  const [voiceBusy, setVoiceBusy] = useState(false);
+  const setVoice = useCallback(
+    async (on: boolean) => {
+      if (!token || voiceBusy) return;
+      setVoiceBusy(true);
+      try {
+        await api.setVoice(sessionId, token, on);
+      } catch (e) {
+        setError(e instanceof ApiError ? e.code : "network");
+      }
+      await refresh();
+      setVoiceBusy(false);
+    },
+    [sessionId, token, refresh, voiceBusy],
+  );
+
   const end = useCallback(
     async (force: boolean) => {
       if (!token) return { ok: false as const, missing: [] };
@@ -203,5 +222,5 @@ export function useHostSession(sessionId: string, token: string | null): HostSes
     [sessionId, token, refresh],
   );
 
-  return { sessionId, snap, geo, error, refresh, act, tryAct, ack, end };
+  return { sessionId, snap, geo, error, refresh, act, tryAct, ack, setVoice, voiceBusy, end };
 }

@@ -263,6 +263,8 @@ export interface Snapshot {
   /** 0009: teams with the live score, and player id → team number. */
   teams: TeamScore[];
   team_of: Record<string, number>;
+  /** 0015: talte varsler på for økta. */
+  voice?: boolean;
 }
 
 /** One event as the server keeps it (rounds.state.ev, 0007). Server times. */
@@ -330,6 +332,8 @@ export interface TickView {
   /** 0013: Stafett. */
   relay?: RelayView;
   safety: { geofence: 0 | 1 | 2 | 3; forbidden: boolean; outside_m: number; uncertain: boolean };
+  /** 0015: læreren har slått på talte varsler. Mangler mot gammel DB (= av). */
+  voice?: boolean;
   sos: { id: string; acked: boolean } | null;
   gather: { assembly: LatLng; distance_m: number; checked_in: boolean } | null;
   messages: { id: number; at: string; text: string; private: boolean }[];
@@ -481,6 +485,7 @@ export const api = {
     forbidden?: GeoJsonMultiPolygon | null;
     teacherPhone?: string | null;
     plan?: Plan;
+    settings?: { voice?: boolean };
     sim?: boolean;
   }) => post<CreatedSession>("/api/sessions", body),
 
@@ -515,6 +520,8 @@ export const api = {
     post<{ status: SessionStatus; round: RoundView | null }>(`/api/s/${sessionId}/host`, { hostToken, action, payload }),
   ack: (sessionId: string, hostToken: string, alarmId: string) =>
     post<{ alarmId: string }>(`/api/s/${sessionId}/ack`, { hostToken, alarmId }),
+  setVoice: (sessionId: string, hostToken: string, on: boolean) =>
+    post<{ voice: boolean }>(`/api/s/${sessionId}/voice`, { hostToken, on }),
   end: (sessionId: string, hostToken: string, force = false) =>
     post<{ already?: boolean }>(`/api/s/${sessionId}/end`, { hostToken, force }),
 };

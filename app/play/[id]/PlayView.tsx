@@ -14,6 +14,7 @@ import { QrScanner } from "@/lib/client/QrScanner";
 import { identity, type StoredPlayer } from "@/lib/client/identity";
 import { useDeviceGps, useSimGps, useWakeLock, vibrate, type Fix, type GpsState, type SimControls } from "@/lib/client/gps";
 import { playBuzzer, playDing, unlockAudio } from "@/lib/client/sound";
+import { speakKey, speakLines, unlockVoice, voiceLinesFor } from "@/lib/client/voice";
 import { useLiveTick } from "./useLiveTick";
 import { no } from "@/lib/locale/no";
 import { bearing, haversine } from "@/lib/geo";
@@ -298,6 +299,14 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
       if (p.status === "live" && (view.status === "breather" || view.status === "gathering")) cue("roundEnd");
     }
 
+    // Talte varsler (9.3): bare et tillegg, og bare når læreren har slått det på.
+    // Feil her skal aldri påvirke lyd, vibrasjon eller blink over.
+    try {
+      speakLines(voiceLinesFor(p, view, { storm }));
+    } catch {
+      /* ingen tale */
+    }
+
   }, [queueBadges]);
 
   const status = view?.status ?? boot.status;
@@ -406,10 +415,15 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
   const zn: ZoneNow | null = zoneState ? zoneAt(zoneState, now + offsetMs) : null;
   const zoneWarnKey = zn?.warn && view?.status === "live" ? `${view.round?.idx}:${zn.phase}` : null;
   const zoneWarned = useRef<string | null>(null);
+  const voiceOnRef = useRef(false);
+  useEffect(() => {
+    voiceOnRef.current = view?.voice === true;
+  }, [view?.voice]);
   useEffect(() => {
     if (!zoneWarnKey || zoneWarned.current === zoneWarnKey) return;
     zoneWarned.current = zoneWarnKey;
     cue("beep");
+    if (voiceOnRef.current) speakKey("zoneShrink");
   }, [zoneWarnKey]);
 
   const onCatch = useCallback(
@@ -599,6 +613,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
         error={gps.error}
         onReady={() => {
           unlockAudio();
+          unlockVoice();
           gps.start();
           setReady(true);
           // iOS asks for motion access only from a tap; a «no» just leaves the counter off.
