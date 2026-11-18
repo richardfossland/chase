@@ -456,7 +456,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
         setTimeout(() => setScanBusy(false), 1200);
       }
     },
-    [me.playerId, me.token, scanBusy, sessionId, tickNow, queueBadges, view?.round?.practice],
+    [me.playerId, me.token, scanBusy, sessionId, tickNow, queueBadges, view],
   );
 
   const onScan = useCallback(
@@ -489,7 +489,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
         setTimeout(() => setScanBusy(false), 1200);   // don't re-scan the same card instantly
       }
     },
-    [me.playerId, me.token, scanBusy, sessionId, tickNow, queueBadges, view?.round?.practice],
+    [me.playerId, me.token, scanBusy, sessionId, tickNow, queueBadges, view],
   );
 
   // Badge queue → one toast per badge_gap_s (the 1 s clock drives it).
