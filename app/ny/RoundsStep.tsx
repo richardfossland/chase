@@ -398,6 +398,7 @@ export function RoundsStep(props: {
             <p className="text-sm leading-relaxed text-txt-dim">{no.quiz.editorLead}</p>
             <QuizEditor
               compact
+              ready
               items={plan.quiz}
               packs={props.quizPacks}
               onChange={(items, valid) => {
