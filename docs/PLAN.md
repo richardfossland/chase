@@ -624,6 +624,23 @@ Fase 1–3 gir **spillbar MVP for kroppsøvingstimen**. Hver fase avsluttes med 
 - ⏸ Foto-oppdrag etter DPIA. Venter på DPIA (eiers valg 2026-11-14).
 - ⏸ Feide-innlogging. Eier valgte å vente (krever registrering i Feide kundeportal).
 
+### Fase 9 – Inspirasjon fra lignende apper og åpen kildekode
+
+Godkjent av eier 2026-11-18 etter en gjennomgang av Actionbound, Loquiz, Goosechase, MapRun, Stolpejakten, Jet Lag (gjemsel) / Map Calipers og Zombies, Run!. Ingen åpne GPS-jaktspill var modne nok til å bygge på, så vi henter ideer og bruker små biblioteker. Én PR per punkt, i denne rekkefølgen (lavest risiko først):
+
+1. **GPS-glatting.** Et enkelt Kalman-filter i klienten (egen kode), vektet med `acc`. Fix med hopp over ca. 12 m/s eller nøyaktighet over 50 m forkastes før de sendes. Testvektorer og GPS-støy i simulatoren. Filteret får ikke gjøre geofence-alarmene tregere (§ 7, regel 4 i CLAUDE.md). Berører: `lib/client/gps.ts`, `lib/sim`.
+2. **Bedre QR-skanner.** `barcode-detector`-polyfill (zxing-wasm, MIT) erstatter jsQR. Wasm-filen lastes først når skanneren åpnes. Innebygd `BarcodeDetector` brukes fortsatt der den finnes. Berører: `lib/client/QrScanner.tsx`.
+3. **Talte varsler** (fra Zombies, Run!). `speechSynthesis` på nb-NO for sone, alarm, rollebytte og «jeger nær». Låses opp i «Jeg er klar»-trykket (iOS). Læreren slår det av og på. Lyd og blink er fortsatt hovedkanalen (prinsipp 6). Berører: `lib/client/feedback.ts`, `sound.ts`, locale.
+4. **Faste poster og utskrift** (fra MapRun og Stolpejakten). Læreren lagrer et sett med poster per sted i biblioteket og gjenbruker det. En utskriftsside (print-CSS, A4, QR og postnavn) blir til PDF i nettleseren, uten ny avhengighet. Berører: ny migrasjon, `lib/rules/library.ts`, `/bibliotek`.
+5. **Varmere/kaldere-power-up** (fra Jet Lag og Map Calipers). I Sporing og Smittejakt: «radar» (er målet innenfor X m? ja eller nei) og «termometer» (varmere eller kaldere enn for 30 s siden) i stedet for å vise posisjonen. Avgjøres på serveren, med TS-tvilling og ADR. Eier velger rekkevidde og nedkjøling i ADR-en. Berører: ny migrasjon, `lib/rules/*`, elevskjermen.
+6. **Offline-kart og PWA.** En service worker henter Kartverket-fliser for områdets bbox (z14–18) på forhånd når økta starter, så kartet virker i skog med dårlig dekning (§ 14, «Dekning i skog»). **Først:** sjekk at Kartverkets vilkår tillater forhåndshenting. Hvis ikke, bruker vi et PMTiles-utsnitt av OSM på R2 (Protomaps) i stedet. Berører: ny service worker, `lib/map/style.ts`.
+7. **Turf.js / Supercluster (spike).** Kjør geo-testene og lærerkartets klynging mot bibliotekene. Vi bytter bare ut egen kode der den taper på presisjon eller ytelse. Spiken kan ende uten endring. Berører: `lib/geo.ts`, lærerkartet.
+
+**Åpne spørsmål:** Kartverkets vilkår for forhåndshenting (punkt 6). Kvaliteten på norske stemmer på iPhone og Android prøves i den felles utetesten (ADR-019).
+**Ikke med:** bakgrunns-GPS (`@capgo/background-geolocation`, MIT) hører til native-appen, som venter. Foto venter på DPIA.
+
+**Ferdig når:** Alle sju punktene er levert eller avsluttet med begrunnelse i DECISIONS. Prod-sim er grønn etter hver deploy. Talte varsler, QR-skanning og offline-kart er prøvd på ekte iPhone.
+
 ---
 
 ## 14. Risikoer og tiltak
