@@ -36,6 +36,14 @@
 - **Store grupper** (opptil 300): fra 80 elever viser kartet vanlige elever som små prikker og klynger med antall. Elever som trenger deg (SOS, utenfor, mistet signal, står stille) har fortsatt navn. I lobbyen ser du bare dem med svak GPS. Trykk «Vis alle» for resten. Spillerlista har søk.
 - ⚠️ Mange klasser samtidig krever en større databasemaskin enn den vi har nå. Si fra før dere prøver mer enn én klasse.
 
+## Fase 9 (ADR-035/036) – sjekk i utetesten
+- [ ] **QR-skanning på iPhone** (zxing) i sol og i skygge: kortet leses på et par sekunder.
+- [ ] **Talte varsler** slått på i veiviseren: norsk stemme er forståelig, «Sperret område» kuttes ikke av «Sonen krymper», og buzzer og blink kommer som før.
+- [ ] **Faste poster:** skriv ut kortene, heng dem opp, start ny økt fra biblioteket. QR-kortene kan klaimes bare når du står ved dem.
+- [ ] **Snus og Termometer** i Smittejakt og Sporing: svaret er lett å lese i fart og dekker aldri SOS-knappen eller farevarsler.
+- [ ] **Offline-kart:** gå rundt i området med nett, slå på flymodus, og kartet tegnes fortsatt der du har vært.
+- [ ] **GPS-glatting:** prikken hopper mindre enn før, og utenfor-alarmen kommer like raskt.
+
 ## Sanntidsforbindelse (ADR-033) – sjekk i utetesten
 - [ ] **Låst skjerm på iPhone** i en pustepause, så lås opp: eleven er tilbake i spillet innen et par sekunder, uten å laste siden på nytt.
 - [ ] **Bytt app** (åpne kamera eller meldinger) i 30 s og kom tilbake: posisjonen oppdateres igjen.
