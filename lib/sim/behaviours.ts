@@ -38,7 +38,7 @@ export interface BotStep {
 export interface BotView {
   status?: string;
   role?: string;
-  tag?: { radar?: { pos: { lat: number; lng: number } }[]; hunter_near?: boolean } | null;
+  tag?: { variant?: string; radar?: { pos: { lat: number; lng: number } }[]; hunter_near?: boolean; hide?: { released?: boolean; still?: { pos: { lat: number; lng: number } }[] } } | null;
   posts?: { pos: { lat: number; lng: number } }[] | null;
   gather?: { checked_in: boolean } | null;
   round?: ({ zone?: ZoneState | null } & BotRoundTeam) | null;
@@ -191,6 +191,21 @@ export function createBot(kind: Behaviour, geo: SimGeo, opts: BotOptions) {
     return left < dist / Math.max(baseSpeed, 1) + (lateBot ? -40 : 12);
   }
 
+  // Gjemsel (0023): the hiders walk to a spot and stand (every second one strolls slowly); the hunters wait at the
+  // assembly point until the release, then search: towards a pling circle if there is one, else wandering.
+  const stroller = pick % 2 === 1;
+  function hideStep(dt: number) {
+    const hd = view.tag?.hide;
+    if (view.role === "hunter") {
+      if (!hd?.released) return seek(a as XY, dt, 1.0);
+      const c = hd.still?.[0]?.pos;
+      if (c) return seek(proj.toXY([c.lng, c.lat]) as XY, dt, baseSpeed + 0.5);
+      return wander(dt, baseSpeed, true);
+    }
+    if (Math.hypot(hideSpot[0] - pos[0], hideSpot[1] - pos[1]) > 3) return seek(hideSpot, dt, 1.8);
+    if (stroller) wander(dt, 0.4, true);
+  }
+
   // Zone target: the centre, while further out than 80 % of the (next) radius.
   function zoneSeek(): XY | null {
     const z = view.round?.zone;
@@ -216,6 +231,8 @@ export function createBot(kind: Behaviour, geo: SimGeo, opts: BotOptions) {
       wander(dt, 0.5, true);
     } else if (!special && view.status === "live" && scoreoHome()) {
       seek(a as XY, dt, baseSpeed + 0.5);
+    } else if (!special && view.status === "live" && view.tag?.variant === "hide" && view.role) {
+      hideStep(dt);
     } else if (!special && kind !== "hider" && view.status === "live" && view.event && !view.event.done && !view.event.me && view.event.target) {
       // Event (0007): sprint to the point / to the assembly point.
       seek(proj.toXY([view.event.target.lng, view.event.target.lat]) as XY, dt, baseSpeed + 1);

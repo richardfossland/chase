@@ -144,6 +144,9 @@ export interface SimStats {
     scoreoDup: number;
     scoreoLate: Set<string>;
     scoreoIn: Set<string>;
+    /** 0023 Gjemsel: plings seen by hunters (by id), hunter ticks that carried a radar ping or «Bytte i nærheten» (must be 0), hider ticks that carried the hunter list. */
+    hidePlings: Set<string>;
+    hideLeaks: number;
     msgsSent: number;
     msgsSeen: number;
     msgKeys: Set<string>;
@@ -202,7 +205,7 @@ export function startSwarm(opts: SwarmOptions) {
     alarms: [],
     game: { claims: 0, golden: 0, lost: 0, qr: 0, duplicateClaims: 0, claimedIds: new Set(), statuses: [], playlistDone: false, rounds: 0, catches: 0, catchFails: {}, zoneHits: 0, zonePen: 0, bestCards: 0, votes: 0,
       events: {}, eventKeys: new Set(), sprintMax: 0, prizes: 0, powerupsGot: 0, powerupsUsed: 0, powerupFails: {}, hotcoldUsed: {}, hotcoldFails: {}, missionsDone: 0, missionsConfirmed: 0,
-      teamSizes: null, teamPoints: {}, flagCaptures: 0, hillHolds: 0, relayLegs: 0, relayBatonMax: 0, relayBatonCap: 0, relayLegsByRound: new Map(), capKeys: new Set(), scoreoKeys: new Set(), scoreoDup: 0, scoreoLate: new Set(), scoreoIn: new Set(), msgsSent: 0, msgsSeen: 0, msgKeys: new Set(), quizAnswered: 0, quizRight: 0, steps: 0 },
+      teamSizes: null, teamPoints: {}, flagCaptures: 0, hillHolds: 0, relayLegs: 0, relayBatonMax: 0, relayBatonCap: 0, relayLegsByRound: new Map(), capKeys: new Set(), scoreoKeys: new Set(), scoreoDup: 0, scoreoLate: new Set(), scoreoIn: new Set(), hidePlings: new Set(), hideLeaks: 0, msgsSent: 0, msgsSeen: 0, msgKeys: new Set(), quizAnswered: 0, quizRight: 0, steps: 0 },
   };
   const wsOn = !!opts.ws;
   if (wsOn) {
@@ -385,6 +388,13 @@ export function startSwarm(opts: SwarmOptions) {
       if (stats.game.scoreoKeys.has(k)) stats.game.scoreoDup++;
       stats.game.scoreoKeys.add(k);
     }
+    // Gjemsel: a hunter never gets a radar ping or «Bytte i nærheten»; the plings are circles, counted by id.
+    const hv = data as { status?: string; role?: string; tag?: { variant?: string; prey_near?: number; radar?: unknown[]; hide?: { still?: { id: string }[] } } };
+    if (hv.tag?.variant === "hide" && hv.status === "live") {
+      if (hv.role === "hunter" && ((hv.tag.prey_near ?? 0) > 0 || (hv.tag.radar?.length ?? 0) > 0)) stats.game.hideLeaks++;
+      if (hv.role === "prey" && hv.tag.hide?.still) stats.game.hideLeaks++;
+      for (const s of hv.tag.hide?.still ?? []) stats.game.hidePlings.add(s.id);
+    }
     if (sc?.arrived) stats.game.scoreoIn.add(p.playerId);
     if ((sc?.penalty ?? 0) > 0) stats.game.scoreoLate.add(p.playerId);
     if (data.lost) stats.game.lost++;
@@ -402,8 +412,8 @@ export function startSwarm(opts: SwarmOptions) {
   const lastTry = new Map<string, number>();
   const voted = new Set<string>();
   async function tryCatch(h: SimPlayer) {
-    const v = h.view as { status?: string; role?: string; tag?: { prey_near?: number } } | null;
-    if (!v || v.status !== "live" || v.role !== "hunter" || !v.tag?.prey_near) return;
+    const v = h.view as { status?: string; role?: string; tag?: { prey_near?: number; variant?: string; hide?: { released?: boolean } } } | null;
+    if (!v || v.status !== "live" || v.role !== "hunter" || (!v.tag?.prey_near && !(v.tag?.variant === "hide" && v.tag.hide?.released))) return;
     if (Date.now() - (lastTry.get(h.playerId) ?? 0) < 4000) return;
     const hp = h.bot.truePos();
     const target = players.find((q) => {
@@ -433,7 +443,7 @@ export function startSwarm(opts: SwarmOptions) {
   const lastHc = new Map<string, number>();
   type EvV = { no: number; kind: string; done: boolean; me: { state: string; powerup: string | null } | null } | null | undefined;
   async function tryEvent(p: SimPlayer, before: Record<string, unknown> | null) {
-    const v = p.view as { status?: string; role?: string; round?: { idx: number; mode: string } | null; event?: EvV; power?: { inv: string[] } } | null;
+    const v = p.view as { status?: string; role?: string; round?: { idx: number; mode: string; variant?: string | null } | null; event?: EvV; power?: { inv: string[] } } | null;
     if (!v) return;
     const ev = v.event;
     const pev = (before as { event?: EvV } | null)?.event;
@@ -451,7 +461,7 @@ export function startSwarm(opts: SwarmOptions) {
     }
     // Snus / Termometer (0017): a hunter or prey tries one now and then; the 60 s cooldown and
     // «walk first» answers count as expected refusals, anything else as a failure.
-    if (hotColdCheck("sniff", v.round?.mode as never, v.role ?? "neutral") === null
+    if (hotColdCheck("sniff", v.round?.mode as never, v.role ?? "neutral", v.round?.variant) === null
         && Date.now() - (lastHc.get(p.playerId) ?? 0) > 6000 && p.kind !== "hider" && Math.random() < 0.3) {
       lastHc.set(p.playerId, Date.now());
       const kind = Math.random() < 0.5 ? "sniff" : "thermo";
@@ -827,6 +837,8 @@ export function summarize(stats: SimStats) {
       scoreoDup: stats.game.scoreoDup,
       scoreoIn: stats.game.scoreoIn.size,
       scoreoLate: stats.game.scoreoLate.size,
+      hidePlings: stats.game.hidePlings.size,
+      hideLeaks: stats.game.hideLeaks,
       rounds: stats.game.rounds,
       playlistDone: stats.game.playlistDone,
       catches: stats.game.catches,

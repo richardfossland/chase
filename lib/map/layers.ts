@@ -148,6 +148,24 @@ export function setRadar(m: MlMap, pings: { pos: { lat: number; lng: number }; a
   });
 }
 
+/** Gjemsel (0023): the hunters' «pling» circles. Never an exact position: the server centres them on a shifted point. */
+export function addPlingLayer(m: MlMap) {
+  m.addSource("pling", { type: "geojson", data: EMPTY });
+  m.addLayer({ id: "pling-fill", type: "fill", source: "pling", paint: { "fill-color": "#ff9f0a", "fill-opacity": 0.18 } });
+  m.addLayer({ id: "pling-line", type: "line", source: "pling", paint: { "line-color": "#ff9f0a", "line-width": 3, "line-dasharray": [2, 1.5] } });
+}
+
+export function setPlings(m: MlMap, plings: { pos: { lat: number; lng: number }; r_m: number }[]) {
+  m.getSource<GeoJSONSource>("pling")?.setData({
+    type: "FeatureCollection",
+    features: plings.map((p) => ({
+      type: "Feature",
+      properties: {},
+      geometry: { type: "Polygon", coordinates: [circleRing(p.pos, p.r_m)] },
+    })),
+  });
+}
+
 /** A circle as a 64-gon ring (lng/lat), local flat-earth — fine at school-yard scale. */
 export function circleRing(c: { lat: number; lng: number }, rM: number, n = 64): [number, number][] {
   const dLat = rM / 111320;

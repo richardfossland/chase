@@ -44,6 +44,12 @@
 - [ ] **Offline-kart:** gå rundt i området med nett, slå på flymodus, og kartet tegnes fortsatt der du har vært.
 - [ ] **GPS-glatting:** prikken hopper mindre enn før, og utenfor-alarmen kommer like raskt.
 
+## Gjemsel (fase 10.9) – sjekk i utetesten
+- [ ] **Forsprang og slipp:** gjemmerne ser «Gjem deg!» med nedtelling, jegerne «Vent ved møteplassen». Fangst og Snus/Termometer er avslått til slipp.
+- [ ] **Stillstandspling:** står en gjemmer stille i 90 s, får jegerne en oransje 100 m-sirkel på kartet. Gjemmeren står aldri nøyaktig i midten, men alltid inne i sirkelen.
+- [ ] **Innendørs og skog:** GPS-hopp skal ikke gi falske plinger (sirkelen følger bare 10 m-ankeret).
+- [ ] **Fangst** med kode når jegeren er innen ca. 30 m. Den fangede blir jeger og kan fange videre.
+
 ## Sanntidsforbindelse (ADR-033) – sjekk i utetesten
 - [ ] **Låst skjerm på iPhone** i en pustepause, så lås opp: eleven er tilbake i spillet innen et par sekunder, uten å laste siden på nytt.
 - [ ] **Bytt app** (åpne kamera eller meldinger) i 30 s og kom tilbake: posisjonen oppdateres igjen.
@@ -76,6 +82,7 @@
   - samlingsalarm,
   - gyllen post (Postjakt),
   - rollebytte-storm og mørkelegging (Smittejakt).
+  - Ikke i **Gjemsel** (ingen automatiske hendelser, og **⚡** er avslått).
 - **Fysisk oppdrag:** elevene gjør øvelsen der de står og trykker «Ferdig». Du bekrefter i ⚡-arket, én og én eller «Bekreft alle». Med QR-poster kan de skanne en post i stedet.
 - **Power-ups** (skjold, radar, lokkedue, turbo) er premier i hendelsene og brukes med ett trykk på elevens mobil.
 - **👥 Lag** (fase 5): lagstripa under varslene viser lagpoengene. Trykk på den for lagarket.

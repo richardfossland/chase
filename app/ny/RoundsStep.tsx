@@ -13,6 +13,7 @@ import {
   IconChevronDown,
   IconClock,
   IconCrown,
+  IconEyeOff,
   IconFlag,
   IconMapPin,
   IconMove,
@@ -25,6 +26,7 @@ import {
 import { planSummary } from "@/lib/client/planSummary";
 import { no } from "@/lib/locale/no";
 import { normMissions } from "@/lib/rules/library";
+import { HEAD_STARTS, HIDE, minRoundS } from "@/lib/rules/hide";
 import { DEFAULT_PLAN, GAME, TEMPLATES, hasPractice, normPlan, planTotalS, withPractice, withoutPractice, type Plan, type RoundMode, type TemplateId } from "@/lib/rules/game";
 import type { QuizItem } from "@/lib/rules/quiz";
 import { TEAMS, isTeamRound } from "@/lib/rules/teams";
@@ -37,7 +39,7 @@ const t = no.wizard;
 const p = t.playlist;
 
 const ROUND_MINUTES = [3, 4, 5, 6, 8, 10, 15];
-const ROUND_KINDS = ["posts", "convert", "swap", "fox", "free", "flag", "king", "relay", "scoreo"] as const;
+const ROUND_KINDS = ["posts", "convert", "swap", "fox", "hide", "free", "flag", "king", "relay", "scoreo"] as const;
 type Kind = (typeof ROUND_KINDS)[number];
 const TEAM_COUNTS = [2, 3, 4] as const;
 const BREATHERS = [0, 30, 60, 90, 120];
@@ -49,6 +51,7 @@ const KIND_ICON: Record<Kind, (props: { size?: number; className?: string }) => 
   convert: IconSpread,
   swap: IconRepeat,
   fox: IconFox,
+  hide: IconEyeOff,
   free: IconMove,
   flag: IconFlag,
   king: IconCrown,
@@ -111,11 +114,13 @@ export function RoundsStep(props: {
   const setKind = (i: number, k: Kind) =>
     setRound(
       i,
-      k === "convert" || k === "swap" || k === "fox"
-        ? { mode: "tag", variant: k, team: undefined }
+      k === "hide"
+        ? { mode: "tag", variant: "hide", team: undefined, zone: undefined, practice: undefined, head_start_s: HIDE.head_default_s, duration_s: Math.max(plan.rounds[i].duration_s, 240) }
+        : k === "convert" || k === "swap" || k === "fox"
+        ? { mode: "tag", variant: k, team: undefined, head_start_s: undefined }
         : k === "flag" || k === "king" || k === "relay" || k === "scoreo"
-          ? { mode: k, variant: undefined, zone: undefined, team: undefined, practice: undefined }
-          : { mode: k as RoundMode, variant: undefined, ...(k === "posts" ? {} : { practice: undefined }) },
+          ? { mode: k, variant: undefined, head_start_s: undefined, zone: undefined, team: undefined, practice: undefined }
+          : { mode: k as RoundMode, variant: undefined, head_start_s: undefined, ...(k === "posts" ? {} : { practice: undefined }) },
     );
   const step = (i: number, dir: 1 | -1) => {
     const d = plan.rounds[i].duration_s;
@@ -248,7 +253,26 @@ export function RoundsStep(props: {
                       </button>
                     </div>
 
-                    {r.mode !== "flag" && r.mode !== "king" && r.mode !== "relay" && r.mode !== "scoreo" && !r.practice && (
+                    {k === "hide" && (
+                      <div className="mt-3 border-t border-line pt-2">
+                        <Label>{p.headStart}</Label>
+                        <div className="mt-2 flex gap-2">
+                          {HEAD_STARTS.map((hs) => (
+                            <button
+                              key={hs}
+                              className={choice((r.head_start_s ?? HIDE.head_default_s) === hs, "flex-1 px-1")}
+                              onClick={() => setRound(i, { head_start_s: hs, duration_s: Math.max(r.duration_s, minRoundS(hs)) })}
+                              data-testid={`headstart-${i}-${hs}`}
+                            >
+                              {p.headStartS(hs)}
+                            </button>
+                          ))}
+                        </div>
+                        <Help>{p.headStartHint}</Help>
+                      </div>
+                    )}
+
+                    {r.mode !== "flag" && r.mode !== "king" && r.mode !== "relay" && r.mode !== "scoreo" && k !== "hide" && !r.practice && (
                       <div className="mt-3 border-t border-line pt-2">
                         <Switch
                           label={p.zoneToggle}

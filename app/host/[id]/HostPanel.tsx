@@ -1267,7 +1267,12 @@ function RoundBar({ snap, act }: { snap: Snapshot; act: HostSession["act"] }) {
     : live && r.mode === "posts"
       ? h.round.posts(open, taken)
       : live && r.mode === "tag"
-        ? r.variant === "fox"
+        ? r.variant === "hide"
+          ? [
+              h.round.hideCounts(snap.players.filter((p) => p.role === "hunter").length, snap.players.filter((p) => p.role === "prey").length),
+              (phaseLeftS(r.hide?.release_at ?? null, offset, now) ?? 0) > 0 ? h.round.hideRelease(phaseLeftS(r.hide?.release_at ?? null, offset, now) ?? 0) : h.round.hideReleased,
+            ].join(" · ")
+        : r.variant === "fox"
           ? h.round.foxCounts(snap.players.filter((p) => p.role === "hunter").length)
           : h.round.counts(snap.players.filter((p) => p.role === "hunter").length, snap.players.filter((p) => p.role === "prey").length)
         : live && r.relay

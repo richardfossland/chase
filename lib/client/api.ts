@@ -135,7 +135,7 @@ export interface RoundView {
   phase_ends_at: string | null;
   frozen: boolean;
   qr: boolean;
-  variant: "convert" | "swap" | "fox" | null;
+  variant: "convert" | "swap" | "fox" | "hide" | null;
   /** Krympende sone on this round (0005). */
   zoned: boolean;
   /** Live/paused zone round: centre, radii, phase times — lib/rules/zone.ts computes the circle. */
@@ -153,6 +153,8 @@ export interface RoundView {
   practice?: boolean;
   /** 0020 Poengorientering (live/paused): the time limit (phase_ends_at is the end of the return window) and who is back. */
   scoreo?: { limit_at: string; return_s: number; total: number; in: number; of: number } | null;
+  /** 0023 Gjemsel: the head start and (live/paused) the release time; null/missing in other rounds. */
+  hide?: { head_start_s: number; release_at: string | null; cooldown_s: number } | null;
 }
 
 /** 0020: my score-O view (chase._so_tick), under `scoreo` in the tick. */
@@ -412,7 +414,7 @@ export interface CeremonyView {
 
 /** Smittejakt layer of the tick view (chase._mode_tick). Never other players' exact positions for prey. */
 export interface TagView {
-  variant: "convert" | "swap" | "fox";
+  variant: "convert" | "swap" | "fox" | "hide";
   code: string | null;
   immune_until: string | null;
   role_changed_at: string | null;
@@ -428,12 +430,20 @@ export interface TagView {
   /** 0013 Sporing: set in a fox round; the fox sees hunters within 150 m (nearest 40). */
   fox?: boolean;
   hunter_pos?: { pos: LatLng }[];
+  /** 0023 Gjemsel: the release clock for everybody; hunters also get `still` (plings of hiders who stand still). */
+  hide?: {
+    release_at: string | null;
+    released: boolean;
+    cooldown_s: number;
+    /** Hunters only, after the release: a 100 m circle around a deliberately shifted point (never the position). */
+    still?: { id: string; pos: LatLng; r_m: number; age_s: number }[];
+  };
 }
 
 export interface CatchResult {
   nickname: string;
   points: number;
-  variant: "convert" | "swap";
+  variant: "convert" | "swap" | "hide";
   last: boolean;
   immuneUntil: string | null;
   newBadges: Badge[];

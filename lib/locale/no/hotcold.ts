@@ -26,6 +26,7 @@ export const hotcold = {
       blackout: "Radaren er av",
       not_now: "Ikke nå",
       not_useful: "Passer ikke nå",
+      not_yet: "Jegerne slippes snart",
     } as Record<string, string>,
   },
 } as const;
