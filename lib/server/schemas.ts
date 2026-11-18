@@ -84,6 +84,8 @@ export const sosBody = playerAuth.extend({ lat: lat.optional(), lng: lng.optiona
 
 export const hostAuth = z.object({ hostToken: token });
 
+export const voiceBody = hostAuth.extend({ on: z.boolean() });
+
 export const hostActionBody = hostAuth.extend({
   action: z.enum([
     "start", "next", "extend", "pause", "resume", "message", "gather", "end_gather",

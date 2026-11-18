@@ -476,6 +476,20 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
                     </SheetButton>
                   )}
                 </MoreGroup>
+                <MoreGroup title={h.moreGroups.session}>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={snap.voice === true}
+                    className={sheetBtn()}
+                    onClick={() => void hs.setVoice(snap.voice !== true)}
+                    data-testid="voice-toggle"
+                  >
+                    {h.voice.label}
+                    <span className="ml-auto font-bold text-txt-dim">{snap.voice === true ? h.voice.on : h.voice.off}</span>
+                  </button>
+                  <p className="px-1 text-xs text-txt-dim">{h.voice.hint}</p>
+                </MoreGroup>
                 <MoreGroup title={h.moreGroups.show}>
                   <a href={`/host/${hs.sessionId}/tavle`} target="_blank" rel="noopener" className={sheetBtn()} data-testid="open-screen">
                     <IconScreen className="shrink-0 text-txt-dim" />

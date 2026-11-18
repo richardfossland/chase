@@ -138,6 +138,7 @@ export default function Wizard() {
 
   const [phone, setPhone] = useState("");
   const [plan, setPlan] = useState<Plan>(DEFAULT_PLAN);
+  const [voice, setVoice] = useState(false);
   const [checks, setChecks] = useState<boolean[]>(t.ready.checks.map(() => false));
   // 0010: the teacher's library («Samme som sist», mission and quiz packs).
   const [library, setLibrary] = useState<Library | null>(null);
@@ -576,6 +577,7 @@ export default function Wizard() {
           : null,
         teacherPhone: phone.trim() || null,
         plan,
+        settings: voice ? { voice: true } : undefined,
       });
       identity.saveHostToken(res.sessionId, res.hostToken);
       router.replace(`/host/${res.sessionId}`);
@@ -867,6 +869,8 @@ export default function Wizard() {
                 <RoundsStep
                   plan={plan}
                   onChange={setPlan}
+                  voice={voice}
+                  onVoice={setVoice}
                   onStarter={applyStarter}
                   quizValid={quizValid}
                   onQuizValid={setQuizValid}

@@ -51,6 +51,7 @@ export const host = {
     /** Soft hyphen so the word can break in the narrow action bar. */
     surprise: "Over­raskelse",
     more: "Mer",
+    voice: { label: "Talte varsler", on: "På", off: "Av", hint: "Mobilene sier varslene høyt. Lyd og blink er som før." },
     showQr: "QR for nye elever",
     playersList: "Elever",
     endSession: "Avslutt økt",

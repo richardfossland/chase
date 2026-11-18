@@ -186,6 +186,18 @@ export const play = {
     /** On the map (map fonts have no emoji). */
     postLabel: (n: number) => `Post ${n}`,
   },
+  /** Talte varsler (fase 9.3): korte setninger, sies høyt. Lyd og blink er hovedkanalen. */
+  voice: {
+    zoneShrink: "Sonen krymper. Gå inn mot midten.",
+    zoneOut: "Du er utenfor sonen.",
+    outside: "Du er utenfor området. Gå tilbake.",
+    forbidden: "Sperret område. Gå ut.",
+    caught: "Du ble fanget. Du er jeger nå.",
+    foxNow: "Du er reven nå. Løp!",
+    hunterNear: "Jeger nær!",
+    go: "Kjør!",
+    gather: "Samling. Gå til samlingspunktet.",
+  },
   steps: {
     label: "Skritt",
     on: "Skritteller på",

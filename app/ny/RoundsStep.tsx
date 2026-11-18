@@ -70,6 +70,8 @@ const presetKey = (pl: Plan) => JSON.stringify({ r: pl.rounds, t: pl.teams ?? nu
 export function RoundsStep(props: {
   plan: Plan;
   onChange: (p: Plan) => void;
+  voice: boolean;
+  onVoice: (on: boolean) => void;
   onStarter: (pack: StarterPack) => void;
   quizValid: boolean;
   onQuizValid: (v: boolean) => void;
@@ -354,6 +356,11 @@ export function RoundsStep(props: {
             ))}
           </div>
           {(plan.event_every_s ?? 0) > 0 && <Help>{no.events.wizard.help}</Help>}
+
+          <div className="mt-3 border-t border-line pt-2">
+            <Switch label={p.voice} on={props.voice} onChange={props.onVoice} testId="voice" />
+            <Help>{p.voiceHint}</Help>
+          </div>
 
           <Disclosure
             title={no.missions.title}
