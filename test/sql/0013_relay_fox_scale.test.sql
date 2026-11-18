@@ -206,6 +206,13 @@ begin
   j := chase.join_session((select join_pin from chase.sessions where id = s), 'bg-301', pg_temp.h('tok-bg-301'), pg_temp.h('res-bg-301'));
   assert j ->> 'error' = 'full', '301st: ' || j::text;
   perform pg_temp.act(s, 'bg', 'start');
+  -- «start» deals the 300 players into 2 teams at random, and only players 1..60 tick below: a lopsided
+  -- deal (player 1's team with fewer than 21 of those 60) made the 20-mates assert fail now and then.
+  -- Re-deal the 60 that tick evenly (odd → team 1, even → team 2) so there are always 30 on each side.
+  update chase.players p set team_id = (select t.id from chase.teams t where t.session_id = s order by t.n offset (i.k % 2) limit 1)
+    from (select id, row_number() over (order by nickname)::int as k from chase.players
+           where session_id = s and nickname ~ '^bg-([1-9]|[1-5][0-9]|60)$') i
+   where p.id = i.id;
   perform chase._advance(s);
   for i in 1 .. 60 loop
     perform pg_temp.tick('bg', i, 59.9101 + i * 0.00001, 10.7505);
