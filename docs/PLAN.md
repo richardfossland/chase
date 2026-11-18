@@ -288,6 +288,7 @@ Fysiske oppdrag gjøres der eleven er, aldri som en betingelse for å slippe str
 | **Lærerbibliotek** (lagrede og sist brukte områder, opplegg, oppdragspakker), knyttet til en anonym lærernøkkel (bare hash lagres). Ingen elevdata. | `teachers`, `areas`, `plans`, `challenge_packs` | Til læreren sletter det, eller **13 måneder uten bruk** (`purge_expired`). Bare de 5 siste «sist brukt» per type beholdes. |
 | Delelenker (kopi av et opplegg og ev. et område, ingen info om læreren) | `shares` | Til læreren trekker lenken tilbake (raden slettes), eller med biblioteket |
 | Øktrom (Durable Object, ADR-033): siste posisjon per spiller i minnet til den er skrevet (ca. 1 s), sockets med spiller-id og token-hash | `chase-live` (Cloudflare, EU-jurisdiksjon) | **Bare i minnet.** DO-lagring har bare `{session, status, watchdogDue}` og slettes (`deleteAll`) ved øktslutt |
+| **Demo-kvote** (fase 10.6): HMAC-SHA256-hash av IP (IPv6 som /64) og lærernøkkel, med tidspunkt, for å begrense «Prøv med boter» til 3 per time. Saltet (`DEMO_SALT`) ligger bare som Worker-secret. Ingen IP eller nøkkel i klartekst. | `demo_log` | **Slettes etter 2 t** (`purge_expired`). Demo-økter (`is_sim`) gir **ikke** anonymt sammendrag og avsluttes automatisk etter 30–45 min. |
 | **Anonymt sammendrag** | `session_summaries` | Beholdes: antall spillere, varighet, moduser, total og median distanse og aktive minutter som histogram, og anonym telling av «vil spille igjen» (ja/nei, lærerens svar). **Ingen koordinater, navn eller område.** |
 
 **Tekniske tiltak:**

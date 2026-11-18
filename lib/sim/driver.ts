@@ -782,13 +782,13 @@ export function startSwarm(opts: SwarmOptions) {
 }
 
 /** fetch-based transport against a Chase base URL. */
-export function httpTransport(base: string): Transport {
+export function httpTransport(base: string, extraHeaders?: Record<string, string>): Transport {
   return {
     async post(path, body) {
       try {
         const res = await fetch(base + path, {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: { "content-type": "application/json", ...extraHeaders },
           body: JSON.stringify(body),
         });
         const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;

@@ -41,6 +41,7 @@ import { DEFAULT_PLAN, planTotalS, type Plan } from "@/lib/rules/game";
 import { POSTS_MAX, fixedPostsOk, newPostCode, type FixedPost } from "@/lib/rules/library";
 import type { StarterPack } from "@/lib/starter";
 import { loadMapLibre } from "@/lib/map/maplibre";
+import { clampBots, DEMO_DEFAULT_BOTS, DEMO_MAX_BOTS, DEMO_MIN_BOTS, startDemoBots } from "@/lib/client/demoBots";
 import { DEFAULT_CENTER, kartverketStyle } from "@/lib/map/style";
 
 import { FLAG_SVG } from "./icons";
@@ -91,7 +92,7 @@ function defaultAssembly(area: LngLat[], forbidden: LngLat[][]): LngLat {
 }
 
 function errorText(code: string): string {
-  return (t.errors as Record<string, string>)[code] ?? t.errors.default;
+  return (t.errors as Record<string, string>)[code] ?? (no.demo.errors as Record<string, string>)[code] ?? t.errors.default;
 }
 
 const hasContent = (lib: Library | null) => !!lib && (lib.areas.length > 0 || lib.plans.length > 0);
@@ -167,6 +168,7 @@ export default function Wizard() {
   const [quizValid, setQuizValid] = useState(true);
   const wanted = useRef<{ area: string | null; plan: string | null } | null>(null);
   const [creating, setCreating] = useState(false);
+  const [demoBots, setDemoBots] = useState(DEMO_DEFAULT_BOTS);
   const [createError, setCreateError] = useState<string | null>(null);
   // Presentation only: slide direction, folded map sheet.
   const [dir, setDir] = useState<"next" | "back">("next");
@@ -634,7 +636,7 @@ export default function Wizard() {
      
   }, [library]);
 
-  async function create() {
+  async function create(demoBotCount?: number) {
     if (!areaRing || !assembly || creating) return;
     setCreating(true);
     setCreateError(null);
@@ -650,8 +652,17 @@ export default function Wizard() {
         plan,
         // 0015 voice + 0016 fixed posts (always sent, so an emptied list also clears the area's saved posts).
         settings: { ...(voice ? { voice: true } : {}), fixed_posts: fixedPosts },
+        ...(demoBotCount ? { demo: true } : {}),
       });
       identity.saveHostToken(res.sessionId, res.hostToken);
+      if (demoBotCount) {
+        // Panelet åpnes uansett: feiler botstarten, er økta likevel laget.
+        try {
+          await startDemoBots({ sessionId: res.sessionId, pin: res.pin, n: demoBotCount });
+        } catch (e) {
+          console.warn("[demo] bots failed to start", e);
+        }
+      }
       router.replace(`/host/${res.sessionId}`);
     } catch (e) {
       setCreateError(errorText(e instanceof ApiError ? e.code : "default"));
@@ -1059,11 +1070,33 @@ export default function Wizard() {
                       {createError}
                     </Note>
                   )}
+                  <div className="mt-6 rounded-2xl border border-dashed border-line p-4" data-testid="demo-box">
+                    <p className="font-extrabold">{no.demo.try}</p>
+                    <p className="mt-1 text-xs leading-relaxed text-txt-dim">{no.demo.tryHint}</p>
+                    <div className="mt-3 flex flex-wrap items-center gap-3">
+                      <label className="flex items-center gap-2 text-sm font-bold">
+                        {no.demo.count}
+                        <input
+                          type="number"
+                          min={DEMO_MIN_BOTS}
+                          max={DEMO_MAX_BOTS}
+                          value={demoBots}
+                          onChange={(e) => setDemoBots(Number(e.target.value))}
+                          onBlur={() => setDemoBots(clampBots(demoBots))}
+                          className={cx(field, "w-20 text-center")}
+                        />
+                      </label>
+                      <Button variant="secondary" disabled={!allChecked || creating} onClick={() => void create(clampBots(demoBots))} data-testid="create-demo">
+                        {creating ? no.demo.starting : no.demo.try}
+                      </Button>
+                    </div>
+                    <p className="mt-2 text-xs text-txt-dim">{no.demo.note}</p>
+                  </div>
                   <SheetFooter>
                     <Button variant="ghost" onClick={() => goTo("rounds")} disabled={creating}>
                       {t.back}
                     </Button>
-                    <Button size="lg" className="min-w-0 flex-1 sm:flex-none" disabled={!allChecked || creating} onClick={create} data-testid="create">
+                    <Button size="lg" className="min-w-0 flex-1 sm:flex-none" disabled={!allChecked || creating} onClick={() => void create()} data-testid="create">
                       {creating ? t.ready.creating : t.ready.create}
                     </Button>
                   </SheetFooter>

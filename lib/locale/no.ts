@@ -13,6 +13,7 @@ import { teams } from "./no/teams";
 import { events } from "./no/events";
 import { library } from "./no/library";
 import { hotcold } from "./no/hotcold";
+import { demo } from "./no/demo";
 
 export const no = {
   ...site,
@@ -25,4 +26,5 @@ export const no = {
   ...events,
   ...library,
   ...hotcold,
+  ...demo,
 } as const;

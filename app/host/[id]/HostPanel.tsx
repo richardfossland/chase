@@ -51,6 +51,7 @@ import { EventChip, EventSheet } from "./HostEvents";
 import { TeamMoveRow, TeamsChip, TeamsSheet } from "./HostTeams";
 import HostMap, { dotState, type HostMapHandle } from "./HostMap";
 import { IconChevronUp, IconGather, IconMinusCircle } from "./icons";
+import DemoBadge from "./DemoBadge";
 import { useHostSession, type HostSession } from "./useHostSession";
 
 const h = no.host;
@@ -277,6 +278,7 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
           )}
           {roundBar && <RoundBar snap={snap} act={hs.act} />}
           <AlarmStrip alarms={snap.alarms} onAck={(ids) => ids.forEach((id) => void hs.ack(id))} onFocus={focusAlarm} />
+          <DemoBadge sessionId={hs.sessionId} />
           {/* Under the alarms: safety beats game (CLAUDE.md rule 4). */}
           {!ceremony && <EventChip snap={snap} onOpen={() => setSheet({ kind: "events" })} />}
           <TeamsChip snap={snap} onOpen={() => setSheet({ kind: "teams" })} />
