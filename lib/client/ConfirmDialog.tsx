@@ -12,6 +12,8 @@ export function ConfirmDialog({
   confirmLabel = no.common.confirm,
   cancelLabel = no.common.cancel,
   danger = false,
+  extraLabel,
+  onExtra,
   onConfirm,
   onCancel,
 }: {
@@ -19,6 +21,9 @@ export function ConfirmDialog({
   confirmLabel?: string;
   cancelLabel?: string;
   danger?: boolean;
+  /** Valgfri tredje knapp (f.eks. «Rapport» før en avslutning). */
+  extraLabel?: string;
+  onExtra?: () => void;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -57,6 +62,11 @@ export function ConfirmDialog({
             {cancelLabel}
           </button>
         </div>
+        {extraLabel && onExtra && (
+          <button className="ui-press mt-3 min-h-12 w-full rounded-[var(--radius-ctl)] px-5 font-bold text-txt-dim underline hover:bg-ink-3" onClick={onExtra} data-testid="confirm-extra">
+            {extraLabel}
+          </button>
+        )}
       </div>
     </div>
   );

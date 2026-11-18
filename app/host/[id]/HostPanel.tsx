@@ -46,6 +46,7 @@ import { SAFETY } from "@/lib/rules/safety";
 import { CROWD_FROM } from "@/lib/rules/relay";
 
 import { HostCeremony } from "./HostCeremony";
+import { HostReport } from "./HostReport";
 import { EventChip, EventSheet } from "./HostEvents";
 import { TeamMoveRow, TeamsChip, TeamsSheet } from "./HostTeams";
 import HostMap, { dotState, type HostMapHandle } from "./HostMap";
@@ -73,7 +74,7 @@ type Sheet =
   | { kind: "events" }
   | { kind: "teams" };
 
-type Confirm = null | { message: string; label?: string; danger?: boolean; run: () => void };
+type Confirm = null | { message: string; label?: string; danger?: boolean; report?: boolean; run: () => void };
 
 /** Alarm icon per kind. Icons only add to the text, they never replace it (rule 4). */
 const ALARM_ICON: Record<string, typeof IconAlert> = {
@@ -132,6 +133,7 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
   const mapRef = useRef<HostMapHandle>(null);
   const [sheet, setSheet] = useState<Sheet>(null);
   const [confirm, setConfirm] = useState<Confirm>(null);
+  const [reportOpen, setReportOpen] = useState(false);
   const [sound, setSound] = useState(false);
   const [origin, setOrigin] = useState("");
 
@@ -171,6 +173,7 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
       message: h.end.confirm,
       label: h.endSession,
       danger: true,
+      report: true,
       run: async () => {
         const r = await hs.end(false);
         if (!r.ok && r.missing.length) {
@@ -303,7 +306,7 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
         )}
 
         {/* ceremony (0006): under the alarm strip, own controls */}
-        {ceremony && snap.ceremony && <HostCeremony view={snap.ceremony} act={hs.act} onEnd={endFlow} />}
+        {ceremony && snap.ceremony && <HostCeremony view={snap.ceremony} act={hs.act} onEnd={endFlow} onReport={() => setReportOpen(true)} />}
 
         {/* bottom action bar */}
         {!ceremony && (
@@ -503,7 +506,10 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
                     </Link>
                   )}
                 </MoreGroup>
-                <div className="border-t border-line pt-6">
+                <div className="grid gap-2 border-t border-line pt-6">
+                  <SheetButton icon={<IconTrophy />} onClick={() => { setSheet(null); setReportOpen(true); }}>
+                    {no.report.button}
+                  </SheetButton>
                   <SheetButton tone="danger" icon={<IconStop />} onClick={endFlow}>
                     {h.endSession}
                   </SheetButton>
@@ -514,11 +520,18 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
         )}
       </Sheet>
 
+      {reportOpen && <HostReport load={hs.loadReport} onClose={() => setReportOpen(false)} />}
+
       {confirm && (
         <ConfirmDialog
           message={confirm.message}
           confirmLabel={confirm.label}
           danger={confirm.danger}
+          extraLabel={confirm.report ? no.report.button : undefined}
+          onExtra={() => {
+            setConfirm(null);
+            setReportOpen(true);
+          }}
           onCancel={() => setConfirm(null)}
           onConfirm={() => {
             const run = confirm.run;

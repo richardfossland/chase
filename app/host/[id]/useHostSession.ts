@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ApiError, api, type HostAction, type SessionGeo, type Snapshot } from "@/lib/client/api";
+import type { ReportData } from "@/lib/rules/report";
 import { audioReady, playBuzzer, playSiren } from "@/lib/client/sound";
 import { LiveSocket, hostPollDue, mergeHostPush, olderSnapshot } from "@/lib/client/live";
 import { useChannel } from "@/lib/client/useChannel";
@@ -26,6 +27,7 @@ export interface HostSession {
   setVoice: (on: boolean) => Promise<void>;
   /** Et setVoice-kall pågår: bryteren skal være deaktivert. */
   voiceBusy: boolean;
+  loadReport: () => Promise<ReportData | null>;
   end: (force: boolean) => Promise<{ ok: true } | { ok: false; missing: { id: string; nickname: string }[] }>;
 }
 
@@ -222,5 +224,15 @@ export function useHostSession(sessionId: string, token: string | null): HostSes
     [sessionId, token, refresh],
   );
 
-  return { sessionId, snap, geo, error, refresh, act, tryAct, ack, setVoice, voiceBusy, end };
+  /** Øktrapport (0019): hentes ved åpning, holdes bare i minnet. null = feilet. */
+  const loadReport = useCallback(async () => {
+    if (!token) return null;
+    try {
+      return await api.report(sessionId, token);
+    } catch {
+      return null;
+    }
+  }, [sessionId, token]);
+
+  return { sessionId, snap, geo, error, refresh, act, tryAct, ack, setVoice, voiceBusy, end, loadReport };
 }

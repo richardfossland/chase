@@ -3,6 +3,7 @@
 // Typed fetch wrappers around the Chase API (pattern from Sjakk's lib/client/api.ts).
 // Tokens and positions travel only in POST bodies — never in URLs.
 
+import type { ReportData } from "@/lib/rules/report";
 import type { Badge, Plan, PlanRound, RoundMode } from "@/lib/rules/game";
 import type { EventKind, Powerup } from "@/lib/rules/events";
 import type { HotColdKind, Trend } from "@/lib/rules/hotcold";
@@ -537,6 +538,8 @@ export const api = {
     post<{ alarmId: string }>(`/api/s/${sessionId}/ack`, { hostToken, alarmId }),
   setVoice: (sessionId: string, hostToken: string, on: boolean) =>
     post<{ voice: boolean }>(`/api/s/${sessionId}/voice`, { hostToken, on }),
+  report: (sessionId: string, hostToken: string) =>
+    post<ReportData>(`/api/s/${sessionId}/report`, { hostToken }),
   end: (sessionId: string, hostToken: string, force = false) =>
     post<{ already?: boolean }>(`/api/s/${sessionId}/end`, { hostToken, force }),
 };

@@ -19,7 +19,7 @@ import type { HostSession } from "./useHostSession";
 const c = no.host.prize;
 const DRUM_MS = 1700;
 
-export function HostCeremony({ view, act, onEnd }: { view: CeremonyView; act: HostSession["act"]; onEnd: () => void }) {
+export function HostCeremony({ view, act, onEnd, onReport }: { view: CeremonyView; act: HostSession["act"]; onEnd: () => void; onReport: () => void }) {
   const [drumming, setDrumming] = useState(false);
   const last = view.revealed[view.revealed.length - 1];
   const cards = view.step > view.total;
@@ -78,6 +78,10 @@ export function HostCeremony({ view, act, onEnd }: { view: CeremonyView; act: Ho
           </div>
         )}
       </div>
+
+      <button className="ui-press mx-auto mb-2 rounded-2xl px-4 py-2 text-sm font-bold text-txt-dim underline hover:bg-ink-3" onClick={onReport} data-testid="ceremony-report">
+        {no.report.button}
+      </button>
 
       <nav className="mx-3 mb-[max(0.75rem,env(safe-area-inset-bottom))] grid grid-cols-4 gap-1.5 rounded-[1.5rem] bg-ink-2 p-1.5 shadow-[var(--shadow-float)] lg:mx-auto lg:w-full lg:max-w-2xl">
         <button
