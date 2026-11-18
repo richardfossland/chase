@@ -6,8 +6,20 @@ import { fail, ok } from "@/lib/server/http";
 /** Every chase RPC returns jsonb: {ok:true,…} or {ok:false,error:'<code>',…}. */
 export type RpcResult = { ok: boolean; error?: string } & Record<string, unknown>;
 
-export async function rpc(fn: string, args: Record<string, unknown>): Promise<RpcResult> {
-  const { data, error } = await createServiceClient().rpc(fn, args);
+/**
+ * Postgres errors where the whole statement was rolled back, so running it again is safe:
+ * statement timeout, lock timeout, deadlock, serialization failure. The shared Nano database
+ * stalls now and then (ADR-028) and the authenticator role caps statements and lock waits at 8 s.
+ */
+export const RETRYABLE_PG = new Set(["57014", "55P03", "40P01", "40001"]);
+
+export async function rpc(fn: string, args: Record<string, unknown>, retryDelayMs = 200): Promise<RpcResult> {
+  let { data, error } = await createServiceClient().rpc(fn, args);
+  if (error && RETRYABLE_PG.has(error.code ?? "")) {
+    console.warn(`[rpc:${fn}] retry after`, error.code);
+    await new Promise((r) => setTimeout(r, retryDelayMs));
+    ({ data, error } = await createServiceClient().rpc(fn, args));
+  }
   if (error) {
     // Never log args: they can contain positions or token hashes.
     console.error(`[rpc:${fn}]`, error.code, error.message);

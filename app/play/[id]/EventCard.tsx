@@ -63,7 +63,7 @@ export function EventStrip({
 
   const KindIcon = EVENT_ICONS[ev.kind] ?? IconZap;
   return (
-    <div className="m-drop-in mx-4 mb-2 rounded-2xl border-2 border-gold bg-black/55 px-4 py-3 text-white shadow-[var(--shadow-card)]" role="status" data-testid="event-strip">
+    <div className="m-drop-in mx-4 mb-2 rounded-2xl border-2 border-gold bg-black/55 px-4 py-3 text-white shadow-[var(--shadow-card)] [@media(max-height:700px)]:py-2" role="status" data-testid="event-strip">
       <div className="flex items-center gap-3">
         {dir ? (
           <IconArrowUp size={36} strokeWidth={3} className="p-compass flex-none text-gold" style={{ transform: `rotate(${turn}deg)` }} />
@@ -73,7 +73,7 @@ export function EventStrip({
         <div className="min-w-0 flex-1">
           <p className="text-sm font-black uppercase tracking-wide text-gold">{e.kinds[ev.kind]}</p>
           {line && (
-            <p key={line} className="m-rise-in text-xl font-black leading-tight">
+            <p key={line} className="m-rise-in text-xl font-black leading-tight [@media(max-height:700px)]:text-base">
               {line}
             </p>
           )}

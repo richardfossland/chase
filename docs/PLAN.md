@@ -644,5 +644,5 @@ Fase 1–3 gir **spillbar MVP for kroppsøvingstimen**. Hver fase avsluttes med 
 ## 15. Åpne spørsmål (blokkerer ikke MVP)
 
 1. Leverandør og vilkår for satellittfliser.
-2. Skal storskjermvisning (gymsal/prosjektor) prioriteres før fase 7?
+2. ~~Skal storskjermvisning (gymsal/prosjektor) prioriteres før fase 7?~~ Avklart: bygget i fase 7 (`/host/[id]/tavle`, ADR-029).
 3. Pilotskole og klasse for testen i fase 3.
