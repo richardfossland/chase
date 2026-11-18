@@ -95,6 +95,7 @@ export const host = {
       save: "Lagre",
       sitOut: "Sitter over",
       adjust: "Juster poeng",
+      adjustPractice: "Poeng kan ikke justeres i en prøverunde. Den teller ikke.",
       adjustReason: "Begrunnelse (lagres)",
       adjustQuick: ["Hjalp en medelev", "God innsats", "Fair play", "Brøt reglene", "Juks"],
       adjustSave: (d: number) => (d > 0 ? `Gi ${d} p` : `Trekk ${-d} p`),

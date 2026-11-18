@@ -7,8 +7,10 @@
 --   modusen den er (eleven lærer de ekte knappene).
 --     * Ingen poeng, merker eller statistikk: player_stats.practice settes ved
 --       rundestart (_mode_begin) og fjernes ved rundeslutt (_mode_finish). En
---       BEFORE UPDATE-trigger fryser da points, round_points, posts, round_posts,
---       catches, assists, times_caught, longest_survival_s, badges og round_badges.
+--       BEFORE UPDATE-trigger (bare mens flagget er på, WHEN-klausul) lar KUN en
+--       hviteliste endre seg: distanse, aktive sekunder, ruter og modusenes bokføring. Alle andre
+--       kolonner (poeng, tellere, merker, power-ups, quiz-svar) er frosset, også nye poengkolonner.
+--       Hendelser (_ev_upkeep, event_start, oppdrag) og justering av poeng er avslått i prøverunder.
 --       Én trigger fanger alle poengkildene (flytting, post, QR, fangst, hendelser,
 --       overlevelse) uten å kopiere de store funksjonene, og nye kilder blir med
 --       automatisk. Ferske spillere (join midt i runden) får flagget av en INSERT-trigger.
@@ -76,6 +78,9 @@ alter table chase.player_stats add column if not exists so_pen        int       
 alter table chase.player_stats add column if not exists so_cand       uuid;
 alter table chase.player_stats add column if not exists so_hits       smallint    not null default 0;
 alter table chase.player_stats add column if not exists so_pts        int         not null default 0;
+-- Set on every player row at each round start (true in a score-O round, kept through the breather): lets
+-- _so_tick leave at once in every other mode with one narrow row read (no sessions/plan lookup on the hot path).
+alter table chase.player_stats add column if not exists so_on         boolean     not null default false;
 
 -- ───────────────────────── tunables ─────────────────────────
 -- Mirrored in lib/rules/scoreo.ts (test/scoreo.test.ts diffs them).
@@ -196,28 +201,45 @@ returns trigger
 language plpgsql
 set search_path = chase, extensions, public
 as $$
+declare
+  v_prac boolean;
+  v_so   boolean;
+  v      chase.player_stats;
 begin
   if tg_op = 'INSERT' then
-    -- A player who joins while a practice round is live plays it too.
-    new.practice := coalesce((
-      select (s.plan -> 'rounds' -> s.round_idx ->> 'practice') = 'true' and s.status in ('live', 'paused')
-        from chase.sessions s where s.id = new.session_id and s.round_idx >= 0), false);
+    -- A player who joins while a practice / score-O round is live gets the flags too.
+    select (s.plan -> 'rounds' -> s.round_idx ->> 'practice') = 'true' and s.status in ('live', 'paused'),
+           (s.plan -> 'rounds' -> s.round_idx ->> 'mode') = 'scoreo' and s.status in ('live', 'paused')
+      into v_prac, v_so
+      from chase.sessions s where s.id = new.session_id and s.round_idx >= 0;
+    new.practice := coalesce(v_prac, false);
+    new.so_on := coalesce(v_so, false);
     return new;
   end if;
-  if old.practice and new.practice then
-    new.points := old.points;                       new.round_points := old.round_points;
-    new.posts := old.posts;                         new.round_posts := old.round_posts;
-    new.catches := old.catches;                     new.assists := old.assists;
-    new.times_caught := old.times_caught;           new.longest_survival_s := old.longest_survival_s;
-    new.badges := old.badges;                       new.round_badges := old.round_badges;
-  end if;
+  -- UPDATE (only fires while a practice round runs, see the trigger's WHEN): a WHITELIST of what may change.
+  -- Movement counts (distance, active seconds, explorer cells) and the bookkeeping the modes need;
+  -- every other column, points and counters included, keeps its old value. New point columns are frozen by default.
+  v := new;
+  new := old;
+  new.practice := v.practice;                 new.so_on := v.so_on;
+  new.distance_m := v.distance_m;             new.active_s := v.active_s;
+  new.round_distance_m := v.round_distance_m; new.round_active_s := v.round_active_s;
+  new.cells := v.cells;                       new.explorer_n := v.explorer_n;
+  new.per_round := v.per_round;               new.best := v.best;
+  new.current_survival_start := v.current_survival_start;  new.surv_pts_stint := v.surv_pts_stint;
+  new.radar_until := v.radar_until;           new.turbo_until := v.turbo_until;
+  new.turbo_base_m := v.turbo_base_m;         new.turbo_paid := v.turbo_paid;
   return new;
 end;
 $$;
 
 drop trigger if exists player_stats_practice on chase.player_stats;
-create trigger player_stats_practice before insert or update on chase.player_stats
+drop trigger if exists player_stats_practice_ins on chase.player_stats;
+drop trigger if exists player_stats_practice_upd on chase.player_stats;
+create trigger player_stats_practice_ins before insert on chase.player_stats
   for each row execute function chase._stats_practice_guard();
+create trigger player_stats_practice_upd before update on chase.player_stats
+  for each row when (old.practice and new.practice) execute function chase._stats_practice_guard();
 
 create or replace function chase._posts_practice_guard()
 returns trigger
@@ -340,10 +362,14 @@ begin
   -- The teacher's fixed GPS posts (0016) when there are enough of them.
   v_fx := s.settings -> 'fixed_posts';
   if jsonb_typeof(v_fx) = 'array' then
-    select coalesce(array_agg(ST_SetSRID(ST_MakePoint((x ->> 'lng')::float8, (x ->> 'lat')::float8), 4326)::geography order by o), '{}')
+    -- Only GPS posts inside the area and not in / near a forbidden area (as the random ones).
+    select coalesce(array_agg(g.pt order by o), '{}')
       into v_sel
       from jsonb_array_elements(v_fx) with ordinality t(x, o)
-     where not coalesce((x ->> 'qr')::boolean, false);
+     cross join lateral (select ST_SetSRID(ST_MakePoint((x ->> 'lng')::float8, (x ->> 'lat')::float8), 4326)::geography as pt) g
+     where not coalesce((x ->> 'qr')::boolean, false)
+       and ST_Covers(s.boundary, g.pt)
+       and (s.forbidden is null or not ST_DWithin(s.forbidden, g.pt, chase.kg('post_forbidden_m')));
     if cardinality(v_sel) < chase.ks('so_fixed_min') then
       v_sel := '{}';
     end if;
@@ -462,7 +488,9 @@ begin
   if r.mode is distinct from 'scoreo' then
     return;
   end if;
-  if coalesce((r.state -> 'so' ->> 'past_limit')::boolean, false) then
+  -- No penalty when the teacher ended the round («Neste runde», «Avslutt», state.so.skipped) or for a player
+  -- with an open SOS alarm (the penalty is a game rule; safety comes first, rule 4).
+  if coalesce((r.state -> 'so' ->> 'past_limit')::boolean, false) and not coalesce((r.state -> 'so' ->> 'skipped')::boolean, false) then
     v_lim := (r.state -> 'so' ->> 'limit_at')::timestamptz;
     -- At home at their last tick (no tick since the limit): in time. Otherwise never in: the whole round.
     update chase.player_stats st
@@ -472,7 +500,8 @@ begin
            round_points = st.round_points - case when st.so_home_since is not null then 0 else st.round_points end
       from chase.players p
      where p.id = st.player_id and st.session_id = p_session and st.so_arrived_at is null
-       and p.status = 'active' and p.role not in ('referee', 'sitting_out');
+       and p.status = 'active' and p.role not in ('referee', 'sitting_out')
+       and not exists (select 1 from chase.alarms a where a.player_id = st.player_id and a.kind = 'sos' and a.resolved_at is null);
   end if;
   update chase.player_stats st
      set so_pts = st.so_pts + st.round_points
@@ -491,7 +520,7 @@ language plpgsql
 set search_path = chase, extensions, public
 as $$
 declare
-  v_mode   text;
+  v_on     boolean;
   v_status text;
   v_idx    int;
   v_ends   timestamptz;
@@ -523,16 +552,22 @@ declare
   v_late_s int;
   v_dirty  boolean := false;
 begin
-  select s.plan -> 'rounds' -> s.round_idx ->> 'mode', s.status, s.round_idx, s.phase_ends_at, s.frozen_at, s.assembly_point
-    into v_mode, v_status, v_idx, v_ends, v_frozen, v_asm
-    from chase.sessions s where s.id = p_session and s.round_idx >= 0;
-  if v_mode is distinct from 'scoreo' then
+  -- One narrow read of my own rows; every mode but score-O leaves here (so_on is set at each round start).
+  select st.so_on, st.round_points, st.round_posts, st.so_cand, st.so_hits, st.so_home_since, st.so_arrived_at, st.so_late_s, st.so_pen,
+         p.role, l.acc
+    into v_on, v_st.round_points, v_st.round_posts, v_st.so_cand, v_st.so_hits, v_st.so_home_since, v_st.so_arrived_at,
+         v_st.so_late_s, v_st.so_pen, v_role, v_acc
+    from chase.player_stats st join chase.players p on p.id = st.player_id
+    left join chase.player_live l on l.player_id = st.player_id
+   where st.player_id = p_player;
+  if not coalesce(v_on, false) or v_role = 'referee' then
     return '{}'::jsonb;
   end if;
-  select state -> 'so' into v_so from chase.rounds where session_id = p_session and idx = v_idx;
-  select p.role into v_role from chase.players p where p.id = p_player;
-  select * into v_st from chase.player_stats where player_id = p_player;
-  if v_role in ('referee') or v_st.player_id is null then
+  select s.status, s.round_idx, s.phase_ends_at, s.frozen_at, s.assembly_point, r.state -> 'so'
+    into v_status, v_idx, v_ends, v_frozen, v_asm, v_so
+    from chase.sessions s join chase.rounds r on r.session_id = s.id and r.idx = s.round_idx
+   where s.id = p_session and s.round_idx >= 0;
+  if v_idx is null then
     return '{}'::jsonb;
   end if;
 
@@ -545,9 +580,9 @@ begin
 
   v_lim := case when coalesce((v_so ->> 'past_limit')::boolean, false) then (v_so ->> 'limit_at')::timestamptz
                 else v_ends - make_interval(secs => v_ret) end;
-  v_past := now() >= v_lim;
+  -- While paused the clock stands still at frozen_at (rule 6).
+  v_past := coalesce(v_frozen, now()) >= v_lim;
   v_play := v_status = 'live' and v_frozen is null and v_role <> 'sitting_out';
-  select l.acc into v_acc from chase.player_live l where l.player_id = p_player;
   v_acc := coalesce(v_acc, 999);
   v_home_m := ST_Distance(p_pos, v_asm);
   v_home := v_acc <= chase.k('uncertain_acc_m') and v_home_m <= chase.k('gather_radius_m');
@@ -595,7 +630,8 @@ begin
       -- Back at the assembly point after the time limit. At home since before the limit = in time.
       v_arr := case when v_hsince is not null and v_hsince <= v_lim then v_lim else now() end;
       v_late := extract(epoch from v_arr - v_lim);
-      v_pen := chase._so_pen(v_late, v_st.round_points);
+      v_pen := case when exists (select 1 from chase.alarms a where a.player_id = p_player and a.kind = 'sos' and a.resolved_at is null)
+                    then 0 else chase._so_pen(v_late, v_st.round_points) end;
       v_late_s := ceil(v_late)::int;
     end if;
     -- Home clock: since when have I been at the assembly point (written only when it changes).
@@ -657,6 +693,15 @@ begin
   if to_regprocedure('chase._end_session_so(uuid)') is null then
     alter function chase._end_session(uuid) rename to _end_session_so;
   end if;
+  if to_regprocedure('chase._unfreeze_so(uuid)') is null then
+    alter function chase._unfreeze(uuid) rename to _unfreeze_so;
+  end if;
+  if to_regprocedure('chase._ev_upkeep_so(uuid)') is null then
+    alter function chase._ev_upkeep(uuid) rename to _ev_upkeep_so;
+  end if;
+  if to_regprocedure('chase._host_action_so(uuid,text,text,jsonb)') is null then
+    alter function chase.host_action(uuid, text, text, jsonb) rename to _host_action_so;
+  end if;
 end $$;
 
 create or replace function chase._mode_begin(p_session uuid, p_at timestamptz)
@@ -673,6 +718,8 @@ begin
   if v_r ->> 'practice' = 'true' then
     update chase.player_stats set practice = true where session_id = p_session and not practice;
   end if;
+  update chase.player_stats set so_on = (v_r ->> 'mode' = 'scoreo')
+   where session_id = p_session and so_on is distinct from (v_r ->> 'mode' = 'scoreo');
   if v_r ->> 'mode' = 'scoreo' then
     perform chase._so_begin(p_session, p_at);
   end if;
@@ -740,9 +787,96 @@ language plpgsql
 set search_path = chase, extensions, public
 as $$
 begin
+  perform chase._so_skip(p_session);          -- ending the session mid-round penalises nobody
   perform chase._end_session_so(p_session);
-  update chase.player_stats set so_home_since = null, so_arrived_at = null, so_cand = null, so_hits = 0, practice = false
+  update chase.player_stats set so_home_since = null, so_arrived_at = null, so_cand = null, so_hits = 0, practice = false, so_on = false
    where session_id = p_session;
+end;
+$$;
+
+-- The teacher ends the score-O round («Neste runde», «Avslutt»): nobody is penalised for it.
+create or replace function chase._so_skip(p_session uuid)
+returns void
+language plpgsql
+set search_path = chase, extensions, public
+as $$
+begin
+  update chase.rounds r set state = jsonb_set(r.state, '{so,skipped}', 'true'::jsonb)
+    from chase.sessions s
+   where s.id = p_session and r.session_id = s.id and r.idx = s.round_idx and s.round_idx >= 0
+     and r.mode = 'scoreo' and jsonb_typeof(r.state -> 'so') = 'object';
+end;
+$$;
+
+-- Pause: the pause does not count as lateness. _unfreeze moves phase_ends_at (and so the derived limit);
+-- the frozen limit_at of a round already past its limit moves with it (rule 6).
+create or replace function chase._unfreeze(p_session uuid)
+returns void
+language plpgsql
+set search_path = chase, extensions, public
+as $$
+declare
+  v_f timestamptz;
+begin
+  select s.frozen_at into v_f from chase.sessions s where s.id = p_session;
+  perform chase._unfreeze_so(p_session);
+  if v_f is not null then
+    update chase.rounds r
+       set state = jsonb_set(r.state, '{so,limit_at}', to_jsonb((r.state -> 'so' ->> 'limit_at')::timestamptz + (now() - v_f)))
+      from chase.sessions s
+     where s.id = p_session and r.session_id = s.id and r.idx = s.round_idx and s.round_idx >= 0 and r.mode = 'scoreo'
+       and coalesce((r.state -> 'so' ->> 'past_limit')::boolean, false);
+  end if;
+end;
+$$;
+
+-- No automatic events, missions or golden posts in a practice round.
+create or replace function chase._ev_upkeep(p_session uuid)
+returns void
+language plpgsql
+set search_path = chase, extensions, public
+as $$
+begin
+  if chase._is_practice(p_session) then
+    return;
+  end if;
+  perform chase._ev_upkeep_so(p_session);
+end;
+$$;
+
+create or replace function chase._is_practice(p_session uuid)
+returns boolean
+language sql
+stable
+set search_path = chase, extensions, public
+as $$
+  select coalesce((s.plan -> 'rounds' -> s.round_idx ->> 'practice') = 'true' and s.status in ('live', 'paused'), false)
+    from chase.sessions s where s.id = p_session and s.round_idx >= 0;
+$$;
+
+-- host_action: points cannot be adjusted and events cannot be started in a practice round (error 'practice');
+-- «Neste runde» in a score-O round marks it skipped (no penalties).
+create or replace function chase.host_action(
+  p_session         uuid,
+  p_host_token_hash text,
+  p_action          text,
+  p_payload         jsonb default '{}'::jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = chase, extensions, public
+as $$
+begin
+  if p_action in ('adjust_points', 'event_start', 'mission_confirm')
+     and exists (select 1 from chase.sessions s where s.id = p_session and s.host_token_hash = p_host_token_hash)
+     and chase._is_practice(p_session) then
+    return jsonb_build_object('ok', false, 'error', 'practice');
+  end if;
+  if p_action = 'next'
+     and exists (select 1 from chase.sessions s where s.id = p_session and s.host_token_hash = p_host_token_hash and s.status = 'live') then
+    perform chase._so_skip(p_session);
+  end if;
+  return chase._host_action_so(p_session, p_host_token_hash, p_action, p_payload);
 end;
 $$;
 

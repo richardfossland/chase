@@ -388,6 +388,7 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
                 status={snap.status}
                 hs={hs}
                 tagLive={(snap.status === "live" || snap.status === "paused") && snap.round?.mode === "tag"}
+                practice={(snap.status === "live" || snap.status === "paused") && snap.round?.practice === true}
                 awarded={(snap.referee_awards ?? []).includes(sheet.id)}
                 onMessage={() => setSheet({ kind: "message", to: sheet.id })}
                 onShow={(lat, lng) => {
@@ -900,6 +901,7 @@ function PlayerCard({
   status,
   hs,
   tagLive,
+  practice,
   awarded,
   onMessage,
   onShow,
@@ -909,6 +911,8 @@ function PlayerCard({
   status: Snapshot["status"];
   hs: HostSession;
   tagLive: boolean;
+  /** 0020: a prøverunde is on: points cannot be adjusted. */
+  practice: boolean;
   awarded: boolean;
   onMessage: () => void;
   onShow: (lat: number, lng: number) => void;
@@ -1045,11 +1049,12 @@ function PlayerCard({
         <SheetButton icon={sitting ? <IconUndo /> : <IconMinusCircle />} onClick={() => void hs.act("sit_out", { player_id: p.id, on: !sitting })}>
           {sitting ? h.card.sitIn : h.card.sitOut}
         </SheetButton>
-        {live && (
+        {live && !practice && (
           <SheetButton icon={<IconStar />} onClick={() => setAdjusting((a) => !a)}>
             {h.card.adjust}
           </SheetButton>
         )}
+        {live && practice && <p className="px-1 text-sm font-semibold text-txt-dim">{h.card.adjustPractice}</p>}
         <SheetButton icon={<IconPencil />} onClick={() => setRenaming((r) => !r)}>
           {h.card.rename}
         </SheetButton>

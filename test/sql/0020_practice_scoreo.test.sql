@@ -89,6 +89,14 @@ begin
   -- Even a direct points source is frozen (movement, events, catches all go through player_stats).
   update chase.player_stats set points = points + 50, round_points = round_points + 50, posts = posts + 3 where player_id = pg_temp.pid('pr', 1);
   assert (select points from chase.player_stats where player_id = pg_temp.pid('pr', 1)) = 0, 'points frozen';
+  update chase.player_stats set quiz_right = 5, powerups = array['shield'], team_acts = 4, round_move_pts = 3, distance_m = distance_m + 10, active_s = active_s + 7
+   where player_id = pg_temp.pid('pr', 1);
+  select * into st from chase.player_stats where player_id = pg_temp.pid('pr', 1);
+  assert st.quiz_right = 0 and cardinality(st.powerups) = 0 and st.team_acts = 0 and st.round_move_pts = 0, 'other point columns frozen too (whitelist)';
+  assert st.distance_m >= 10 and st.active_s >= 7, 'movement still counts';
+  assert chase.host_action(s, pg_temp.h('host-pr'), 'adjust_points', jsonb_build_object('player_id', pg_temp.pid('pr', 1), 'delta', 5, 'reason', 'x')) ->> 'error' = 'practice', 'no point adjustment in practice';
+  assert chase.host_action(s, pg_temp.h('host-pr'), 'event_start', '{"kind":"sprint"}') ->> 'error' = 'practice', 'no events in practice';
+  assert chase.host_action(s, pg_temp.h('host-pr') || 'x', 'adjust_points', '{}') ->> 'error' = 'auth', 'bad token still auth';
   -- A late joiner plays the practice round too.
   perform chase.join_session((select join_pin from chase.sessions where id = s), 'pr-late', pg_temp.h('tok-pr-late'), pg_temp.h('res-pr-late'));
   assert (select practice from chase.player_stats where player_id = (select id from chase.players where token_hash = pg_temp.h('tok-pr-late'))), 'late joiner flagged';
@@ -229,4 +237,65 @@ begin
   assert 'scoreo' = any(v_cat), 'Orienterer podium: ' || v_cat::text;
   assert array_position(v_cat, 'scoreo') < array_position(v_cat, 'points'), 'before points: ' || v_cat::text;
   raise notice '0020 scoreo flow + ceremony: ok';
+end $$;
+
+-- ───────────────────────── score-O: pause, SOS, skip, fixed posts ─────────────────────────
+do $$
+declare s uuid; t jsonb; v_post uuid; v_val int; v_lim0 timestamptz; v_lim1 timestamptz; r jsonb;
+begin
+  -- Pause after the time limit: the pause is not lateness.
+  s := pg_temp.mk('xp', '{"rounds":[{"mode":"scoreo","duration_s":180}],"countdown_s":0}', 2);
+  perform pg_temp.act(s, 'xp', 'start');
+  perform chase._advance(s);
+  select id, value into v_post, v_val from chase.posts where session_id = s order by value desc limit 1;
+  perform pg_temp.claim('xp', 1, v_post);
+  update chase.sessions set phase_ends_at = now() + interval '60 seconds' where id = s;
+  perform pg_temp.tick('xp', 2, 59.9100, 10.7503);
+  perform chase._advance(s);
+  select (state -> 'so' ->> 'limit_at')::timestamptz into v_lim0 from chase.rounds where session_id = s and idx = 0;
+  assert (select (state -> 'so' ->> 'past_limit')::boolean from chase.rounds where session_id = s and idx = 0), 'past the limit';
+  perform pg_temp.act(s, 'xp', 'pause');
+  assert (select status from chase.sessions where id = s) = 'paused', 'paused';
+  t := pg_temp.tick('xp', 1);
+  assert not (t -> 'scoreo' ->> 'arrived')::boolean, 'nobody arrives while paused';
+  update chase.sessions set frozen_at = now() - interval '30 seconds' where id = s;   -- as if the pause began 30 s ago
+  perform pg_temp.act(s, 'xp', 'resume');
+  select (state -> 'so' ->> 'limit_at')::timestamptz into v_lim1 from chase.rounds where session_id = s and idx = 0;
+  assert extract(epoch from v_lim1 - v_lim0) = 30, 'limit moved with the pause: ' || (v_lim1 - v_lim0);
+  t := pg_temp.tick('xp', 1);
+  assert (t -> 'scoreo' ->> 'late_s')::int = 30, 'late by 30 s, not 60: ' || (t -> 'scoreo')::text;
+
+  -- Open SOS alarm: no penalty. Teacher skips after the limit: nobody is penalised.
+  s := pg_temp.mk('xq', '{"rounds":[{"mode":"scoreo","duration_s":180}],"countdown_s":0}', 3);
+  perform pg_temp.act(s, 'xq', 'start');
+  perform chase._advance(s);
+  update chase.player_stats set points = 40, round_points = 40 where player_id in (pg_temp.pid('xq', 1), pg_temp.pid('xq', 2), pg_temp.pid('xq', 3));
+  update chase.sessions set phase_ends_at = now() + interval '60 seconds' where id = s;
+  perform pg_temp.tick('xq', 1, 59.9100, 10.7503);
+  perform pg_temp.tick('xq', 2, 59.9100, 10.7503);
+  perform pg_temp.tick('xq', 3, 59.9100, 10.7503);
+  perform chase._advance(s);
+  perform chase._raise_alarm(s, pg_temp.pid('xq', 1), 'sos', 2::smallint, null);
+  t := pg_temp.tick('xq', 1);
+  assert (t -> 'scoreo' ->> 'arrived')::boolean and (t -> 'scoreo' ->> 'penalty')::int = 0, 'SOS: no penalty on arrival: ' || (t -> 'scoreo')::text;
+  perform chase._raise_alarm(s, pg_temp.pid('xq', 2), 'sos', 2::smallint, null);
+  perform pg_temp.act(s, 'xq', 'next');
+  assert (select status from chase.sessions where id = s) = 'gathering', 'ended by the teacher';
+  assert (select points from chase.player_stats where player_id = pg_temp.pid('xq', 2)) = 40, 'SOS: not penalised at the end';
+  assert (select points from chase.player_stats where player_id = pg_temp.pid('xq', 3)) = 40, 'teacher ended the round after the limit: nobody is penalised';
+
+  -- Fixed GPS posts replace the random ones (three or more).
+  r := chase.create_session(pg_temp.h('host-xf'), null,
+    '{"type":"Polygon","coordinates":[[[10.75,59.91],[10.7518,59.91],[10.7518,59.9109],[10.75,59.9109],[10.75,59.91]]]}',
+    '{"type":"Point","coordinates":[10.7509,59.91045]}', null,
+    p_plan => '{"rounds":[{"mode":"scoreo","duration_s":180}],"countdown_s":0}',
+    p_settings => '{"fixed_posts":[{"lat":59.9102,"lng":10.7503},{"lat":59.9107,"lng":10.7514},{"lat":59.9103,"lng":10.7515},{"lat":59.9106,"lng":10.7505,"qr":true,"code":"AB2CD"}]}'::jsonb);
+  assert (r ->> 'ok')::boolean, 'create: ' || r::text;
+  s := (r ->> 'session_id')::uuid;
+  perform chase.join_session(r ->> 'pin', 'xf-1', pg_temp.h('tok-xf-1'), pg_temp.h('res-xf-1'));
+  perform pg_temp.act(s, 'xf', 'start');
+  perform chase._advance(s);
+  assert (select count(*) from chase.posts where session_id = s and round_idx = 0 and kind = 'normal' and pos is not null) = 3, 'the three fixed GPS posts: ' || (select count(*) from chase.posts where session_id = s and round_idx = 0);
+  assert (select count(*) from chase.posts where session_id = s and round_idx = 0 and pos is not null and ST_DWithin(pos, ST_SetSRID(ST_MakePoint(10.7514, 59.9107), 4326)::geography, 1)) = 1, 'at the teacher''s coordinates';
+  raise notice '0020 pause, SOS, skip, fixed posts: ok';
 end $$;

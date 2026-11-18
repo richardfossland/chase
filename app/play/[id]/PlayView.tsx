@@ -227,7 +227,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
       cue("claim");
       setFlash({
         id: Date.now(),
-        text: `+${ev.me.points}`,
+        text: view.round?.practice ? no.practice.zero : `+${ev.me.points}`,
         sub: ev.me.powerup ? no.events.gotPowerup(no.events.powerups[ev.me.powerup]) : no.events.kinds[ev.kind],
         tone: "gold",
       });
@@ -443,7 +443,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
         cue("claim");
         setFlash({
           id: Date.now(),
-          text: t.caught(r.nickname, r.points),
+          text: view?.round?.practice ? `${r.nickname} · ${no.practice.zero}` : t.caught(r.nickname, r.points),
           sub: r.last ? t.lastCaught : r.variant === "swap" ? t.nowPrey : undefined,
           tone: "ok",
         });
@@ -456,7 +456,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
         setTimeout(() => setScanBusy(false), 1200);
       }
     },
-    [me.playerId, me.token, scanBusy, sessionId, tickNow, queueBadges],
+    [me.playerId, me.token, scanBusy, sessionId, tickNow, queueBadges, view?.round?.practice],
   );
 
   const onScan = useCallback(
@@ -474,7 +474,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
           setFlash({ id: Date.now(), text: t.qrPost(r.n), sub: r.mission ? no.events.kinds.mission : t.qrAlready, tone: "dim" });
         } else {
           cue("claim");
-          setFlash({ id: Date.now(), text: t.qrOk(r.value, r.first), sub: r.mission ? no.events.confirmed(r.value) : t.qrPost(r.n), tone: "ok" });
+          setFlash({ id: Date.now(), text: view?.round?.practice ? no.practice.zero : t.qrOk(r.value, r.first), sub: r.mission ? no.events.confirmed(r.value) : t.qrPost(r.n), tone: "ok" });
           queueBadges(r.newBadges);
         }
         void tickNow();
@@ -489,7 +489,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
         setTimeout(() => setScanBusy(false), 1200);   // don't re-scan the same card instantly
       }
     },
-    [me.playerId, me.token, scanBusy, sessionId, tickNow, queueBadges],
+    [me.playerId, me.token, scanBusy, sessionId, tickNow, queueBadges, view?.round?.practice],
   );
 
   // Badge queue → one toast per badge_gap_s (the 1 s clock drives it).
