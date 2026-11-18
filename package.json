@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.119.0",
-    "jsqr": "1.4.0",
+    "barcode-detector": "3.2.3",
     "maplibre-gl": "^6.18.0",
     "next": "16.4.6",
     "qrcode": "^1.5.4",
