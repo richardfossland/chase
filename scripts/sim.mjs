@@ -148,11 +148,12 @@ async function runSession(k) {
       plan: {
         rounds: args.plan
           ? String(args.plan).split(",").map((x) => {
-              // posts:360 | free:180 | convert:300 | swap:300 | fox:300 | flag:300 | king:300 | relay:300,
-              // "+zone" adds the shrinking zone (posts+zone:300), "+team" plays it as teams (posts+team:300)
+              // posts:360 | free:180 | convert:300 | swap:300 | fox:300 | flag:300 | king:300 | relay:300 | scoreo:180,
+              // "+zone" adds the shrinking zone (posts+zone:300), "+team" plays it as teams (posts+team:300),
+              // "+practice" makes it a prøverunde (posts+practice:60, convert+practice:60); scoreo has a 120 s return window on top
               const [kind, secs] = x.split(":");
               const [mode, layer] = kind.split("+");
-              const zone = layer === "zone" ? { zone: true } : layer === "team" ? { team: true } : {};
+              const zone = layer === "zone" ? { zone: true } : layer === "team" ? { team: true } : layer === "practice" ? { practice: true } : {};
               return mode === "convert" || mode === "swap" || mode === "fox"
                 ? { mode: "tag", variant: mode, duration_s: Number(secs), ...zone }
                 : { mode, duration_s: Number(secs), ...zone };
@@ -279,6 +280,13 @@ async function runSession(k) {
         if (summary.game.bestCards < summary.bots - 2) problems.push(`bare ${summary.game.bestCards} av ${summary.bots} så «ditt beste»-kortet`);
         if ((c.again?.yes ?? 0) + (c.again?.no ?? 0) !== summary.game.votes) problems.push(`stemmer ${JSON.stringify(c.again)} ≠ ${summary.game.votes} sendt`);
       }
+    }
+    if (/scoreo/.test(String(args.plan)) && hostToken) {
+      if (summary.game.claims === 0) problems.push("ingen poster tatt i poengorientering");
+      if (summary.game.scoreoDup > 0) problems.push(`${summary.game.scoreoDup} poster tatt to ganger av samme elev`);
+      if (summary.game.scoreoIn === 0) problems.push("ingen kom tilbake til møteplassen");
+      if (summary.bots >= 10 && summary.game.scoreoLate === 0) problems.push("ingen fikk poengtrekk (noen boter skal komme for sent)");
+      if (args.ceremony && summary.ceremony && !summary.ceremony.error && !summary.ceremony.cats?.includes("scoreo")) problems.push("ingen Orienterer-pall");
     }
     if (/\+zone/.test(String(args.plan)) && summary.game.zoneHits === 0) problems.push("ingen fikk sonebonus");
     if (args.events && hostToken) {

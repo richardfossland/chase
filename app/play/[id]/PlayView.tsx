@@ -195,10 +195,12 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
   const react = useCallback((view: TickView) => {
     const p = prev.current;
     prev.current = view;
-    if (view.claimed) {
-      const gold = view.claimed.kind === "golden";
+    const claimed = view.claimed ?? view.scoreo?.claimed ?? null;
+    if (claimed) {
+      const gold = claimed.kind === "golden";
       cue(gold ? "golden" : "claim");
-      setFlash({ id: Date.now(), text: t.claimed(view.claimed.value), sub: gold ? t.goldenClaimed : undefined, tone: gold ? "gold" : "ok" });
+      // 0020: in a practice round the post is worth 0 and nothing counts.
+      setFlash({ id: Date.now(), text: view.round?.practice ? no.practice.zero : t.claimed(claimed.value), sub: gold ? t.goldenClaimed : undefined, tone: gold ? "gold" : "ok" });
     } else if (view.lost) {
       cue("lost");
       setFlash({ id: Date.now(), text: t.lost, tone: "dim" });
@@ -206,7 +208,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
     for (const post of view.posts ?? []) {
       if (post.kind !== "golden" || seenGolden.current.has(post.id)) continue;
       seenGolden.current.add(post.id);
-      if (!view.claimed) cue("golden");
+      if (!claimed) cue("golden");
       setToast({ id: Date.now(), text: t.golden });
     }
     // Every badge the server stored since the last tick — also those from the
@@ -225,7 +227,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
       cue("claim");
       setFlash({
         id: Date.now(),
-        text: `+${ev.me.points}`,
+        text: view.round?.practice ? no.practice.zero : `+${ev.me.points}`,
         sub: ev.me.powerup ? no.events.gotPowerup(no.events.powerups[ev.me.powerup]) : no.events.kinds[ev.kind],
         tone: "gold",
       });
@@ -441,7 +443,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
         cue("claim");
         setFlash({
           id: Date.now(),
-          text: t.caught(r.nickname, r.points),
+          text: view?.round?.practice ? `${r.nickname} · ${no.practice.zero}` : t.caught(r.nickname, r.points),
           sub: r.last ? t.lastCaught : r.variant === "swap" ? t.nowPrey : undefined,
           tone: "ok",
         });
@@ -454,7 +456,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
         setTimeout(() => setScanBusy(false), 1200);
       }
     },
-    [me.playerId, me.token, scanBusy, sessionId, tickNow, queueBadges],
+    [me.playerId, me.token, scanBusy, sessionId, tickNow, queueBadges, view],
   );
 
   const onScan = useCallback(
@@ -472,7 +474,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
           setFlash({ id: Date.now(), text: t.qrPost(r.n), sub: r.mission ? no.events.kinds.mission : t.qrAlready, tone: "dim" });
         } else {
           cue("claim");
-          setFlash({ id: Date.now(), text: t.qrOk(r.value, r.first), sub: r.mission ? no.events.confirmed(r.value) : t.qrPost(r.n), tone: "ok" });
+          setFlash({ id: Date.now(), text: view?.round?.practice ? no.practice.zero : t.qrOk(r.value, r.first), sub: r.mission ? no.events.confirmed(r.value) : t.qrPost(r.n), tone: "ok" });
           queueBadges(r.newBadges);
         }
         void tickNow();
@@ -487,7 +489,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
         setTimeout(() => setScanBusy(false), 1200);   // don't re-scan the same card instantly
       }
     },
-    [me.playerId, me.token, scanBusy, sessionId, tickNow, queueBadges],
+    [me.playerId, me.token, scanBusy, sessionId, tickNow, queueBadges, view],
   );
 
   // Badge queue → one toast per badge_gap_s (the 1 s clock drives it).
@@ -635,7 +637,13 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
   const round = view?.round ?? null;
   const mode = round?.mode ?? "free";
   const left = phaseLeftS(round?.phase_ends_at, offsetMs, now);
-  const posts = status === "live" || status === "paused" ? (view?.posts ?? []) : [];
+  const so = status === "live" || status === "paused" ? (view?.scoreo ?? null) : null;
+  const posts = status === "live" || status === "paused" ? (view?.posts ?? so?.posts ?? []) : [];
+  const practice = view?.round?.practice === true;
+  // 0020 Poengorientering: the clock counts to the time limit, then to the end of the return window.
+  const soLimit = mode === "scoreo" ? (so?.limit_at ?? round?.scoreo?.limit_at ?? null) : null;
+  const soPast = !!so?.past;
+  const soLeft = soLimit && !soPast ? phaseLeftS(soLimit, offsetMs, now) : null;
   const nearest = nearestPost(gps.fix, posts);
   const summary = view?.summary ?? null;
   const playlistDone = status === "gathering" && !!summary && !!round && round.idx === round.count - 1;
@@ -702,12 +710,20 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
     title = t.prey;
     TitleIcon = IconMove;
     body = immuneLeft ? t.immune(immuneLeft) : tag.hunter_near ? t.hunterNear : t.preyHint;
+  } else if (status === "live" && mode === "scoreo" && so && soPast) {
+    // Time limit passed: everybody back to the assembly point; each started 10 s costs points.
+    tone = so.arrived ? "ok" : "warn";
+    title = so.arrived ? no.scoreo.inTime : no.scoreo.back;
+    TitleIcon = so.arrived ? IconCheck : IconMapPin;
+    body = so.arrived ? no.scoreo.arrivedLate(so.penalty ?? 0) : `${no.scoreo.backM(so.home_m ?? 0)} · ${no.scoreo.late(Math.max(0, Math.round(-(phaseLeftS(so.limit_at ?? null, offsetMs, now) ?? 0))))}`;
   } else if (status === "live") {
     tone = "live";
     title = roundTitle(round ?? { mode });
     TitleIcon = MODE_ICONS[mode] ?? IconMove;
     body =
-      view?.claim ? t.claiming
+      practice && !view?.claim ? practiceHint(mode, role, !!round?.qr, !!nearest)
+      : mode === "scoreo" && !view?.claim && !view?.scoreo?.claim ? (so ? no.scoreo.got(so.got ?? 0, so.total ?? 0) : t.modeHint.scoreo)
+      : view?.claim || view?.scoreo?.claim ? t.claiming
       : mode === "posts" && nearest ? undefined // the compass below says it
       : left !== null && round && left > round.duration_s - 10 ? t.modeHint[mode]
       : undefined;
@@ -751,7 +767,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
 
   // Safety tones (danger, near the edge) switch instantly: no colour fade, no entrance animation.
   const safetyTone = tone === "danger" || tone === "edge";
-  const showCompass = status === "live" && mode === "posts" && !!nearest && !view?.claim && !safetyTone;
+  const showCompass = status === "live" && (mode === "posts" || (mode === "scoreo" && !soPast)) && !!nearest && !view?.claim && !safetyTone;
 
   return (
     <div className={cx("theme-dark relative flex h-dvh flex-col", TONE_BG[tone], !safetyTone && "m-tone")}>
@@ -771,6 +787,11 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
           <p className="mt-3 flex items-center gap-2 rounded-xl bg-black/40 px-4 py-3 text-lg font-black" role="alert">
             <IconAlert size={24} className="flex-none" />
             {t.gpsLost}
+          </p>
+        )}
+        {practice && (status === "live" || status === "paused" || status === "countdown") && (
+          <p className="mt-3 inline-block rounded-full bg-black/40 px-4 py-1.5 text-base font-black" data-testid="practice-badge">
+            {no.practice.badge}
           </p>
         )}
         {showCompass && nearest && (
@@ -795,8 +816,8 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
             </div>
             {round && (status === "live" || status === "paused" || status === "breather") && (
               <div>
-                <dt className="text-xs font-black uppercase tracking-wider opacity-75">{status === "breather" ? t.breather : t.timeLeft}</dt>
-                <dd className="text-5xl font-black leading-none tabular-nums" data-testid="clock">{formatClock(left)}</dd>
+                <dt className="text-xs font-black uppercase tracking-wider opacity-75">{status === "breather" ? t.breather : soLeft !== null ? no.scoreo.limitLabel : t.timeLeft}</dt>
+                <dd className="text-5xl font-black leading-none tabular-nums" data-testid="clock">{formatClock(soLeft ?? left)}</dd>
               </div>
             )}
             <div className="ml-auto space-y-1 text-right text-sm font-bold opacity-85">
@@ -904,7 +925,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
           </div>
         )}
         {summary && (status === "breather" || status === "gathering") && (
-          <SummaryCard summary={summary} next={status === "breather" ? (round?.next ?? null) : null} />
+          <SummaryCard summary={summary} next={status === "breather" ? (round?.next ?? null) : null} practice={practice} scoreoLine={view?.scoreo?.done ? no.scoreo.done(view.scoreo.got ?? 0, view.scoreo.total ?? 0, view.scoreo.penalty ?? 0) : null} />
         )}
       </div>
 
@@ -1482,7 +1503,7 @@ function Compass({ m, deg, label }: { m: number; deg: number; label: string }) {
 }
 
 /** Breather / end card: this round's effort (PLAN §13 phase 2 «rundeoppsummering»). One big number, three small. */
-function SummaryCard({ summary, next }: { summary: RoundSummary; next: PlanRound | null }) {
+function SummaryCard({ summary, next, practice, scoreoLine }: { summary: RoundSummary; next: PlanRound | null; practice: boolean; scoreoLine: string | null }) {
   const cell = "rounded-2xl bg-ink-3 px-3 py-3";
   return (
     <div
@@ -1494,9 +1515,10 @@ function SummaryCard({ summary, next }: { summary: RoundSummary; next: PlanRound
           <p className="text-sm font-black uppercase tracking-wider text-gold-text">{t.summary(summary.round + 1)}</p>
           <p className="mt-1 text-6xl font-black leading-none tabular-nums">{summary.points}</p>
           <p className="mt-1 text-sm font-bold text-txt-dim">
-            {t.sumPoints}
-            {summary.move_pts > 0 && ` · ${t.sumMove(summary.move_pts)}`}
+            {practice ? no.practice.badge : t.sumPoints}
+            {!practice && summary.move_pts > 0 && ` · ${t.sumMove(summary.move_pts)}`}
           </p>
+          {scoreoLine && <p className="mt-1 text-sm font-bold text-txt-dim">{scoreoLine}</p>}
         </div>
       </div>
       <dl className="m-stagger mt-4 grid grid-cols-3 gap-2">
@@ -1545,7 +1567,15 @@ function SummaryCard({ summary, next }: { summary: RoundSummary; next: PlanRound
   );
 }
 
+/** 0020: short hint for the practice round, from the state of the round. */
+function practiceHint(mode: string, role: string | undefined, qr: boolean, hasPost: boolean): string | undefined {
+  if (mode === "tag") return role === "hunter" ? no.practice.hunter : role === "prey" ? no.practice.prey : t.modeHint.tag;
+  if (mode === "posts") return qr && !hasPost ? no.practice.qr : no.practice.posts;
+  return undefined;
+}
+
 const MODE_ICONS: Record<string, Icon> = {
+  scoreo: IconMapPin,
   posts: IconMapPin,
   free: IconMove,
   tag: IconTarget,

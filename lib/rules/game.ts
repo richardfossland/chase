@@ -9,6 +9,7 @@ import { EVENTS } from "./events";
 import { TEAMS } from "./teams";
 import { normMissions } from "./library";
 import { normQuiz, type QuizItem } from "./quiz";
+import { SCOREO } from "./scoreo";
 
 export const GAME = {
   countdown_s: 10,
@@ -45,7 +46,7 @@ export const GAME = {
 } as const;
 
 /** 0009 (fase 5): flag = Flaggjakt, king = Konge på haugen; 0013 (fase 8): relay = Stafett — always team rounds. */
-export type RoundMode = "free" | "posts" | "tag" | "flag" | "king" | "relay";
+export type RoundMode = "free" | "posts" | "tag" | "flag" | "king" | "relay" | "scoreo";
 export interface PlanRound {
   mode: RoundMode;
   duration_s: number;
@@ -55,6 +56,8 @@ export interface PlanRound {
   zone?: boolean;
   /** 0009: a Postjakt / free round played as teams (flag and king always are). */
   team?: boolean;
+  /** 0020 (fase 10.7): prøverunde, nothing counts (no points, badges or stats except distance). Only posts/tag, no zone, no team. */
+  practice?: true;
 }
 export interface Plan {
   rounds: PlanRound[];
@@ -136,7 +139,7 @@ export function normPlan(p: Partial<Plan> & { rounds?: unknown }): Plan | null {
   for (const r of p.rounds as unknown as Array<Record<string, unknown>>) {
     const d = r?.duration_s;
     const m = r?.mode;
-    if ((m !== "free" && m !== "posts" && m !== "tag" && m !== "flag" && m !== "king" && m !== "relay") || typeof d !== "number" || !Number.isInteger(d)) return null;
+    if ((m !== "free" && m !== "posts" && m !== "tag" && m !== "flag" && m !== "king" && m !== "relay" && m !== "scoreo") || typeof d !== "number" || !Number.isInteger(d)) return null;
     if (d < GAME.round_min_s || d > GAME.round_max_s) return null;
     let out: PlanRound;
     if (r.mode === "tag") {
@@ -149,6 +152,13 @@ export function normPlan(p: Partial<Plan> & { rounds?: unknown }): Plan | null {
     // 0009: teams. Flag/king: no zone (flags and hill must stay reachable); tag stays individual.
     if (r.team !== undefined && r.team !== null && typeof r.team !== "boolean") return null;
     if (m === "relay" && r.team !== undefined && r.team !== null && r.team !== true) return null;
+    // 0020: practice = Postjakt/Smittejakt only, without zone and team; score-O is individual and has no zone.
+    if (r.practice !== undefined && r.practice !== null && typeof r.practice !== "boolean") return null;
+    if (r.practice === true) {
+      if ((m !== "posts" && m !== "tag") || r.zone === true || r.team === true) return null;
+      out.practice = true;
+    }
+    if (m === "scoreo" && (r.zone === true || r.team === true)) return null;
     if (m === "flag" || m === "king" || m === "relay") {
       if (out.zone) return null;
       nTeam++;
@@ -193,10 +203,35 @@ export function normPlan(p: Partial<Plan> & { rounds?: unknown }): Plan | null {
   return out;
 }
 
+/** 0020: does the plan start with a prøverunde? */
+export function hasPractice(p: Plan): boolean {
+  return p.rounds[0]?.practice === true;
+}
+
+/**
+ * 0020: put a 60 s prøverunde first, in the mode of the first real round (Smittejakt for tag rounds,
+ * else Postjakt). Unchanged when it already has one or the playlist is full.
+ */
+export function withPractice(p: Plan): Plan {
+  if (hasPractice(p) || p.rounds.length >= GAME.max_rounds) return p;
+  const first = p.rounds[0];
+  const round: PlanRound =
+    first?.mode === "tag"
+      ? { mode: "tag", variant: first.variant ?? "convert", duration_s: SCOREO.practice_s, practice: true }
+      : { mode: "posts", duration_s: SCOREO.practice_s, practice: true };
+  return { ...p, rounds: [round, ...p.rounds] };
+}
+
+/** 0020: the plan without its prøverunder (at least one round is always kept). */
+export function withoutPractice(p: Plan): Plan {
+  const rounds = p.rounds.filter((r) => !r.practice);
+  return rounds.length ? { ...p, rounds } : p;
+}
+
 /** Total playlist time in seconds: countdowns + rounds + breathers between rounds. */
 export function planTotalS(p: Plan): number {
   const n = p.rounds.length;
-  return p.rounds.reduce((s, r) => s + r.duration_s, 0) + n * p.countdown_s + Math.max(0, n - 1) * p.breather_s;
+  return p.rounds.reduce((s, r) => s + r.duration_s + (r.mode === "scoreo" ? SCOREO.so_return_s : 0), 0) + n * p.countdown_s + Math.max(0, n - 1) * p.breather_s;
 }
 
 /** Open GPS posts the server keeps stocked for this many playing players. */

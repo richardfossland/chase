@@ -149,6 +149,30 @@ export interface RoundView {
   hill?: HillView | null;
   /** 0013 Stafett (live/paused): the course and legs per team (key = team n). */
   relay?: RelayCourse | null;
+  /** 0020: prøverunde, nothing counts. Missing against an old DB (= false). */
+  practice?: boolean;
+  /** 0020 Poengorientering (live/paused): the time limit (phase_ends_at is the end of the return window) and who is back. */
+  scoreo?: { limit_at: string; return_s: number; total: number; in: number; of: number } | null;
+}
+
+/** 0020: my score-O view (chase._so_tick), under `scoreo` in the tick. */
+export interface ScoreoView {
+  /** Posts I have not taken yet (none after the time limit); same shape as PostView. */
+  posts?: PostView[];
+  got?: number;
+  total?: number;
+  limit_at?: string;
+  final_at?: string;
+  past?: boolean;
+  home?: boolean;
+  home_m?: number;
+  arrived?: boolean;
+  late_s?: number | null;
+  penalty?: number;
+  claim?: { post_id: string; hits: number; need: number } | null;
+  claimed?: { post_id: string; value: number; kind: "normal" } | null;
+  /** Round over (breather / roll call): the card for this round. */
+  done?: boolean;
 }
 
 export interface RelayCourse {
@@ -342,6 +366,8 @@ export interface TickView {
   team?: TeamView;
   /** 0013: Stafett. */
   relay?: RelayView;
+  /** 0020: Poengorientering. */
+  scoreo?: ScoreoView;
   safety: { geofence: 0 | 1 | 2 | 3; forbidden: boolean; outside_m: number; uncertain: boolean };
   /** 0015: læreren har slått på talte varsler. Mangler mot gammel DB (= av). */
   voice?: boolean;

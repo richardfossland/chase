@@ -50,9 +50,11 @@ export default function BigScreen({ sessionId }: { sessionId: string }) {
   if (!snap || !hs.geo) return <Full><p className="text-3xl font-black opacity-70">…</p></Full>;
 
   const r = snap.round;
-  const left = phaseLeftS(r?.phase_ends_at, offset, now);
+  // 0020 Poengorientering: count to the time limit first, then to the end of the return window.
+  const soLimitLeft = r?.mode === "scoreo" && r.scoreo ? phaseLeftS(r.scoreo.limit_at, offset, now) : null;
+  const left = soLimitLeft ? soLimitLeft : phaseLeftS(r?.phase_ends_at, offset, now);
   const modes = no.host.round.modes;
-  const roundName = r ? (r.mode === "tag" ? no.host.round.variants[r.variant ?? "convert"] : modes[r.mode]) : "";
+  const roundName = r ? (r.mode === "tag" ? no.host.round.variants[r.variant ?? "convert"] : modes[r.mode]) + (r.practice ? no.host.round.practiceTag : "") : "";
   const teams = [...(snap.teams ?? [])].sort((a, b) => a.n - b.n);
   const ev = snap.event && !snap.event.done ? snap.event : null;
 
@@ -128,6 +130,7 @@ export default function BigScreen({ sessionId }: { sessionId: string }) {
           <p className="text-xl font-bold uppercase tracking-[0.2em] text-txt-dim">{no.host.status[snap.status] ?? snap.status}</p>
           {r && <p className="mt-2 text-4xl font-black leading-tight">{roundName}</p>}
           {r && <p className="mt-1 text-2xl font-bold text-txt-dim">{no.host.round.of(r.idx + 1, r.count)}</p>}
+          {r?.practice && <p className="mt-2 text-2xl font-black text-gold-text">{no.host.round.practice}</p>}
           {snap.playlist_done ? (
             <p className="mt-8 flex items-start gap-4 text-4xl font-black leading-tight">
               <span className="mt-1 grid size-12 shrink-0 place-items-center rounded-full bg-ok text-on-accent" aria-hidden>

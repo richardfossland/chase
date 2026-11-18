@@ -20,6 +20,7 @@ export const ceremony = {
       points: "Flest poeng",
       teamplay: "Lagspiller",
       quiz: "Flest riktige",
+      scoreo: "Orienterer",
       team: "Beste lag",
     } as Record<string, string>,
     value: (cat: string, v: number | null): string => {

@@ -25,7 +25,7 @@ import {
 import { planSummary } from "@/lib/client/planSummary";
 import { no } from "@/lib/locale/no";
 import { normMissions } from "@/lib/rules/library";
-import { DEFAULT_PLAN, GAME, TEMPLATES, normPlan, planTotalS, type Plan, type RoundMode, type TemplateId } from "@/lib/rules/game";
+import { DEFAULT_PLAN, GAME, TEMPLATES, hasPractice, normPlan, planTotalS, withPractice, withoutPractice, type Plan, type RoundMode, type TemplateId } from "@/lib/rules/game";
 import type { QuizItem } from "@/lib/rules/quiz";
 import { TEAMS, isTeamRound } from "@/lib/rules/teams";
 import { STARTER_PACKS, type StarterPack } from "@/lib/starter";
@@ -37,7 +37,7 @@ const t = no.wizard;
 const p = t.playlist;
 
 const ROUND_MINUTES = [3, 4, 5, 6, 8, 10, 15];
-const ROUND_KINDS = ["posts", "convert", "swap", "fox", "free", "flag", "king", "relay"] as const;
+const ROUND_KINDS = ["posts", "convert", "swap", "fox", "free", "flag", "king", "relay", "scoreo"] as const;
 type Kind = (typeof ROUND_KINDS)[number];
 const TEAM_COUNTS = [2, 3, 4] as const;
 const BREATHERS = [0, 30, 60, 90, 120];
@@ -53,6 +53,7 @@ const KIND_ICON: Record<Kind, (props: { size?: number; className?: string }) => 
   flag: IconFlag,
   king: IconCrown,
   relay: IconRelay,
+  scoreo: IconMapPin,
 };
 
 type Round = Plan["rounds"][number];
@@ -65,7 +66,7 @@ const PRESETS: Preset[] = [
   ...STARTER_PACKS.map((pk) => ({ id: pk.id, testId: `starter-${pk.id}`, name: pk.name, plan: pk.plan, starter: pk })),
 ];
 /** What makes two plans «the same opplegg» for highlighting a card. */
-const presetKey = (pl: Plan) => JSON.stringify({ r: pl.rounds, t: pl.teams ?? null, m: pl.missions ?? null, b: pl.breather_s });
+const presetKey = (pl: Plan) => JSON.stringify({ r: pl.rounds.filter((r) => !r.practice), t: pl.teams ?? null, m: pl.missions ?? null, b: pl.breather_s });
 
 export function RoundsStep(props: {
   plan: Plan;
@@ -98,8 +99,9 @@ export function RoundsStep(props: {
   const moreBad = missionsBad || !props.quizValid;
 
   function pick(pr: Preset) {
-    const next: Plan = structuredClone(pr.plan);
+    let next: Plan = structuredClone(pr.plan);
     if (plan.quiz?.length) next.quiz = plan.quiz;
+    if (hasPractice(plan)) next = withPractice(next);   // 0020: the choice of a prøverunde follows the teacher to the next opplegg
     onChange(next);
     if (pr.starter) props.onStarter(pr.starter);
     setOpenRound(null);
@@ -111,9 +113,9 @@ export function RoundsStep(props: {
       i,
       k === "convert" || k === "swap" || k === "fox"
         ? { mode: "tag", variant: k, team: undefined }
-        : k === "flag" || k === "king" || k === "relay"
-          ? { mode: k, variant: undefined, zone: undefined, team: undefined }
-          : { mode: k as RoundMode, variant: undefined },
+        : k === "flag" || k === "king" || k === "relay" || k === "scoreo"
+          ? { mode: k, variant: undefined, zone: undefined, team: undefined, practice: undefined }
+          : { mode: k as RoundMode, variant: undefined, ...(k === "posts" ? {} : { practice: undefined }) },
     );
   const step = (i: number, dir: 1 | -1) => {
     const d = plan.rounds[i].duration_s;
@@ -155,6 +157,17 @@ export function RoundsStep(props: {
         })}
       </div>
 
+      <div className="mt-5 rounded-2xl border border-line bg-ink px-3 py-1">
+        <Switch
+          label={p.practice}
+          icon={<IconClock size={18} />}
+          on={hasPractice(plan)}
+          onChange={(on) => onChange(on ? withPractice(plan) : withoutPractice(plan))}
+          testId="practice"
+        />
+        <Help>{p.practiceHint}</Help>
+      </div>
+
       <Disclosure
         title={p.customize}
         open={openRounds}
@@ -182,6 +195,7 @@ export function RoundsStep(props: {
                   <KindIcon size={20} className="flex-none text-gold-text" />
                   <span className="min-w-0 flex-1 truncate font-extrabold">
                     {p.modes[k]}
+                    {r.practice && <span className="ml-1.5 text-xs font-bold text-gold-text">{p.practiceTag}</span>}
                     {(r.zone || r.team) && (
                       <span className="ml-1.5 text-xs font-bold text-txt-dim">
                         {r.team ? p.team : ""} {r.zone ? p.zone : ""}
@@ -234,7 +248,7 @@ export function RoundsStep(props: {
                       </button>
                     </div>
 
-                    {r.mode !== "flag" && r.mode !== "king" && r.mode !== "relay" && (
+                    {r.mode !== "flag" && r.mode !== "king" && r.mode !== "relay" && r.mode !== "scoreo" && !r.practice && (
                       <div className="mt-3 border-t border-line pt-2">
                         <Switch
                           label={p.zoneToggle}

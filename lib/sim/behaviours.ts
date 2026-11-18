@@ -49,6 +49,8 @@ export interface BotView {
   team?: { n: number } | null;
   /** 0013: my baton — run to target (post, then the base). */
   relay?: { post: number | null; target: LL | null } | null;
+  /** 0020 Poengorientering: posts I have not taken, the time limit and whether I am back. */
+  scoreo?: { posts?: { pos: LL }[]; limit_at?: string; past?: boolean; arrived?: boolean } | null;
 }
 type LL = { lat: number; lng: number };
 export interface BotRoundTeam {
@@ -134,7 +136,7 @@ export function createBot(kind: Behaviour, geo: SimGeo, opts: BotOptions) {
   function nearestPostXY(): XY | null {
     let best: XY | null = null;
     let bestD = Infinity;
-    for (const p of view.posts ?? []) {
+    for (const p of view.posts ?? view.scoreo?.posts ?? []) {
       const xy = proj.toXY([p.pos.lng, p.pos.lat]) as XY;
       const d = Math.hypot(xy[0] - pos[0], xy[1] - pos[1]);
       if (d < bestD) {
@@ -176,6 +178,19 @@ export function createBot(kind: Behaviour, geo: SimGeo, opts: BotOptions) {
     return null;
   }
 
+  // Score-O (0020): go home in time to be back at the limit. Every fourth bot leaves too late (a penalty to see),
+  // the others turn around with a margin. After the limit everybody walks to (and stays at) the assembly point.
+  const lateBot = Math.floor(pick / 3) % 4 === 0;
+  function scoreoHome(): boolean {
+    const so = view.scoreo;
+    if (!so) return false;
+    if (so.past) return true;
+    if (!so.limit_at) return false;
+    const left = (Date.parse(so.limit_at) - Date.now()) / 1000;
+    const dist = Math.hypot(a[0] - pos[0], a[1] - pos[1]);
+    return left < dist / Math.max(baseSpeed, 1) + (lateBot ? -40 : 12);
+  }
+
   // Zone target: the centre, while further out than 80 % of the (next) radius.
   function zoneSeek(): XY | null {
     const z = view.round?.zone;
@@ -199,6 +214,8 @@ export function createBot(kind: Behaviour, geo: SimGeo, opts: BotOptions) {
       if (!view.gather?.checked_in) seek(a as XY, dt, 1.4);
     } else if (!special && view.status === "breather") {
       wander(dt, 0.5, true);
+    } else if (!special && view.status === "live" && scoreoHome()) {
+      seek(a as XY, dt, baseSpeed + 0.5);
     } else if (!special && kind !== "hider" && view.status === "live" && view.event && !view.event.done && !view.event.me && view.event.target) {
       // Event (0007): sprint to the point / to the assembly point.
       seek(proj.toXY([view.event.target.lng, view.event.target.lat]) as XY, dt, baseSpeed + 1);
