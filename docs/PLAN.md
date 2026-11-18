@@ -644,6 +644,23 @@ Godkjent av eier 2026-11-18 etter en gjennomgang av Actionbound, Loquiz, Goosech
 
 **Ferdig når:** Alle sju punktene er levert eller avsluttet med begrunnelse i DECISIONS. Prod-sim er grønn etter hver deploy. Talte varsler, QR-skanning og offline-kart er prøvd på ekte iPhone.
 
+
+### Fase 10 – Drift, lærerverktøy og nye moduser
+
+Valgt av eier 2026-11-18. Sonnet-agenter bygger, én samlet Opus-review, én deploy (som fase 9).
+
+1. **Rydde tick-kjeden** (migr. 0018). `tick` og `host_snapshot` blir én funksjon hver igjen i stedet for wrappere i flere lag (0012/0015/0017), med likhetstest mot de gamle. Den ustabile 0013-testen rettes.
+2. **Sikkerhetsheadere.** CSP, HSTS, Permissions-Policy (posisjon og kamera bare for egen side), frame-ancestors og Referrer-Policy, uten å ødelegge kart, WebSocket, QR (wasm), storskjerm eller cast.
+3. **Feillogging fra mobilen.** JS-feil sendes til Worker-loggene uten posisjoner, token eller kallenavn, med rate-limit.
+4. **Ferdige quizpakker.** 8–12 pakker etter LK20 (5.–10. trinn), som velges i veiviseren og legges på Postjakt.
+5. **Øktrapport.** Ved premieutdeling eller avslutning: aktive minutter, distanse, poster og fangster for klassen og per kallenavn, til utskrift eller PDF. Rapporten lages i lærerens nettleser før økta slettes og lagres ikke (§ 8 er uendret).
+6. **Prøv med boter.** Lærere kan starte en demo-økt (`is_sim`) med 8–20 simulerte elever i nettleseren, med tak og rate-limit. Prod-simer merkes også `is_sim`.
+7. **Prøverunde** (migr. 0020). En rundetype på 60 s som ikke teller, med hint om knappene, posten og fangst.
+8. **Poengorientering** (migr. 0020). Poster med ulik verdi (mer jo lenger unna), fast tidsgrense, og poengtrekk per påbegynte 10 s for sent tilbake på møteplassen.
+9. **Gjemsel** (migr. 0021). Gjemmerne får forsprang og må holde seg i sin sone. Jegerne snevrer inn med Snus og Termometer og fanger med kode.
+
+**Ferdig når:** alle ni punktene er levert, prod-sim er grønn, og ekte-iPhone-punktene står i PILOT.md.
+
 ---
 
 ## 14. Risikoer og tiltak
