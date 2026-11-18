@@ -666,6 +666,14 @@ create function pg_temp.common(a jsonb, b jsonb) returns jsonb language sql as $
                                   where e ->> 'id' in (select x ->> 'id' from jsonb_array_elements(b) x)))
               else a end
 $$;
+-- The hunter's radar (tag.radar) is an unordered set: the order of its pings is not part of the contract
+-- (it follows the row order of the query and differs between runs and machines). Compare it sorted;
+-- every other key, and every element of the radar, is still compared exactly.
+create function pg_temp.sortradar(j jsonb) returns jsonb language sql as $$
+  select case when jsonb_typeof(j -> 'tag' -> 'radar') = 'array'
+              then jsonb_set(j, '{tag,radar}', (select coalesce(jsonb_agg(e order by e::text), '[]'::jsonb) from jsonb_array_elements(j -> 'tag' -> 'radar') e))
+              else j end
+$$;
 create function pg_temp.alen(j jsonb) returns int language sql as $$ select case when jsonb_typeof(j) = 'array' then jsonb_array_length(j) else -1 end $$;
 
 -- Everything tick writes for one player (and the session's event count).
@@ -704,6 +712,8 @@ begin
   sb := pg_temp.state(pl);
   -- Post ids are random (gen_random_uuid): compare posts by content without them.
   assert pg_temp.alen(a -> 'posts') = pg_temp.alen(b -> 'posts') and pg_temp.common(a -> 'posts', b -> 'posts') is not distinct from pg_temp.common(b -> 'posts', a -> 'posts'), format('tick %s/%s posts differ:%s old: %s%s new: %s', p_tag, p_i, E'\n', a -> 'posts', E'\n', b -> 'posts');
+  a := pg_temp.sortradar(a);
+  b := pg_temp.sortradar(b);
   assert (a - 'posts') = (b - 'posts'), format('tick %s/%s answers differ:%s old: %s%s new: %s', p_tag, p_i, E'\n', a, E'\n', b);
   assert sa = sb, format('tick %s/%s rows differ:%s old: %s%s new: %s', p_tag, p_i, E'\n', sa, E'\n', sb);
   return b;
@@ -883,7 +893,7 @@ end $$;
 
 -- ───────────────────────── tick_batch runs through the flat tick ─────────────────────────
 do $$
-declare s uuid; r jsonb; g int; olds jsonb[4];
+declare s uuid; r jsonb; g int; olds jsonb[4]; e1 jsonb;
 begin
   s := pg_temp.mk('fb', '{"rounds":[{"mode":"tag","duration_s":300}],"countdown_s":0}', 4);
   perform pg_temp.act(s, 'fb', 'start');
@@ -905,9 +915,12 @@ begin
                               from generate_series(1, 4) q(n)));
   assert (r ->> 'ok')::boolean and jsonb_array_length(r -> 'results') = 4, 'batch: ' || r::text;
   for g in 1 .. 4 loop
-    assert (select e -> 'r' from jsonb_array_elements(r -> 'results') e where (e ->> 'player')::uuid = pg_temp.pid('fb', g)) - 'posts'
-         = olds[g] - 'posts', format('batch entry %s differs from a lone tick:%s batch: %s%s lone: %s', g, E'\n',
-           (select e -> 'r' from jsonb_array_elements(r -> 'results') e where (e ->> 'player')::uuid = pg_temp.pid('fb', g)), E'\n', olds[g]);
+    e1 := (select e -> 'r' from jsonb_array_elements(r -> 'results') e where (e ->> 'player')::uuid = pg_temp.pid('fb', g));
+    e1 := pg_temp.sortradar(e1);
+    olds[g] := pg_temp.sortradar(olds[g]);
+    assert (e1 - 'posts') = (olds[g] - 'posts'), format('batch entry %s differs from a lone tick; differing keys: %s%s batch: %s%s lone: %s', g,
+      (select string_agg(k, ',') from (select k from jsonb_object_keys(e1 || olds[g]) k
+                                        where (e1 -> k) is distinct from (olds[g] -> k)) d), E'\n', e1, E'\n', olds[g]);
   end loop;
   assert (select count(*) from chase.player_live where session_id = s and hc_at is not null) = 4, 'anchors set';
   assert chase.host_snapshot_svc(s) ->> 'ok' = 'true', 'snapshot_svc';
