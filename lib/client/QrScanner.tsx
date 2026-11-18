@@ -3,17 +3,16 @@
 import { useEffect, useRef, useState } from "react";
 
 import { no } from "@/lib/locale/no";
+import { createQrDetector, type Detector } from "@/lib/client/qrDetector";
 import { buttonClass } from "@/lib/client/ui";
 import { IconArrowRight, IconCamera, IconX } from "@/lib/client/ui/icons";
 
 const t = no.qr;
 
-type Detector = { detect: (src: CanvasImageSource) => Promise<{ rawValue: string }[]> };
-
 /**
  * Camera QR scanner with a typed-code fallback (decided 2026-11-10).
- * BarcodeDetector where the browser has it (Android Chrome); jsQR on canvas
- * frames elsewhere (iOS Safari). Nothing leaves the phone except the code.
+ * BarcodeDetector where the browser has it (Android Chrome); the zxing-wasm
+ * polyfill (barcode-detector, lazy-loaded) elsewhere (iOS Safari). Nothing leaves the phone except the code.
  */
 export function QrScanner({
   onCode,
@@ -42,8 +41,6 @@ export function QrScanner({
     let stream: MediaStream | null = null;
     let stop = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
 
     (async () => {
       try {
@@ -57,24 +54,20 @@ export function QrScanner({
       v.srcObject = stream;
       await v.play().catch(() => {});
 
-      const BD = (window as unknown as { BarcodeDetector?: new (o: { formats: string[] }) => Detector }).BarcodeDetector;
-      const detector = BD ? new BD({ formats: ["qr_code"] }) : null;
-      const jsQR = detector ? null : (await import("jsqr")).default;
+      let detector: Detector;
+      try {
+        detector = await createQrDetector();
+      } catch {
+        return; // typed-code fallback still works
+      }
+      if (stop) return;
 
       const loop = async () => {
         if (stop) return;
         if (!busyRef.current && v.readyState >= 2) {
           try {
-            let text: string | null = null;
-            if (detector) {
-              const r = await detector.detect(v);
-              text = r[0]?.rawValue ?? null;
-            } else if (jsQR && ctx) {
-              const w = (canvas.width = Math.min(640, v.videoWidth));
-              const h = (canvas.height = Math.round((v.videoHeight * w) / v.videoWidth));
-              ctx.drawImage(v, 0, 0, w, h);
-              text = jsQR(ctx.getImageData(0, 0, w, h).data, w, h, { inversionAttempts: "dontInvert" })?.data ?? null;
-            }
+            const r = await detector.detect(v);
+            const text = r[0]?.rawValue ?? null;
             if (text) onCode(text);
           } catch {
             /* next frame */
