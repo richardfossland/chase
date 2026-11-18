@@ -24,7 +24,7 @@ import {
 
 export const FLUSH_EVERY_MS = 1000;
 /**
- * Minimum time between two ticks of the same player. _tick_base measures a
+ * Minimum time between two ticks of the same player. chase.tick measures a
  * segment as now() − previous fix_at, and now() is the flush time; keeping each
  * player's gap ≥ 1.9 s (clients sample every 2 s) means speed is never
  * over-read by more than ~5 % — the 8 m/s anti-teleport rule and the active-time
@@ -332,7 +332,7 @@ export class RoomCore<S> {
         // The route falls back to a direct RPC on this 503. A fix still queued here
         // (not yet sent) is withdrawn so it is not ticked twice; one already in
         // flight may still land, and then the direct RPC is dropped as stale
-        // (same client ts) by _tick_base.
+        // (same client ts) by chase.tick.
         this.withdrawn.add(once);
         const p = this.pending.get(playerId);
         if (p && p.waiters.includes(once) && !this.keep(p)) this.pending.delete(playerId);
