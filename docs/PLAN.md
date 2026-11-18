@@ -637,7 +637,9 @@ Godkjent av eier 2026-11-18 etter en gjennomgang av Actionbound, Loquiz, Goosech
 6. **Offline-kart og PWA.** En service worker henter Kartverket-fliser for områdets bbox (z14–18) på forhånd når økta starter, så kartet virker i skog med dårlig dekning (§ 14, «Dekning i skog»). **Først:** sjekk at Kartverkets vilkår tillater forhåndshenting. Hvis ikke, bruker vi et PMTiles-utsnitt av OSM på R2 (Protomaps) i stedet. Berører: ny service worker, `lib/map/style.ts`.
 7. **Turf.js / Supercluster (spike).** Kjør geo-testene og lærerkartets klynging mot bibliotekene. Vi bytter bare ut egen kode der den taper på presisjon eller ytelse. Spiken kan ende uten endring. Berører: `lib/geo.ts`, lærerkartet.
 
-**Åpne spørsmål:** Kartverkets vilkår for forhåndshenting (punkt 6). Kvaliteten på norske stemmer på iPhone og Android prøves i den felles utetesten (ADR-019).
+**Status 2026-11-18:** ✅ alle sju punktene er levert og live (punkt 1: ADR-035; punkt 2–7: ADR-036). Punkt 6 lagrer bare viste fliser (Geovekst-forbeholdet). Punkt 7 endte uten endring.
+
+**Åpne spørsmål:** Kartverkets vilkår for forhåndshenting (punkt 6, foreløpig bare viste fliser). Kvaliteten på norske stemmer på iPhone og Android prøves i den felles utetesten (ADR-019).
 **Ikke med:** bakgrunns-GPS (`@capgo/background-geolocation`, MIT) hører til native-appen, som venter. Foto venter på DPIA.
 
 **Ferdig når:** Alle sju punktene er levert eller avsluttet med begrunnelse i DECISIONS. Prod-sim er grønn etter hver deploy. Talte varsler, QR-skanning og offline-kart er prøvd på ekte iPhone.
