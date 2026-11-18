@@ -40,6 +40,8 @@ describe("nickname", () => {
 describe("rpc → http", () => {
   it("maps codes to statuses", () => {
     expect(statusFor("auth")).toBe(401);
+    expect(statusFor("cooldown")).toBe(429);
+    expect(["no_baseline", "blackout", "bad_acc"].map(statusFor)).toEqual([409, 409, 409]);
     expect(statusFor("nickname_taken")).toBe(409);
     expect(statusFor("ended")).toBe(410);
     expect(statusFor("bad_boundary")).toBe(400);

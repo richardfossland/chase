@@ -1,0 +1,31 @@
+// Snus og Termometer (0017): varmere/kaldere i Smittejakt og Sporing.
+export const hotcold = {
+  hotcold: {
+    sniff: "Snus",
+    thermo: "Termometer",
+    sniffHelp: (m: number) => `Er målet innenfor ${m} m? Ja eller nei.`,
+    thermoHelp: "Varmere eller kaldere enn for en halv minutt siden?",
+    wait: (s: number) => `${s} s`,
+    yes: "JA, nær!",
+    no: "Nei",
+    near: (m: number) => `Innenfor ${m} m`,
+    far: (m: number) => `Lenger unna enn ${m} m`,
+    warmer: "Varmere!",
+    colder: "Kaldere",
+    same: "Omtrent likt",
+    warmerSub: "Du nærmer deg",
+    colderSub: "Du fjerner deg",
+    sameSub: "Ingen stor forskjell",
+    errors: {
+      cooldown: "Hvil litt",
+      no_target: "Fant ingen å måle mot",
+      no_baseline: "Gå litt først, så virker den",
+      no_fix: "Venter på GPS",
+      bad_acc: "GPS-en er for upresis nå",
+      generic: "Det gikk ikke, prøv igjen",
+      blackout: "Radaren er av",
+      not_now: "Ikke nå",
+      not_useful: "Passer ikke nå",
+    } as Record<string, string>,
+  },
+} as const;

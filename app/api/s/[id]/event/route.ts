@@ -28,6 +28,11 @@ export const POST = guarded(async (req, ctx) => {
     const r = await rpc("quiz_answer", { ...auth, p_choice: body.choice });
     return respond(r, (x) => ({ right: x.right === true, answer: x.answer ?? null, points: x.points ?? 0, newBadges: x.new_badges ?? [] }));
   }
+  if (body.action === "hotcold") {
+    // 0017: only a yes/no or a trend comes back, never a position.
+    const r = await rpc("use_hotcold", { ...auth, p_kind: body.kind });
+    return respond(r, (x) => ({ kind: x.kind, near: x.near ?? null, rangeM: x.range_m ?? null, trend: x.trend ?? null, cooldownS: x.cooldown_s }));
+  }
   if (body.action === "team_msg") {
     const r = await rpc("team_msg", { ...auth, p_kind: body.kind });
     return respond(r, (x) => ({ kind: x.kind, at: x.at }));

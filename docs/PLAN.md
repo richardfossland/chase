@@ -273,6 +273,7 @@ Fysiske oppdrag gjøres der eleven er, aldri som en betingelse for å slippe str
 | Paller og «ditt beste» (spiller-id-er og tall, ingen navn eller posisjoner) | `sessions.podiums`, `player_stats.best` | Som økta / 24 t etter slutt. Kallenavn hentes ved visning og forsvinner med `players`. |
 | «Har stemt»-flagg for «vil spille igjen» (bare mot dobbeltstemming, svaret lagres ikke på eleven) | `players.voted_again` | 24 t etter slutt |
 | Hendelsesdeltakelse (hvem nådde sprintpunktet eller fullførte oppdraget, når, poeng og power-up) | `event_entries` | 24 t etter slutt, uten koordinater |
+| Varmere/kaldere (0017): ett flyktig anker for «posisjon for 20–40 s siden» og ett nyere, med tidspunkt, samt siste bruk for nedkjøling (ingen logg) | `player_live.hc_pos`, `hc_at`, `hc_prev_pos`, `hc_prev_at`, `hc_used_at` (UNLOGGED) | **Slettes ved øktslutt** |
 | Lokkedue (falskt punkt 40 m fra eleven) | `player_live.decoy_pos` (UNLOGGED) | **Slettes ved øktslutt** |
 | Power-up-inventar og aktive effekter (tider) | `player_stats` | 24 t etter slutt |
 | Lagbeskjed (siste hurtigmelding: type, tid og avsenderens posisjon, vises bare for eget lag i 30 s) | `player_live.msg_*` (UNLOGGED) | **Slettes ved øktslutt** |

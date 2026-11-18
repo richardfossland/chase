@@ -29,6 +29,7 @@ import { zoneAt, type ZoneNow, type ZoneState } from "@/lib/rules/zone";
 import { EVENTS, nextBadgeToast, type Powerup } from "@/lib/rules/events";
 import type { Badge } from "@/lib/rules/game";
 import { EventStrip, PowerBar } from "./EventCard";
+import { HotColdBar } from "./HotColdBar";
 import { TeamMsgBar, TeamStrip } from "./TeamCard";
 import { QuizCard } from "./QuizCard";
 import { useTurn } from "./useTurn";
@@ -862,6 +863,9 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
             setScanning(true);
           }}
         />
+      )}
+      {status === "live" && (
+        <HotColdBar sessionId={sessionId} playerId={me.playerId} token={me.token} mode={round?.mode} role={role} now={now} sosActive={!!sosOpen || sosAcked} />
       )}
       {view?.power && (status === "live" || status === "paused") && (
         <PowerBar power={view.power} round={round} role={role} offsetMs={offsetMs} now={now} busy={puBusy} onUse={(k) => void firePowerup(k)} />

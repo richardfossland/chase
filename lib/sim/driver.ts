@@ -10,6 +10,7 @@
 
 import { relayBatons } from "@/lib/rules/relay";
 import { powerupCheck } from "@/lib/rules/events";
+import { hotColdCheck } from "@/lib/rules/hotcold";
 
 import { fixDelayMs } from "@/lib/client/live";
 import { createGpsFilter, type GpsFilter } from "@/lib/client/gpsFilter";
@@ -123,6 +124,8 @@ export interface SimStats {
     powerupsGot: number;
     powerupsUsed: number;
     powerupFails: Record<string, number>;
+    hotcoldUsed: Record<string, number>;
+    hotcoldFails: Record<string, number>;
     missionsDone: number;
     missionsConfirmed: number;
     /** Phase 5 (0009): team sizes when first dealt, final team points, flags taken, hill holds, quick messages. */
@@ -193,7 +196,7 @@ export function startSwarm(opts: SwarmOptions) {
     latencies: [],
     alarms: [],
     game: { claims: 0, golden: 0, lost: 0, qr: 0, duplicateClaims: 0, claimedIds: new Set(), statuses: [], playlistDone: false, rounds: 0, catches: 0, catchFails: {}, zoneHits: 0, zonePen: 0, bestCards: 0, votes: 0,
-      events: {}, eventKeys: new Set(), sprintMax: 0, prizes: 0, powerupsGot: 0, powerupsUsed: 0, powerupFails: {}, missionsDone: 0, missionsConfirmed: 0,
+      events: {}, eventKeys: new Set(), sprintMax: 0, prizes: 0, powerupsGot: 0, powerupsUsed: 0, powerupFails: {}, hotcoldUsed: {}, hotcoldFails: {}, missionsDone: 0, missionsConfirmed: 0,
       teamSizes: null, teamPoints: {}, flagCaptures: 0, hillHolds: 0, relayLegs: 0, relayBatonMax: 0, relayBatonCap: 0, relayLegsByRound: new Map(), capKeys: new Set(), msgsSent: 0, msgsSeen: 0, msgKeys: new Set(), quizAnswered: 0, quizRight: 0, steps: 0 },
   };
   const wsOn = !!opts.ws;
@@ -413,6 +416,7 @@ export function startSwarm(opts: SwarmOptions) {
   // Events (0007): count prizes, press «Ferdig» on a mission, use power-ups now and then.
   const missionSent = new Set<string>();
   const lastPu = new Map<string, number>();
+  const lastHc = new Map<string, number>();
   type EvV = { no: number; kind: string; done: boolean; me: { state: string; powerup: string | null } | null } | null | undefined;
   async function tryEvent(p: SimPlayer, before: Record<string, unknown> | null) {
     const v = p.view as { status?: string; role?: string; round?: { idx: number; mode: string } | null; event?: EvV; power?: { inv: string[] } } | null;
@@ -430,6 +434,20 @@ export function startSwarm(opts: SwarmOptions) {
       const r = await opts.transport.post(`/api/s/${sessionId}/event`, { playerId: p.playerId, token: p.token, action: "mission" });
       if (r.status === 200) stats.game.missionsDone++;
       else err(`mission_${r.status}_${String(r.data.error ?? "")}`);
+    }
+    // Snus / Termometer (0017): a hunter or prey tries one now and then; the 60 s cooldown and
+    // «walk first» answers count as expected refusals, anything else as a failure.
+    if (hotColdCheck("sniff", v.round?.mode as never, v.role ?? "neutral") === null
+        && Date.now() - (lastHc.get(p.playerId) ?? 0) > 6000 && p.kind !== "hider" && Math.random() < 0.3) {
+      lastHc.set(p.playerId, Date.now());
+      const kind = Math.random() < 0.5 ? "sniff" : "thermo";
+      const r = await opts.transport.post(`/api/s/${sessionId}/event`, { playerId: p.playerId, token: p.token, action: "hotcold", kind });
+      if (r.status === 200) {
+        stats.game.hotcoldUsed[kind] = (stats.game.hotcoldUsed[kind] ?? 0) + 1;
+      } else {
+        const k = String(r.data.error ?? r.status);
+        stats.game.hotcoldFails[k] = (stats.game.hotcoldFails[k] ?? 0) + 1;
+      }
     }
     const inv = v.power?.inv ?? [];
     if (!inv.length || Date.now() - (lastPu.get(p.playerId) ?? 0) < 8000) return;
@@ -806,6 +824,8 @@ export function summarize(stats: SimStats) {
       powerupsGot: stats.game.powerupsGot,
       powerupsUsed: stats.game.powerupsUsed,
       powerupFails: stats.game.powerupFails,
+      hotcoldUsed: stats.game.hotcoldUsed,
+      hotcoldFails: stats.game.hotcoldFails,
       missionsDone: stats.game.missionsDone,
       missionsConfirmed: stats.game.missionsConfirmed,
       teamSizes: stats.game.teamSizes,
