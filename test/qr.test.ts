@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normCode, parseQr, qrUrl } from "@/lib/qr";
+import { normCode, parseQr, qrAreaUrl, qrUrl } from "@/lib/qr";
 
 const S = "6c760c64-f172-4100-9d95-5d60b3c202c2";
 
@@ -15,6 +15,11 @@ describe("QR cards", () => {
     expect(parseQr(" ab2cd ", S)).toBe("AB2CD");
     expect(parseQr("AB-2CD", S)).toBe("AB2CD");
     expect(normCode("ab 2cd")).toBe("AB2CD");
+  });
+  it("accepts the session-independent area card", () => {
+    expect(qrAreaUrl("https://chase.sundaysuite.app/", "AB2CD")).toBe("https://chase.sundaysuite.app/q/AB2CD");
+    expect(parseQr(qrAreaUrl("https://x.test", "AB2CD"), S)).toBe("AB2CD");
+    expect(parseQr("https://x.test/q/AB0CD", S)).toBeNull();
   });
   it("rejects ambiguous letters and junk", () => {
     expect(parseQr("AB0CD", S)).toBeNull(); // 0 is not in the alphabet

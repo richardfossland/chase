@@ -9,6 +9,7 @@ import type { BestCard, PodiumCat } from "@/lib/rules/podiums";
 import type { ZoneState } from "@/lib/rules/zone";
 import type { TeamMsgKind } from "@/lib/rules/teams";
 import type { QuizItem } from "@/lib/rules/quiz";
+import type { FixedPost } from "@/lib/rules/library";
 
 export class ApiError extends Error {
   constructor(
@@ -425,6 +426,8 @@ export interface LibArea extends AreaGeo {
   name: string;
   kind: "recent" | "saved";
   last_used_at: string;
+  /** 0016: fixed posts (absent before the migration). */
+  posts?: FixedPost[];
 }
 export interface LibPlan {
   id: string;
@@ -485,7 +488,8 @@ export const api = {
     forbidden?: GeoJsonMultiPolygon | null;
     teacherPhone?: string | null;
     plan?: Plan;
-    settings?: { voice?: boolean };
+    /** 0015: `voice`; 0016: `fixed_posts: FixedPost[]`. */
+    settings?: { voice?: boolean; fixed_posts?: unknown } & Record<string, unknown>;
     sim?: boolean;
   }) => post<CreatedSession>("/api/sessions", body),
 
