@@ -9,7 +9,7 @@
     "binding": "ASSETS"
   },
   "services": [{ "binding": "LIVE", "service": "chase-live" }],
-  "vars": { "LIVE_TRANSPORT": "http" },
+  "vars": { "LIVE_TRANSPORT": "ws" },
   "routes": [{ "pattern": "chase.sundaysuite.app", "custom_domain": true }],
   "observability": {
     "enabled": true

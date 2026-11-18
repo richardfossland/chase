@@ -621,3 +621,4 @@ Bakgrunn: prod-simer 11-13/11-14 knakk med 522 og 30–300 s ventetid fordi det 
 - **Rotårsaken** (for liten delt databasemaskin) løses bare ved å oppgradere Supabase (eiers beslutning).
 - **Små skjermer:** på iPhone SE (375×667) dekket et hendelseskort under smittejakt nesten hele kartet. Hendelseskortet og tittelen er mindre når skjermen er lavere enn 700 px. Sikkerhetsvarsler og SOS-knappen er ikke endret.
 - **Ikke en feil:** «ingen fikk premie i hendelsene» i simen kommer av at runder på 120 s bare rekker hendelser uten premie (hendelser startes bare når det er nok tid igjen).
+- **Deploy 2026-11-18:** Next-worker `14b3f996` fra `6205194` satte `LIVE_TRANSPORT` tilbake til `http` i ca. 2 min, fordi `wrangler.jsonc` fortsatt sa `http` (ws ble satt bare i deployen 11-16). Rettet med `850a113c` (ws, rollback `c8aa0ad9`). `wrangler.jsonc` sier nå `ws`, så nødbryteren er å sette `"http"` og deploye.
