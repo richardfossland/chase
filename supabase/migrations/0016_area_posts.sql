@@ -336,7 +336,7 @@ begin
     return null;     -- every fixed post of this kind is already open
   end if;
   if v_pt is null then
-    return chase._spawn_post_base(p_session, p_round, p_kind);   -- all just claimed: random spot this time
+    return null;     -- every free fixed point was just claimed: upkeep retries next second (no random drift)
   end if;
   insert into chase.posts (session_id, round_idx, pos, radius_m, value, kind, expires_at)
   values (p_session, p_round, v_pt, chase.kg('claim_radius_m'),
@@ -511,6 +511,7 @@ begin
     select * into l from chase.player_live where player_id = p_player;
     if l.player_id is null
        or l.fix_at <= now() - make_interval(secs => chase._fx('qr_fix_age_s'))
+       or l.acc > chase.kg('claim_max_acc_m')          -- a coarse Wi-Fi fix at home must not count
        or ST_Distance(l.pos, v_pt) > greatest(chase._fx('qr_near_m'), l.acc) then
       return jsonb_build_object('ok', false, 'error', 'too_far');
     end if;

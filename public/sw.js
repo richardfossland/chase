@@ -61,7 +61,19 @@ async function handleTile(event) {
 }
 
 if (typeof self !== "undefined" && self.addEventListener) {
-  self.addEventListener("install", () => self.skipWaiting());
+  self.addEventListener("install", (event) => {
+    // Chrome's Static Routing API: API calls (tick, SOS) and navigations never
+    // even wake this worker. Elsewhere the fetch handler below ignores them.
+    try {
+      event.addRoutes?.([
+        { condition: { urlPattern: "/api/*" }, source: "network" },
+        { condition: { requestMode: "navigate" }, source: "network" },
+      ]);
+    } catch {
+      /* unsupported */
+    }
+    self.skipWaiting();
+  });
   self.addEventListener("activate", (event) => {
     event.waitUntil(
       (async () => {

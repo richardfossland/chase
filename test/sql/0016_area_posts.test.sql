@@ -192,12 +192,10 @@ begin
   update chase.posts set claimed_by = pid, claimed_at = now() - interval '90 seconds' where id = p2;
   p3 := chase._spawn_post(s, 0, 'normal');
   assert p3 is not null and ST_DWithin((select pos from chase.posts where id = p3), a2, 1), 'another fixed point is used, not the one just claimed';
-  -- Only the just-claimed point is free: random spot this time.
-  p4 := chase._spawn_post(s, 0, 'normal');
-  assert p4 is not null and not ST_DWithin((select pos from chase.posts where id = p4), a1, 2), 'random spot, not the claimed point';
+  -- Only the just-claimed point is free: nothing (no drift to random spots); upkeep retries.
+  assert chase._spawn_post(s, 0, 'normal') is null, 'resting point: no post, not a random one';
   -- After the cooldown the point is used again.
   update chase.posts set claimed_at = now() - interval '61 seconds' where id = p1;
-  delete from chase.posts where id = p4;
   p4 := chase._spawn_post(s, 0, 'normal');
   assert ST_DWithin((select pos from chase.posts where id = p4), a1, 1), 'point back after 60 s';
   raise notice '0016 no farming: ok';
@@ -223,6 +221,8 @@ begin
   perform pg_temp.setfix(pid, s, 59.9106, 10.7512, 90);
   assert chase.claim_qr(pid, pg_temp.h('tok-q1'), s, 'AB2CD') ->> 'error' = 'too_far', 'stale fix at the post';
   assert chase.claim_qr(pid, pg_temp.h('tok-q1'), s, 'AB2CD') ->> 'error' = 'too_far', 'still stale';
+  perform pg_temp.setfix(pid, s, 59.9106, 10.7512, 5, 2000);
+  assert chase.claim_qr(pid, pg_temp.h('tok-q1'), s, 'AB2CD') ->> 'error' = 'too_far', 'coarse Wi-Fi fix (acc 2 km) does not count';
   -- Random per-session cards are unchanged: no presence needed.
   perform pg_temp.setfix(pid, s, 59.9125, 10.7505, 5);
   r := chase.claim_qr(pid, pg_temp.h('tok-q1'), s, v_other);

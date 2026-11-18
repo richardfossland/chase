@@ -865,7 +865,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
         />
       )}
       {status === "live" && (
-        <HotColdBar sessionId={sessionId} playerId={me.playerId} token={me.token} mode={round?.mode} role={role} now={now} sosActive={!!sosOpen || sosAcked} />
+        <HotColdBar sessionId={sessionId} playerId={me.playerId} token={me.token} mode={round?.mode} role={role} now={now} safetyActive={!!sosOpen || sosAcked || gpsLost || zoneOut || !!view?.safety.forbidden || (view?.safety.geofence ?? 0) >= 2} />
       )}
       {view?.power && (status === "live" || status === "paused") && (
         <PowerBar power={view.power} round={round} role={role} offsetMs={offsetMs} now={now} busy={puBusy} onUse={(k) => void firePowerup(k)} />

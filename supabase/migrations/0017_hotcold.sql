@@ -121,11 +121,14 @@ as $$
 declare
   v_r jsonb := chase._tick_voice(p_player, p_token_hash, p_lat, p_lng, p_acc, p_speed, p_client_ts, p_session, p_steps);
 begin
-  if coalesce((v_r ->> 'ok')::boolean, false) then
+  -- Bare i tag-runder (Smittejakt/Sisten/Sporing) og med god nøyaktighet: dataminimering
+  -- (regel 3) og ingen støyete baseline for Termometer. Runden leses fra svaret, ingen ekstra spørring.
+  if coalesce((v_r ->> 'ok')::boolean, false) and v_r -> 'round' ->> 'mode' = 'tag' then
     -- Billig: treffer bare når ankeret er >= 20 s gammelt, og bare med en fersk posisjon.
     update chase.player_live
        set hc_prev_pos = hc_pos, hc_prev_at = hc_at, hc_pos = pos, hc_at = now()
      where player_id = p_player
+       and acc <= chase.kg('claim_max_acc_m')
        and fix_at > now() - make_interval(secs => chase.kh('anchor_every_s'))
        and (hc_at is null or hc_at <= now() - make_interval(secs => chase.kh('anchor_every_s')));
   end if;

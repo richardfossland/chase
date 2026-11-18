@@ -33,7 +33,7 @@ export function HotColdBar({
   mode,
   role,
   now,
-  sosActive,
+  safetyActive,
 }: {
   sessionId: string;
   playerId: string;
@@ -41,8 +41,8 @@ export function HotColdBar({
   mode: RoundMode | null | undefined;
   role: string | undefined;
   now: number;
-  /** SOS open or acknowledged: never cover the SOS screen (rule 4), so no answer overlay. */
-  sosActive: boolean;
+  /** SOS, danger, zone-out or GPS lost: never cover those (CLAUDE.md rule 4). */
+  safetyActive: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const [usedAt, setUsedAt] = useState<number | null>(null);
@@ -111,10 +111,10 @@ export function HotColdBar({
           </span>
         )}
       </div>
-      {shown && !sosActive && (
+      {shown && !safetyActive && (
         <div
           key={shown.id}
-          className={`pointer-events-none fixed inset-0 z-40 flex flex-col items-center justify-center text-center text-white ${
+          className={`pointer-events-none fixed inset-x-4 top-28 bottom-36 z-40 flex rounded-3xl flex-col items-center justify-center text-center text-white ${
             shown.good === true ? "bg-ok/85" : shown.good === false ? "bg-black/75" : "bg-black/60"
           }`}
           role="status"

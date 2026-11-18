@@ -4,6 +4,7 @@
 // test/library.test.ts diffs LIBRARY against the SQL and runs the same vectors
 // as test/sql/0010_library_sharing.test.sql.
 
+import { GAME } from "@/lib/rules/game";
 import { pointInRing, signedDistanceToRing, type LngLat } from "@/lib/geo";
 
 export const LIBRARY = {
@@ -119,9 +120,10 @@ export function fixedPostsOk(
   });
 }
 
-/** Twin of claim_qr's presence rule for a fixed QR post: a fix at most 60 s old within max(100 m, acc). */
+/** Twin of claim_qr's presence rule for a fixed QR post: a fix younger than 60 s, accuracy
+ * within claim_max_acc_m (25 m), and within max(100 m, acc) of the post. */
 export function fixedQrPresent(distM: number, accM: number, fixAgeS: number): boolean {
-  return fixAgeS <= FIXED_POSTS.qr_fix_age_s && distM <= Math.max(FIXED_POSTS.qr_near_m, accM);
+  return fixAgeS < FIXED_POSTS.qr_fix_age_s && accM <= GAME.claim_max_acc_m && distM <= Math.max(FIXED_POSTS.qr_near_m, accM);
 }
 
 /** Same as chase._norm_posts(): 0..40 posts, lat/lng to 6 decimals, name 1..40 chars, qr posts need a unique code. null = invalid. */
