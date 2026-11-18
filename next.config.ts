@@ -2,6 +2,7 @@ import path from "node:path";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  env: { NEXT_PUBLIC_BUILD_ID: (process.env.GITHUB_SHA ?? process.env.NEXT_PUBLIC_BUILD_ID ?? "").slice(0, 8) },
   // Pin the workspace root: a stray parent lockfile (~/package-lock.json) would
   // otherwise be auto-selected and break output tracing / env resolution.
   turbopack: {
