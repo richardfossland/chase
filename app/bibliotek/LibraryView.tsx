@@ -344,6 +344,8 @@ const UseLink = ({ href }: { href: string }) => (
 
 function AreaRow({ a, onRename, onRemove }: { a: LibArea; onRename: (n: string) => Promise<boolean>; onRemove: () => void }) {
   const [editing, setEditing] = useState(false);
+  const nPosts = a.posts?.length ?? 0;
+  const nQr = a.posts?.filter((p) => p.qr).length ?? 0;
   return (
     <li className={cx(card, "flex flex-wrap items-center gap-x-4 gap-y-3")} data-testid="lib-area">
       <AreaThumb area={a} size={64} />
@@ -352,9 +354,15 @@ function AreaRow({ a, onRename, onRemove }: { a: LibArea; onRename: (n: string) 
         <p className="mt-1 flex items-center gap-2 text-sm text-txt-dim">
           <KindTag kind={a.kind} />
           <span className="truncate">{no.map.area(a.area_m2)}</span>
+          {nPosts > 0 && <span className="truncate" data-testid="lib-area-posts">· {t.postsN(nPosts)}</span>}
         </p>
       </div>
       <div className="ml-auto flex flex-none items-center gap-4">
+      {nQr > 0 && (
+        <Link href={`/bibliotek/omrade/${a.id}/utskrift`} className={cx(btn, "flex-none")}>
+          {t.printCards}
+        </Link>
+      )}
       <UseLink href={`/ny?area=${a.id}`} />
       <MoreMenu
         items={[

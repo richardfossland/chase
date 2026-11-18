@@ -38,12 +38,14 @@ import {
 } from "@/lib/geo";
 import { no } from "@/lib/locale/no";
 import { DEFAULT_PLAN, planTotalS, type Plan } from "@/lib/rules/game";
+import { POSTS_MAX, fixedPostsOk, newPostCode, type FixedPost } from "@/lib/rules/library";
 import type { StarterPack } from "@/lib/starter";
 import { loadMapLibre } from "@/lib/map/maplibre";
 import { DEFAULT_CENTER, kartverketStyle } from "@/lib/map/style";
 
 import { FLAG_SVG } from "./icons";
 import { Note, SheetFooter, card, field, segment } from "./parts";
+import { PostsEditor } from "./PostsEditor";
 import { RoundsStep } from "./RoundsStep";
 
 const t = no.wizard;
@@ -136,6 +138,26 @@ export default function Wizard() {
   const [forbidden, setForbidden] = useState<LngLat[][]>([]);
   const [assembly, setAssembly] = useState<LngLat | null>(null);
 
+  // 0016: the teacher's fixed posts for this place (placed on the map in the area step).
+  const [fixedPosts, setFixedPostsRaw] = useState<FixedPost[]>([]);
+  const [placing, setPlacing] = useState(false);
+  const [postsSaveError, setPostsSaveError] = useState<string | null>(null);
+  // The library area this one was loaded from / first saved as: «Lagre og skriv ut» updates it instead of making a copy each time.
+  const savedAreaId = useRef<string | null>(null);
+  const [postsAreaName, setPostsAreaName] = useState<string>(no.wizard.fixedPosts.areaNameDefault);
+  const postMarkers = useRef<Marker[]>([]);
+  const setFixedPosts = useCallback((next: FixedPost[]) => {
+    // QR posts get a stable code the moment they are marked, so printed cards stay valid.
+    const taken = new Set(next.flatMap((p) => (p.qr && p.code ? [p.code] : [])));
+    setFixedPostsRaw(
+      next.map((p) => {
+        if (!p.qr || p.code) return p;
+        const code = newPostCode(taken);
+        taken.add(code);
+        return { ...p, code };
+      }),
+    );
+  }, []);
   const [phone, setPhone] = useState("");
   const [plan, setPlan] = useState<Plan>(DEFAULT_PLAN);
   const [voice, setVoice] = useState(false);
@@ -193,6 +215,8 @@ export default function Wizard() {
   const areaBlocked = !areaRing || areaM2 < HARD_MIN_M2 || areaM2 > HARD_MAX_M2 || drawTarget !== null;
   const assemblyFar = !!(assembly && areaRing && signedDistanceToRing(assembly, areaRing) > ASSEMBLY_MAX_M);
   const assemblyForbidden = !!(assembly && forbidden.some((z) => pointInRing(assembly, z)));
+  // Outside the area, or in/within 10 m of a blocked area (same rule as the server: fixedPostsOk).
+  const postsOutside = areaRing ? fixedPosts.filter((p) => !fixedPostsOk([p], areaRing, forbidden)).length : 0;
 
   // Møteplass follows the area until the teacher drags it.
   useEffect(() => {
@@ -331,6 +355,49 @@ export default function Wizard() {
       m.getCanvas().style.cursor = "";
     };
   }, [ready, drawTarget]);
+
+  // Fixed posts (0016): tap adds one inside the area while «Legg til poster» is on.
+  const placingOn = placing && step === "area" && !drawTarget;
+  useEffect(() => {
+    const m = map.current;
+    if (!ready || !m || !placingOn) return;
+    const onClick = (e: { lngLat: { lng: number; lat: number } }) => {
+      const p: LngLat = [e.lngLat.lng, e.lngLat.lat];
+      if (!areaRing || !fixedPostsOk([{ lat: p[1], lng: p[0] }], areaRing, forbidden)) return;
+      setFixedPostsRaw((cur) =>
+        cur.length >= POSTS_MAX ? cur : [...cur, { lat: Math.round(p[1] * 1e6) / 1e6, lng: Math.round(p[0] * 1e6) / 1e6, kind: "normal", qr: false }],
+      );
+    };
+    m.on("click", onClick);
+    m.getCanvas().style.cursor = "crosshair";
+    return () => {
+      m.off("click", onClick);
+      m.getCanvas().style.cursor = "";
+    };
+  }, [ready, placingOn, areaRing, forbidden]);
+
+  // Numbered, draggable markers for the fixed posts. Re-created when the count or a post's kind changes, not on every drag.
+  const postsSig = fixedPosts.map((p) => (p.kind === "golden" ? "g" : "n")).join("");
+  useEffect(() => {
+    const m = map.current;
+    const lib = ml.current;
+    postMarkers.current.forEach((mk) => mk.remove());
+    postMarkers.current = [];
+    if (!ready || !m || !lib || step !== "area") return;
+    fixedPosts.forEach((p, i) => {
+      const el = document.createElement("div");
+      el.className = `grid size-9 cursor-grab place-items-center rounded-full border-[3px] border-white text-sm font-black shadow-lg ${p.kind === "golden" ? "bg-gold text-on-accent" : "bg-ink-2 text-txt"}`;
+      el.textContent = String(i + 1);
+      el.setAttribute("aria-label", no.wizard.fixedPosts.marker(i + 1));
+      const mk = new lib.Marker({ element: el, draggable: !drawTarget }).setLngLat([p.lng, p.lat]).addTo(m);
+      mk.on("dragend", () => {
+        const ll = mk.getLngLat();
+        setFixedPostsRaw((cur) => cur.map((q, j) => (j === i ? { ...q, lat: Math.round(ll.lat * 1e6) / 1e6, lng: Math.round(ll.lng * 1e6) / 1e6 } : q)));
+      });
+      postMarkers.current.push(mk);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, step, fixedPosts.length, postsSig, drawTarget]);
 
   // Møteplass marker: draggable in the area step, shown again on «Klar».
   const assemblyDrag = step === "area" && !drawTarget;
@@ -522,6 +589,7 @@ export default function Wizard() {
   function goTo(next: Step) {
     // The rounds step remounts its editors from the plan, which is always parseable.
     if (step === "rounds") setQuizValid(true);
+    setPlacing(false);
     setDir(ORDER.indexOf(next) < ORDER.indexOf(step) ? "back" : "next");
     setCollapsed(false);
     setStep(next);
@@ -538,6 +606,9 @@ export default function Wizard() {
     setDrawnArea(ring.slice(0, -1));
     setForbidden((a.forbidden?.coordinates ?? []).map((poly) => poly[0].slice(0, -1).map((p) => [p[0], p[1]] as LngLat)));
     setAssembly([a.assembly.lng, a.assembly.lat]);
+    setFixedPostsRaw(structuredClone(a.posts ?? []));
+    savedAreaId.current = a.id;
+    if (a.kind === "saved") setPostsAreaName(a.name);
     map.current?.jumpTo({ center: [a.assembly.lng, a.assembly.lat] });
   }
   function applyPlan(p: LibPlan) {
@@ -577,13 +648,42 @@ export default function Wizard() {
           : null,
         teacherPhone: phone.trim() || null,
         plan,
-        settings: voice ? { voice: true } : undefined,
+        // 0015 voice + 0016 fixed posts (always sent, so an emptied list also clears the area's saved posts).
+        settings: { ...(voice ? { voice: true } : {}), fixed_posts: fixedPosts },
       });
       identity.saveHostToken(res.sessionId, res.hostToken);
       router.replace(`/host/${res.sessionId}`);
     } catch (e) {
       setCreateError(errorText(e instanceof ApiError ? e.code : "default"));
       setCreating(false);
+    }
+  }
+
+  // 0016: keep the area with its posts in the library and go print the QR cards.
+  async function savePostsAndPrint() {
+    if (!teacherKey || !areaRing || !assembly) return;
+    setPostsSaveError(null);
+    const name = postsAreaName.trim() || no.wizard.fixedPosts.areaNameDefault;
+    const data = {
+      boundary: { type: "Polygon", coordinates: [closeRing(areaRing).map((p) => [p[0], p[1]])] },
+      assembly: { type: "Point", coordinates: [assembly[0], assembly[1]] },
+      forbidden: forbidden.length ? { type: "MultiPolygon", coordinates: forbidden.map((z) => [closeRing(z).map((p) => [p[0], p[1]])]) } : null,
+      posts: fixedPosts,
+    };
+    const fail = (e: unknown) => setPostsSaveError(e instanceof ApiError && e.code === "full" ? no.wizard.fixedPosts.saveFull : no.wizard.fixedPosts.saveFailed);
+    try {
+      let id = savedAreaId.current;
+      try {
+        id = (await api.library.save(teacherKey, "area", name, data, id)).id;
+      } catch (e) {
+        // The loaded area is gone (deleted elsewhere): make a new one.
+        if (!(id && e instanceof ApiError && e.code === "not_found")) throw e;
+        id = (await api.library.save(teacherKey, "area", name, data, null)).id;
+      }
+      savedAreaId.current = id;
+      router.push(`/bibliotek/omrade/${id}/utskrift`);
+    } catch (e) {
+      fail(e);
     }
   }
 
@@ -604,7 +704,7 @@ export default function Wizard() {
   const stepCls = dir === "back" ? "t-step-back" : "t-step-next";
   const allChecked = checks.every(Boolean);
   const idx = STEPS.indexOf(step);
-  const areaNextBlocked = areaBlocked || !assembly || assemblyFar || assemblyForbidden;
+  const areaNextBlocked = areaBlocked || !assembly || assemblyFar || assemblyForbidden || postsOutside > 0;
 
   const head = (title: string) => (
     <div className="flex items-start gap-3">
@@ -842,6 +942,20 @@ export default function Wizard() {
                           </>
                         )}
 
+                        {!drawTarget && areaRing && (
+                          <PostsEditor
+                            posts={fixedPosts}
+                            placing={placing}
+                            outside={postsOutside}
+                            canSave={!!teacherKey && !areaBlocked && !!assembly && !assemblyFar && postsOutside === 0}
+                            saveError={postsSaveError}
+                            name={postsAreaName}
+                            onName={setPostsAreaName}
+                            onPlacing={setPlacing}
+                            onChange={setFixedPosts}
+                            onSavePrint={savePostsAndPrint}
+                          />
+                        )}
                         {areaWarning && !drawTarget && <Note tone="warn">{areaWarning}</Note>}
                         {assemblyFar && !drawTarget && <Note tone="danger">{t.assembly.far}</Note>}
                         {assemblyForbidden && !drawTarget && <Note tone="danger">{t.assembly.inBlocked}</Note>}

@@ -35,7 +35,7 @@ export default function QrClaim({ sessionId, code }: { sessionId: string; code: 
       .then((r) => setState({ kind: "ok", r }))
       .catch((e) => {
         const err = e instanceof ApiError ? e.code : "";
-        setState({ kind: "error", text: err === "bad_code" ? t.qrBad : err === "not_now" ? t.qrNotNow : t.qrError });
+        setState({ kind: "error", text: err === "bad_code" ? t.qrBad : err === "not_now" ? t.qrNotNow : err === "too_far" ? t.qrTooFar : t.qrError });
       });
   }, [code, sessionId]);
 

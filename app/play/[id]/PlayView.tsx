@@ -479,7 +479,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
         const code2 = e instanceof ApiError ? e.code : "";
         setFlash({
           id: Date.now(),
-          text: code2 === "bad_code" ? t.qrBad : code2 === "not_now" ? t.qrNotNow : t.qrError,
+          text: code2 === "bad_code" ? t.qrBad : code2 === "not_now" ? t.qrNotNow : code2 === "too_far" ? t.qrTooFar : t.qrError,
           tone: "dim",
         });
       } finally {
