@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { createGpsFilter, type GpsFilter } from "@/lib/client/gpsFilter";
+
 // GPS for the player client (PLAN §9.5). One source of truth for the current
 // fix, whether it comes from navigator.geolocation or the simulator
 // (`?simgps=1`, PLAN §11.1). Positions stay in memory only — never stored,
@@ -28,12 +30,26 @@ export interface GpsState {
 }
 
 /** Real device GPS. Restarts the watch when the page becomes visible again
- * (iOS stops GPS while the screen is locked). */
+ * (iOS stops GPS while the screen is locked). Fixes pass through gpsFilter
+ * (jump rejection + smoothing; raw acc/speed are kept). */
 export function useDeviceGps(): GpsState {
   const [fix, setFix] = useState<Fix | null>(null);
   const [error, setError] = useState<GpsError>(null);
   const [started, setStarted] = useState(false);
   const watchId = useRef<number | null>(null);
+  const filter = useRef<GpsFilter | null>(null);
+
+  const accept = useCallback((p: GeolocationPosition) => {
+    filter.current ??= createGpsFilter();
+    const out = filter.current.push({
+      lat: p.coords.latitude,
+      lng: p.coords.longitude,
+      acc: p.coords.accuracy,
+      speed: p.coords.speed ?? null,
+      at: Date.now(),
+    });
+    if (out) setFix(out); // null = a held-back jump; the last fix stays (and is re-sent)
+  }, []);
 
   const watch = useCallback(() => {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
@@ -44,18 +60,12 @@ export function useDeviceGps(): GpsState {
     watchId.current = navigator.geolocation.watchPosition(
       (p) => {
         setError(null);
-        setFix({
-          lat: p.coords.latitude,
-          lng: p.coords.longitude,
-          acc: p.coords.accuracy,
-          speed: p.coords.speed ?? null,
-          at: Date.now(),
-        });
+        accept(p);
       },
       (e) => setError(e.code === e.PERMISSION_DENIED ? "denied" : "unavailable"),
       { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 },
     );
-  }, []);
+  }, [accept]);
 
   const start = useCallback(() => {
     setStarted(true);
@@ -78,8 +88,7 @@ export function useDeviceGps(): GpsState {
     const refresh = setInterval(() => {
       if (document.visibilityState !== "visible" || Date.now() - lastAt.current < REFRESH_AFTER_MS) return;
       navigator.geolocation?.getCurrentPosition(
-        (p) =>
-          setFix({ lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy, speed: p.coords.speed ?? null, at: Date.now() }),
+        accept,
         () => {},
         { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 },
       );
@@ -91,7 +100,7 @@ export function useDeviceGps(): GpsState {
       if (watchId.current !== null) navigator.geolocation.clearWatch(watchId.current);
       watchId.current = null;
     };
-  }, [started, watch]);
+  }, [started, watch, accept]);
 
   return { fix, error, start, started };
 }

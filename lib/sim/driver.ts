@@ -12,6 +12,7 @@ import { relayBatons } from "@/lib/rules/relay";
 import { powerupCheck } from "@/lib/rules/events";
 
 import { fixDelayMs } from "@/lib/client/live";
+import { createGpsFilter, type GpsFilter } from "@/lib/client/gpsFilter";
 
 import { rng } from "./rng";
 import { WsLink, type ServerLike, type WsCtor } from "./ws";
@@ -45,6 +46,8 @@ export interface SimPlayer {
   lastFixSentAt?: number;
   /** A fix held back by the 1.9 s client throttle (useLiveTick's `pending`). */
   deferredFix?: ReturnType<typeof setTimeout> | null;
+  /** Same jump rejection + smoothing as useDeviceGps. */
+  gps?: GpsFilter;
   /** Terminal close (ended/kicked/...): the bot is finished. */
   done?: boolean;
   /** 4003 (kill switch): HTTP only from now on. */
@@ -230,8 +233,15 @@ export function startSwarm(opts: SwarmOptions) {
       p.lastFix = null;
       return;
     }
-    p.lastFix = s.fix;
-    p.lastFixSampledAt = now;
+    // Mirror of useDeviceGps: a held-back jump keeps the last fix (re-sent as the phone does).
+    p.gps ??= createGpsFilter();
+    const out = p.gps.push({ ...s.fix, at: now });
+    if (out) {
+      p.lastFix = { lat: out.lat, lng: out.lng, acc: out.acc, speed: out.speed };
+      p.lastFixSampledAt = now;
+    }
+    const fx = p.lastFix;
+    if (!fx) return;
     if (p.link?.connected && !p.httpOnly) {
       wsTick(p, "interval");
       return;
@@ -239,21 +249,21 @@ export function startSwarm(opts: SwarmOptions) {
     if (wsOn) stats.ws!.httpFallbackTicks++;
     const t0 = Date.now();
     const r = opts.transport.tick
-      ? await opts.transport.tick(sessionId, p, s.fix)
+      ? await opts.transport.tick(sessionId, p, fx)
       : await opts.transport.post(`/api/s/${sessionId}/tick`, {
           playerId: p.playerId,
           token: p.token,
-          lat: s.fix.lat,
-          lng: s.fix.lng,
-          acc: s.fix.acc,
-          speed: s.fix.speed,
+          lat: fx.lat,
+          lng: fx.lng,
+          acc: fx.acc,
+          speed: fx.speed,
           ts: Date.now(),
           // 0012: a moving bot reports ~2 steps per second it moved.
-          steps: s.fix.speed > 0.5 ? Math.round(s.fix.speed * (tickMs / 1000) * 1.3) : undefined,
+          steps: fx.speed > 0.5 ? Math.round(fx.speed * (tickMs / 1000) * 1.3) : undefined,
         });
     stats.latencies.push(Date.now() - t0);
     if (stats.latencies.length > 200_000) stats.latencies.splice(0, 100_000);
-    if (r.status === 200) await applyView(p, r.data, s.fix);
+    if (r.status === 200) await applyView(p, r.data, fx);
     else err(`tick_${r.status}_${String(r.data.error ?? "")}`);
   }
 
