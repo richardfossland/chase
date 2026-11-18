@@ -196,8 +196,14 @@ export const host = {
     nickname: "Kallenavn",
     perNickname: "Per kallenavn (alfabetisk, ikke rangert)",
     noPlayers: "Ingen elever å vise.",
+    alarmBanner: (n: number) => `${n} aktive varsler i økta`,
+    closeAndSee: "Lukk og se",
+    satOut: "satt over",
+    satOutNote: "Elever som satt over er med i tabellen, men ikke i snitt og median.",
+    modeFallback: "Runde",
+    modes: { zone_only: "Krympende sone", teams: "Lagjakt" } as Record<string, string>,
     privacy:
-      "Denne rapporten lages i nettleseren din og lagres ikke av Chase. Den inneholder ingen posisjoner, kart eller ruter. Etter at økta er avsluttet slettes elevdataene, så skriv ut eller lagre PDF nå om du vil ha den.",
+      "Rapporten lages i nettleseren din og lagres ikke av Chase. Den har ingen posisjoner, kart eller ruter. Tallene slettes senest 24 timer etter at økta er avsluttet, så skriv ut eller lagre PDF nå om du vil ha den.",
   },
   crowd: {
     summary: (ok: number, warn: number, bad: number) => `${ok} god GPS · ${warn} svak · ${bad} uten`,

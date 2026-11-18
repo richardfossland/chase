@@ -34,13 +34,15 @@ begin
 
   select min(r.started_at), max(r.ended_at) into v_start, v_end
     from chase.rounds r where r.session_id = v_s.id and r.started_at is not null;
-  v_start := coalesce(v_start, v_s.created_at);
-  v_end   := coalesce(v_s.ended_at, now());
+  v_end := coalesce(v_s.ended_at, now());
 
   return jsonb_build_object(
     'ok', true,
-    'started_at', v_start,
-    'duration_s', greatest(0, extract(epoch from (v_end - v_start))::int),
+    'started_at', coalesce(v_start, v_s.created_at),
+    -- Som _end_session: første rundestart til nå/slutt, minus pauser. null uten startet runde.
+    'duration_s', case when v_start is null then null else
+      greatest(0, extract(epoch from (v_end - v_start - v_s.pause_accum
+        - coalesce(case when v_s.ended_at is null then now() - v_s.paused_at end, interval '0')))::int) end,
     'rounds', coalesce((
       select jsonb_agg(jsonb_build_object(
                'idx', r.idx,
@@ -56,10 +58,11 @@ begin
                'posts', st.posts,
                'catches', st.catches,
                'quiz_right', st.quiz_right,
-               'badges', coalesce(cardinality(st.badges), 0))
+               'badges', coalesce(cardinality(st.badges), 0),
+               'sat_out', p.role = 'sitting_out')
              order by lower(p.nickname))
         from chase.players p join chase.player_stats st on st.player_id = p.id
-       where p.session_id = v_s.id and p.status = 'active' and p.role <> 'referee'), '[]'::jsonb));
+       where p.session_id = v_s.id and p.status <> 'kicked' and p.role <> 'referee'), '[]'::jsonb));
 end;
 $$;
 

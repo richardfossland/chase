@@ -520,18 +520,15 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
         )}
       </Sheet>
 
-      {reportOpen && <HostReport load={hs.loadReport} onClose={() => setReportOpen(false)} />}
+      {reportOpen && <HostReport load={hs.loadReport} alarms={snap.alarms} onClose={() => setReportOpen(false)} />}
 
-      {confirm && (
+      {confirm && !reportOpen && (
         <ConfirmDialog
           message={confirm.message}
           confirmLabel={confirm.label}
           danger={confirm.danger}
           extraLabel={confirm.report ? no.report.button : undefined}
-          onExtra={() => {
-            setConfirm(null);
-            setReportOpen(true);
-          }}
+          onExtra={() => setReportOpen(true)}
           onCancel={() => setConfirm(null)}
           onConfirm={() => {
             const run = confirm.run;

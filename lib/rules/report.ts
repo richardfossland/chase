@@ -9,11 +9,13 @@ export interface ReportPlayer {
   catches: number;
   quiz_right: number;
   badges: number;
+  /** «Satt over»: vises i tabellen, men teller ikke i snitt og median. */
+  sat_out?: boolean;
 }
 
 export interface ReportData {
   started_at: string;
-  duration_s: number;
+  duration_s: number | null;
   rounds: { idx: number; mode: string; duration_s: number | null }[];
   players: ReportPlayer[];
 }
@@ -41,9 +43,11 @@ export function sortAlphabetical(players: ReportPlayer[]): ReportPlayer[] {
   return [...players].sort((a, b) => a.nickname.localeCompare(b.nickname, "nb", { sensitivity: "base" }));
 }
 
-export function summarize(players: ReportPlayer[]) {
+export function summarize(all: ReportPlayer[]) {
+  const players = all.filter((p) => !p.sat_out);
   return {
-    count: players.length,
+    count: all.length,
+    counted: players.length,
     activeMin: stat(players.map((p) => p.active_s / 60)),
     distance: stat(players.map((p) => p.distance_m)),
     posts: stat(players.map((p) => p.posts)),

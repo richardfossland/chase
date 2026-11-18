@@ -5,9 +5,10 @@
 // localStorage), og forsvinner når dialogen lukkes. Ingen posisjoner, kart eller
 // ruter, og tabellen er alfabetisk, ikke rangert (PLAN § 0).
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import type { HostAlarm } from "@/lib/client/api";
 import { no } from "@/lib/locale/no";
 import { sortAlphabetical, summarize, type ReportData } from "@/lib/rules/report";
 import { buttonClass } from "@/lib/client/ui";
@@ -16,7 +17,24 @@ const r = no.report;
 const nf = new Intl.NumberFormat("nb-NO", { maximumFractionDigits: 1 });
 const fmt = (n: number) => nf.format(n);
 
-export function HostReport({ load, onClose }: { load: () => Promise<ReportData | null>; onClose: () => void }) {
+export function HostReport({ load, alarms, onClose }: { load: () => Promise<ReportData | null>; alarms: HostAlarm[]; onClose: () => void }) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  // Regel 4: rapporten dekker skjermen, så aktive varsler vises øverst, og en ny SOS lukker den.
+  const open = alarms.filter((a) => !a.resolved && !a.acked);
+  const seenSos = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    const ids = new Set(alarms.filter((a) => a.kind === "sos" && !a.resolved && !a.acked).map((a) => a.id));
+    if (seenSos.current && [...ids].some((id) => !seenSos.current!.has(id))) onClose();
+    seenSos.current = ids;
+  }, [alarms, onClose]);
+
+  // Fokus inn i rapporten ved åpning, tilbake til utløseren ved lukking.
+  useEffect(() => {
+    const prev = document.activeElement as HTMLElement | null;
+    rootRef.current?.focus();
+    return () => prev?.focus?.();
+  }, []);
+
   const [data, setData] = useState<ReportData | null>(null);
   const [failed, setFailed] = useState(false);
   const [tick, setTick] = useState(0);
@@ -59,8 +77,16 @@ export function HostReport({ load, onClose }: { load: () => Promise<ReportData |
   ];
 
   return createPortal(
-    <div className="report-portal fixed inset-0 z-[60] overflow-y-auto bg-white p-5 text-black" role="dialog" aria-modal="true" aria-label={r.title} data-testid="host-report">
+    <div ref={rootRef} tabIndex={-1} className="report-portal fixed outline-none inset-0 z-[60] overflow-y-auto bg-white p-5 text-black" role="dialog" aria-modal="true" aria-label={r.title} data-testid="host-report">
       <div className="mx-auto max-w-3xl">
+        {open.length > 0 && (
+          <div className="no-print mb-4 flex items-center justify-between gap-3 rounded-xl bg-red-700 p-3 font-bold text-white" role="alert" data-testid="report-alarm">
+            <span>{r.alarmBanner(open.length)}</span>
+            <button className="min-h-11 rounded-lg bg-white px-4 text-red-800" onClick={onClose}>
+              {r.closeAndSee}
+            </button>
+          </div>
+        )}
         <div className="no-print mb-4 flex gap-2">
           <button className={buttonClass("primary", "md")} disabled={!data} onClick={() => window.print()} data-testid="report-print">
             {r.print}
@@ -86,14 +112,14 @@ export function HostReport({ load, onClose }: { load: () => Promise<ReportData |
               <dt className="font-bold">{r.date}</dt>
               <dd>{new Date(data.started_at).toLocaleDateString("nb-NO", { day: "numeric", month: "long", year: "numeric" })}</dd>
               <dt className="font-bold">{r.duration}</dt>
-              <dd>{r.minutes(Math.round(data.duration_s / 60))}</dd>
+              <dd>{data.duration_s == null ? "–" : r.minutes(Math.round(data.duration_s / 60))}</dd>
               <dt className="font-bold">{r.students}</dt>
               <dd>{sum.count}</dd>
               <dt className="font-bold">{r.rounds}</dt>
               <dd>
                 {data.rounds.length
                   ? data.rounds.map((x) => (
-                      <div key={x.idx}>{r.roundLine(x.idx + 1, no.host.round.modes[x.mode] ?? x.mode, x.duration_s ? Math.round(x.duration_s / 60) : null)}</div>
+                      <div key={x.idx}>{r.roundLine(x.idx + 1, r.modes[x.mode] ?? no.host.round.modes[x.mode] ?? r.modeFallback, x.duration_s ? Math.round(x.duration_s / 60) : null)}</div>
                     ))
                   : r.noRounds}
               </dd>
@@ -138,7 +164,7 @@ export function HostReport({ load, onClose }: { load: () => Promise<ReportData |
                 <tbody>
                   {players.map((p, i) => (
                     <tr key={`${p.nickname}-${i}`} className="break-inside-avoid border-b border-gray-300">
-                      <td className="py-1 pr-2 font-bold">{p.nickname}</td>
+                      <td className="py-1 pr-2 font-bold">{p.nickname}{p.sat_out && <span className="ml-1 font-normal">({r.satOut})</span>}</td>
                       <td className="px-1 text-right">{fmt(p.active_s / 60)}</td>
                       <td className="px-1 text-right">{fmt(p.distance_m)}</td>
                       <td className="px-1 text-right">{p.posts}</td>
@@ -154,6 +180,7 @@ export function HostReport({ load, onClose }: { load: () => Promise<ReportData |
             )}
 
             <p className="mt-6 border-t border-gray-400 pt-2 text-xs">{r.privacy}</p>
+            {players.some((p) => p.sat_out) && <p className="mt-1 text-xs">{r.satOutNote}</p>}
           </article>
         )}
       </div>

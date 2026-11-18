@@ -30,4 +30,10 @@ describe("øktrapport", () => {
     expect(s.activeMin.avg).toBe(20);
     expect(s.posts.total).toBe(6);
   });
+  it("satt over teller ikke i snitt og median, men i antall", () => {
+    const s = summarize([p("a", { active_s: 600 }), p("b", { active_s: 1200 }), p("c", { active_s: 0, sat_out: true })]);
+    expect(s.count).toBe(3);
+    expect(s.counted).toBe(2);
+    expect(s.activeMin.median).toBe(15);
+  });
 });
