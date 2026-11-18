@@ -1,8 +1,11 @@
 "use client";
 
+import { useReportBoundaryError } from "@/lib/client/ErrorReporter";
+
 // Catches errors in the root layout itself. Must render its own <html>/<body>
 // and cannot rely on the app stylesheet, so it is fully inline-styled.
-export default function GlobalError({ reset }: { error: Error; reset: () => void }) {
+export default function GlobalError({ error, reset }: { error: Error; reset: () => void }) {
+  useReportBoundaryError(error);
   return (
     <html lang="no">
       <body

@@ -2,11 +2,13 @@
 
 import Link from "next/link";
 
+import { useReportBoundaryError } from "@/lib/client/ErrorReporter";
 import { Button, buttonClass } from "@/lib/client/ui";
 import { IconAlert, IconRepeat } from "@/lib/client/ui/icons";
 import { no } from "@/lib/locale/no";
 
-export default function Error({ reset }: { error: Error; reset: () => void }) {
+export default function Error({ error, reset }: { error: Error; reset: () => void }) {
+  useReportBoundaryError(error);
   return (
     <main className="m-rise-in mx-auto flex min-h-dvh max-w-md flex-col items-center justify-center px-4 text-center">
       <span className="grid size-16 place-items-center rounded-full bg-warn/15 text-warn-text">
