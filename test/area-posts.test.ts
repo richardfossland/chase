@@ -56,7 +56,10 @@ describe("fixed posts (0016)", () => {
   it("fixed QR presence", () => {
     expect(fixedQrPresent(50, 5, 10)).toBe(true);
     expect(fixedQrPresent(150, 5, 10)).toBe(false);
-    expect(fixedQrPresent(150, 200, 10)).toBe(true); // max(100 m, acc)
+    expect(fixedQrPresent(150, 200, 10)).toBe(false); // coarse fix (Wi-Fi at home) never counts
+    expect(fixedQrPresent(90, 25, 10)).toBe(true); // acc at the limit
+    expect(fixedQrPresent(90, 26, 10)).toBe(false);
+    expect(fixedQrPresent(50, 5, 60)).toBe(false); // exactly 60 s: rejected, like SQL
     expect(fixedQrPresent(50, 5, 61)).toBe(false); // stale fix
   });
   it("tunables match chase._fx()", () => {
