@@ -186,7 +186,7 @@ export const QUIZ_PACKS: QuizPack[] = [
       Q("Hvilket år fikk Norge sin grunnlov?", ["1814", "1905", "1945"], 0),
       Q("Hva betyr ordet demokrati?", ["Kongestyre", "Folkestyre", "Militærstyre"], 1),
       Q("Hvilken av disse er ikke en av de tre statsmaktene?", ["Den lovgivende makt", "Den dømmende makt", "Den religiøse makt"], 2),
-      Q("Hvem vedtar lovene i Norge?", ["Stortinget", "Høyesterett", "Fylkesmannen"], 0),
+      Q("Hvem vedtar lovene i Norge?", ["Stortinget", "Høyesterett", "Statsforvalteren"], 0),
       Q("Fra hvilken alder kan du stemme ved stortingsvalg?", ["16 år", "18 år", "21 år"], 1),
       Q("I hvilket år fikk kvinner allmenn stemmerett i Norge?", ["1814", "1913", "1945"], 1),
       Q("Hva betyr ytringsfrihet?", ["Rett til å si og skrive meningene sine", "Rett til å slippe skole", "Rett til å ta andres eiendeler"], 0),
