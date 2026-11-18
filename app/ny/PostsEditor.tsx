@@ -1,7 +1,5 @@
 "use client";
 
-import { useState } from "react";
-
 import { Button, cx } from "@/lib/client/ui";
 import { IconFlag, IconPrinter, IconX } from "@/lib/client/ui/icons";
 import { no } from "@/lib/locale/no";
@@ -17,13 +15,14 @@ export function PostsEditor(props: {
   placing: boolean;
   outside: number;
   canSave: boolean;
-  saveError: boolean;
+  saveError: string | null;
+  name: string;
+  onName: (name: string) => void;
   onPlacing: (on: boolean) => void;
   onChange: (posts: FixedPost[]) => void;
-  onSavePrint: (name: string) => void;
+  onSavePrint: () => void;
 }) {
   const { posts, placing } = props;
-  const [name, setName] = useState<string>(t.areaNameDefault);
   const set = (i: number, patch: Partial<FixedPost>) => props.onChange(posts.map((p, j) => (j === i ? { ...p, ...patch } : p)));
   const hasQr = posts.some((p) => p.qr);
 
@@ -98,15 +97,15 @@ export function PostsEditor(props: {
         <div className="mt-4 flex flex-wrap items-end gap-2">
           <label className="min-w-40 flex-1 text-sm font-bold">
             {t.areaName}
-            <input className={cx(field, "mt-1")} value={name} maxLength={80} onChange={(e) => setName(e.target.value)} />
+            <input className={cx(field, "mt-1")} value={props.name} maxLength={80} onChange={(e) => props.onName(e.target.value)} />
           </label>
-          <Button variant="secondary" size="sm" className="min-h-12 gap-2" onClick={() => props.onSavePrint(name)} data-testid="save-print">
+          <Button variant="secondary" size="sm" className="min-h-12 gap-2" onClick={props.onSavePrint} data-testid="save-print">
             <IconPrinter size={18} />
             {t.savePrint}
           </Button>
         </div>
       )}
-      {props.saveError && <Note tone="danger">{t.saveFailed}</Note>}
+      {props.saveError && <Note tone="danger">{props.saveError}</Note>}
     </section>
   );
 }

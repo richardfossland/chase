@@ -38,7 +38,7 @@ import {
 } from "@/lib/geo";
 import { no } from "@/lib/locale/no";
 import { DEFAULT_PLAN, planTotalS, type Plan } from "@/lib/rules/game";
-import { POSTS_MAX, newPostCode, type FixedPost } from "@/lib/rules/library";
+import { POSTS_MAX, fixedPostsOk, newPostCode, type FixedPost } from "@/lib/rules/library";
 import type { StarterPack } from "@/lib/starter";
 import { loadMapLibre } from "@/lib/map/maplibre";
 import { DEFAULT_CENTER, kartverketStyle } from "@/lib/map/style";
@@ -141,7 +141,10 @@ export default function Wizard() {
   // 0016: the teacher's fixed posts for this place (placed on the map in the area step).
   const [fixedPosts, setFixedPostsRaw] = useState<FixedPost[]>([]);
   const [placing, setPlacing] = useState(false);
-  const [postsSaveError, setPostsSaveError] = useState(false);
+  const [postsSaveError, setPostsSaveError] = useState<string | null>(null);
+  // The library area this one was loaded from / first saved as: «Lagre og skriv ut» updates it instead of making a copy each time.
+  const savedAreaId = useRef<string | null>(null);
+  const [postsAreaName, setPostsAreaName] = useState<string>(no.wizard.fixedPosts.areaNameDefault);
   const postMarkers = useRef<Marker[]>([]);
   const setFixedPosts = useCallback((next: FixedPost[]) => {
     // QR posts get a stable code the moment they are marked, so printed cards stay valid.
@@ -212,7 +215,8 @@ export default function Wizard() {
   const areaBlocked = !areaRing || areaM2 < HARD_MIN_M2 || areaM2 > HARD_MAX_M2 || drawTarget !== null;
   const assemblyFar = !!(assembly && areaRing && signedDistanceToRing(assembly, areaRing) > ASSEMBLY_MAX_M);
   const assemblyForbidden = !!(assembly && forbidden.some((z) => pointInRing(assembly, z)));
-  const postsOutside = areaRing ? fixedPosts.filter((p) => !pointInRing([p.lng, p.lat], areaRing)).length : 0;
+  // Outside the area, or in/within 10 m of a blocked area (same rule as the server: fixedPostsOk).
+  const postsOutside = areaRing ? fixedPosts.filter((p) => !fixedPostsOk([p], areaRing, forbidden)).length : 0;
 
   // Møteplass follows the area until the teacher drags it.
   useEffect(() => {
@@ -359,7 +363,7 @@ export default function Wizard() {
     if (!ready || !m || !placingOn) return;
     const onClick = (e: { lngLat: { lng: number; lat: number } }) => {
       const p: LngLat = [e.lngLat.lng, e.lngLat.lat];
-      if (!areaRing || !pointInRing(p, areaRing)) return;
+      if (!areaRing || !fixedPostsOk([{ lat: p[1], lng: p[0] }], areaRing, forbidden)) return;
       setFixedPostsRaw((cur) =>
         cur.length >= POSTS_MAX ? cur : [...cur, { lat: Math.round(p[1] * 1e6) / 1e6, lng: Math.round(p[0] * 1e6) / 1e6, kind: "normal", qr: false }],
       );
@@ -370,7 +374,7 @@ export default function Wizard() {
       m.off("click", onClick);
       m.getCanvas().style.cursor = "";
     };
-  }, [ready, placingOn, areaRing]);
+  }, [ready, placingOn, areaRing, forbidden]);
 
   // Numbered, draggable markers for the fixed posts. Re-created when the count or a post's kind changes, not on every drag.
   const postsSig = fixedPosts.map((p) => (p.kind === "golden" ? "g" : "n")).join("");
@@ -603,6 +607,8 @@ export default function Wizard() {
     setForbidden((a.forbidden?.coordinates ?? []).map((poly) => poly[0].slice(0, -1).map((p) => [p[0], p[1]] as LngLat)));
     setAssembly([a.assembly.lng, a.assembly.lat]);
     setFixedPostsRaw(structuredClone(a.posts ?? []));
+    savedAreaId.current = a.id;
+    if (a.kind === "saved") setPostsAreaName(a.name);
     map.current?.jumpTo({ center: [a.assembly.lng, a.assembly.lat] });
   }
   function applyPlan(p: LibPlan) {
@@ -654,19 +660,30 @@ export default function Wizard() {
   }
 
   // 0016: keep the area with its posts in the library and go print the QR cards.
-  async function savePostsAndPrint(name: string) {
+  async function savePostsAndPrint() {
     if (!teacherKey || !areaRing || !assembly) return;
-    setPostsSaveError(false);
+    setPostsSaveError(null);
+    const name = postsAreaName.trim() || no.wizard.fixedPosts.areaNameDefault;
+    const data = {
+      boundary: { type: "Polygon", coordinates: [closeRing(areaRing).map((p) => [p[0], p[1]])] },
+      assembly: { type: "Point", coordinates: [assembly[0], assembly[1]] },
+      forbidden: forbidden.length ? { type: "MultiPolygon", coordinates: forbidden.map((z) => [closeRing(z).map((p) => [p[0], p[1]])]) } : null,
+      posts: fixedPosts,
+    };
+    const fail = (e: unknown) => setPostsSaveError(e instanceof ApiError && e.code === "full" ? no.wizard.fixedPosts.saveFull : no.wizard.fixedPosts.saveFailed);
     try {
-      const r = await api.library.save(teacherKey, "area", name.trim() || no.wizard.fixedPosts.areaNameDefault, {
-        boundary: { type: "Polygon", coordinates: [closeRing(areaRing).map((p) => [p[0], p[1]])] },
-        assembly: { type: "Point", coordinates: [assembly[0], assembly[1]] },
-        forbidden: forbidden.length ? { type: "MultiPolygon", coordinates: forbidden.map((z) => [closeRing(z).map((p) => [p[0], p[1]])]) } : null,
-        posts: fixedPosts,
-      });
-      router.push(`/bibliotek/omrade/${r.id}/utskrift`);
-    } catch {
-      setPostsSaveError(true);
+      let id = savedAreaId.current;
+      try {
+        id = (await api.library.save(teacherKey, "area", name, data, id)).id;
+      } catch (e) {
+        // The loaded area is gone (deleted elsewhere): make a new one.
+        if (!(id && e instanceof ApiError && e.code === "not_found")) throw e;
+        id = (await api.library.save(teacherKey, "area", name, data, null)).id;
+      }
+      savedAreaId.current = id;
+      router.push(`/bibliotek/omrade/${id}/utskrift`);
+    } catch (e) {
+      fail(e);
     }
   }
 
@@ -932,6 +949,8 @@ export default function Wizard() {
                             outside={postsOutside}
                             canSave={!!teacherKey && !areaBlocked && !!assembly && !assemblyFar && postsOutside === 0}
                             saveError={postsSaveError}
+                            name={postsAreaName}
+                            onName={setPostsAreaName}
                             onPlacing={setPlacing}
                             onChange={setFixedPosts}
                             onSavePrint={savePostsAndPrint}

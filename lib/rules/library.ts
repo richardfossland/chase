@@ -4,6 +4,8 @@
 // test/library.test.ts diffs LIBRARY against the SQL and runs the same vectors
 // as test/sql/0010_library_sharing.test.sql.
 
+import { pointInRing, signedDistanceToRing, type LngLat } from "@/lib/geo";
+
 export const LIBRARY = {
   recent_keep: 5,
   saved_max: 50,
@@ -80,7 +82,47 @@ export interface FixedPost {
   code?: string;
 }
 
-const round6 = (x: number) => Math.sign(x) * (Math.round(Math.abs(x) * 1e6) / 1e6);
+/** Tunables of the fixed posts: twin of chase._fx() (0016). */
+export const FIXED_POSTS = {
+  claim_cooldown_s: 60,
+  qr_near_m: 100,
+  qr_fix_age_s: 60,
+} as const;
+
+/**
+ * 6 decimals, half away from zero, on the decimal text: the same as
+ * round(numeric, 6) in SQL (floating point would round 10.0000005 either way).
+ */
+export function round6(x: number): number {
+  const s = Math.abs(x).toString();
+  if (s.includes("e")) return Math.sign(x) * Number(Math.abs(x).toFixed(6)) + 0;
+  const [i, f = ""] = s.split(".");
+  if (f.length <= 6) return x + 0;
+  let n = Number(i + f.slice(0, 6)); // < 2^53, exact
+  if (f.charCodeAt(6) >= 53) n += 1;
+  return Math.sign(x) * (n / 1e6) + 0;
+}
+
+/**
+ * Twin of chase._posts_ok(): every post inside the area and not in, or within
+ * `forbiddenM` (kg post_forbidden_m = 10) of, a forbidden ring.
+ */
+export function fixedPostsOk(
+  posts: readonly { lat: number; lng: number }[],
+  area: readonly LngLat[],
+  forbidden: readonly (readonly LngLat[])[],
+  forbiddenM = 10,
+): boolean {
+  return posts.every((p) => {
+    const pt: LngLat = [p.lng, p.lat];
+    return pointInRing(pt, area) && forbidden.every((z) => signedDistanceToRing(pt, z) > forbiddenM);
+  });
+}
+
+/** Twin of claim_qr's presence rule for a fixed QR post: a fix at most 60 s old within max(100 m, acc). */
+export function fixedQrPresent(distM: number, accM: number, fixAgeS: number): boolean {
+  return fixAgeS <= FIXED_POSTS.qr_fix_age_s && distM <= Math.max(FIXED_POSTS.qr_near_m, accM);
+}
 
 /** Same as chase._norm_posts(): 0..40 posts, lat/lng to 6 decimals, name 1..40 chars, qr posts need a unique code. null = invalid. */
 export function normPosts(p: unknown): FixedPost[] | null {

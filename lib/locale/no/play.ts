@@ -158,6 +158,7 @@ export const play = {
     qrAlready: "Du har tatt denne posten før i runden.",
     qrNotNow: "QR-poster teller bare i Postjakt.",
     qrBad: "Ukjent kode. Prøv igjen.",
+    qrTooFar: "Du må stå ved posten, og GPS må være på. Prøv igjen om litt.",
     qrError: "Fikk ikke kontakt. Prøv igjen.",
     dirs: ["nord", "nordøst", "øst", "sørøst", "sør", "sørvest", "vest", "nordvest"],
   },

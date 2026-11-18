@@ -8,8 +8,11 @@
 --     brukt», library_save/get, share_create/get/copy.
 --   * Session start: create_session takes settings.fixed_posts (same shape).
 --     GPS posts are then spawned from that list in Postjakt instead of random
---     points (golden only if the list has golden ones); qr posts become
---     physical_qr posts with their stable code and plan.qr_posts is raised.
+--     points (golden only if the list has golden ones; a point claimed in the
+--     last 60 s is not respawned); qr posts become physical_qr posts with their
+--     stable code, plan.qr_posts is raised, and claiming one requires a fresh
+--     fix within max(100 m, acc) of the post (else too_far).
+--     Autosave only updates posts on kind 'recent' areas.
 --     An empty/missing list changes nothing (random posts as before).
 --   * Additive: old Worker works against the new DB (new columns have defaults,
 --     all wrappers pass through when the new keys are absent).
@@ -98,8 +101,9 @@ begin
 end;
 $$;
 
--- Every post inside the boundary (edge counts as inside).
-create or replace function chase._posts_inside(p_posts jsonb, p_boundary geography)
+-- Every post inside the boundary (edge counts as inside) and not in, or within
+-- kg('post_forbidden_m') of, a forbidden area (twin: fixedPostsOk in lib/rules/library.ts).
+create or replace function chase._posts_ok(p_posts jsonb, p_boundary geography, p_forbidden geography)
 returns boolean
 language sql
 immutable
@@ -107,7 +111,23 @@ set search_path = chase, extensions, public
 as $$
   select not exists (
     select 1 from jsonb_array_elements(p_posts) x
-     where not ST_Covers(p_boundary, ST_SetSRID(ST_MakePoint((x ->> 'lng')::float8, (x ->> 'lat')::float8), 4326)::geography));
+     cross join lateral (select ST_SetSRID(ST_MakePoint((x ->> 'lng')::float8, (x ->> 'lat')::float8), 4326)::geography as pt) g
+     where not ST_Covers(p_boundary, g.pt)
+        or (p_forbidden is not null and ST_DWithin(p_forbidden, g.pt, chase.kg('post_forbidden_m'))));
+$$;
+
+-- Tunables of the fixed posts (twin: FIXED_POSTS in lib/rules/library.ts, diffed by test/area-posts.test.ts).
+create or replace function chase._fx(p_name text)
+returns real
+language sql
+immutable
+set search_path = chase, extensions, public
+as $$
+  select case p_name
+    when 'claim_cooldown_s' then 60    -- a claimed fixed GPS post does not respawn at once (no farming)
+    when 'qr_near_m'        then 100   -- a fixed QR post is claimed within max(this, acc) of the post …
+    when 'qr_fix_age_s'     then 60    -- … by a player whose last fix is at most this old
+  end::real;
 $$;
 
 -- ───────────────────────── autosave: remember the posts with the area ─────────────────────────
@@ -142,7 +162,10 @@ begin
      and coalesce(ST_Equals(a.forbidden::geometry, s.forbidden::geometry), a.forbidden is null and s.forbidden is null)
    order by a.kind = 'saved' desc, a.last_used_at desc limit 1;
   if v_a is not null then
-    update chase.areas set last_used_at = now(), posts = case when v_has then v_posts else posts end where id = v_a;
+    -- Only «sist brukt» follows the session; a saved area (printed cards!) changes by an explicit save only.
+    update chase.areas set last_used_at = now(),
+           posts = case when v_has and kind = 'recent' then v_posts else posts end
+     where id = v_a;
   else
     insert into chase.areas (teacher_id, name, kind, boundary, forbidden, assembly_point, posts)
     values (s.teacher_id, v_n, 'recent', s.boundary, s.forbidden, s.assembly_point, v_posts);
@@ -167,9 +190,10 @@ end;
 $$;
 
 -- ───────────────────────── create_session: fixed posts ─────────────────────────
--- plan.qr_posts is raised by the number of qr posts BEFORE the base creates
--- its random cards, so the base numbering (1..k) is renumbered after the
--- fixed ones: fixed qr post i keeps n = its index in the list.
+-- The base creates its random cards first (numbered 1..k); afterwards they are
+-- renumbered to come after the fixed ones, the fixed qr cards are inserted
+-- (fixed qr post i keeps n = its index in the list) and plan.qr_posts is raised
+-- by the number of fixed qr posts.
 
 do $$
 begin
@@ -216,7 +240,7 @@ begin
     return jsonb_build_object('ok', false, 'error', 'bad_posts');
   end if;
   select * into v_geo from chase._area_geo(p_boundary, p_assembly, p_forbidden);
-  if v_geo.err is null and not chase._posts_inside(v_posts, v_geo.boundary) then
+  if v_geo.err is null and not chase._posts_ok(v_posts, v_geo.boundary, v_geo.forbidden) then
     return jsonb_build_object('ok', false, 'error', 'bad_posts');
   end if;
   v_settings := v_settings || jsonb_build_object('fixed_posts', v_posts);
@@ -276,6 +300,7 @@ declare
   v_kind   text := case when p_kind = 'golden' then 'golden' else 'normal' end;
   v_pt     geography;
   v_id     uuid;
+  v_free   bigint;
 begin
   select settings -> 'fixed_posts' into v_fx from chase.sessions where id = p_session;
   if jsonb_typeof(v_fx) is distinct from 'array' or jsonb_array_length(v_fx) = 0
@@ -285,22 +310,33 @@ begin
     return chase._spawn_post_base(p_session, p_round, p_kind);
   end if;
 
-  select g.pt into v_pt
+  -- Points without an open post; of those, skip any claimed in the last
+  -- claim_cooldown_s (a pupil must not farm the spot they just claimed).
+  with c as (
+  select g.pt,
+         exists (select 1 from chase.posts o
+                  where o.session_id = p_session and o.round_idx = p_round and o.claimed_at is not null
+                    and o.claimed_at > now() - make_interval(secs => chase._fx('claim_cooldown_s'))
+                    and o.pos is not null and ST_DWithin(o.pos, g.pt, 2)) as cooling,
+         (exists (select 1 from chase.player_live l join chase.players p on p.id = l.player_id
+                   where l.session_id = p_session and p.status = 'active'
+                     and l.fix_at > now() - interval '30 seconds'
+                     and ST_DWithin(l.pos, g.pt, chase.kg('post_min_player_m'))))::int as near_player
     from jsonb_array_elements(v_fx) x
     cross join lateral (select ST_SetSRID(ST_MakePoint((x ->> 'lng')::float8, (x ->> 'lat')::float8), 4326)::geography as pt) g
    where not coalesce((x ->> 'qr')::boolean, false) and coalesce(x ->> 'kind', 'normal') = v_kind
      and not exists (select 1 from chase.posts o
                       where o.session_id = p_session and o.round_idx = p_round and o.claimed_by is null
                         and o.pos is not null and (o.expires_at is null or o.expires_at > now())
-                        and ST_DWithin(o.pos, g.pt, 2))
-   order by (exists (select 1 from chase.player_live l join chase.players p on p.id = l.player_id
-                      where l.session_id = p_session and p.status = 'active'
-                        and l.fix_at > now() - interval '30 seconds'
-                        and ST_DWithin(l.pos, g.pt, chase.kg('post_min_player_m'))))::int,
-            random()
-   limit 1;
-  if v_pt is null then
+                        and ST_DWithin(o.pos, g.pt, 2)))
+  select (select count(*) from c),
+         (select pt from c where not cooling order by near_player, random() limit 1)
+    into v_free, v_pt;
+  if v_free = 0 then
     return null;     -- every fixed post of this kind is already open
+  end if;
+  if v_pt is null then
+    return chase._spawn_post_base(p_session, p_round, p_kind);   -- all just claimed: random spot this time
   end if;
   insert into chase.posts (session_id, round_idx, pos, radius_m, value, kind, expires_at)
   values (p_session, p_round, v_pt, chase.kg('claim_radius_m'),
@@ -372,7 +408,7 @@ begin
     return jsonb_build_object('ok', false, 'error', 'bad_posts');
   end if;
   select * into v_geo from chase._area_geo(p_data -> 'boundary', p_data -> 'assembly', p_data -> 'forbidden');
-  if v_geo.err is null and not chase._posts_inside(v_posts, v_geo.boundary) then
+  if v_geo.err is null and not chase._posts_ok(v_posts, v_geo.boundary, v_geo.forbidden) then
     return jsonb_build_object('ok', false, 'error', 'bad_posts');
   end if;
   v_r := chase._library_save_posts(p_key_hash, p_kind, p_id, p_name, p_data - 'posts');
@@ -432,6 +468,54 @@ begin
      where a.id = (v_r ->> 'area_id')::uuid and h.code = upper(coalesce(p_code, ''));
   end if;
   return v_r;
+end;
+$$;
+
+-- ───────────────────────── claim_qr: fixed QR cards need presence ─────────────────────────
+-- A fixed card's code is stable and printed, so it could be reused from home in
+-- later sessions. Claiming one therefore needs a fix at most qr_fix_age_s old
+-- within max(qr_near_m, acc) of the post, else too_far. Random per-session
+-- cards are unchanged.
+
+do $$
+begin
+  if to_regprocedure('chase._claim_qr_posts(uuid,text,uuid,text)') is null then
+    alter function chase.claim_qr(uuid, text, uuid, text) rename to _claim_qr_posts;
+  end if;
+end $$;
+
+create or replace function chase.claim_qr(
+  p_player     uuid,
+  p_token_hash text,
+  p_session    uuid,
+  p_code       text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = chase, extensions, public
+as $$
+declare
+  v_code text := upper(regexp_replace(coalesce(p_code, ''), '[^A-Za-z0-9]', '', 'g'));
+  v_x    jsonb;
+  v_pt   geography;
+  l      chase.player_live;
+begin
+  select x into v_x
+    from chase.sessions s, jsonb_array_elements(case when jsonb_typeof(s.settings -> 'fixed_posts') = 'array'
+                                                     then s.settings -> 'fixed_posts' else '[]'::jsonb end) x
+   where s.id = p_session and coalesce((x ->> 'qr')::boolean, false) and x ->> 'code' = v_code
+   limit 1;
+  if v_x is not null
+     and exists (select 1 from chase.players where id = p_player and token_hash = p_token_hash and session_id = p_session) then
+    v_pt := ST_SetSRID(ST_MakePoint((v_x ->> 'lng')::float8, (v_x ->> 'lat')::float8), 4326)::geography;
+    select * into l from chase.player_live where player_id = p_player;
+    if l.player_id is null
+       or l.fix_at <= now() - make_interval(secs => chase._fx('qr_fix_age_s'))
+       or ST_Distance(l.pos, v_pt) > greatest(chase._fx('qr_near_m'), l.acc) then
+      return jsonb_build_object('ok', false, 'error', 'too_far');
+    end if;
+  end if;
+  return chase._claim_qr_posts(p_player, p_token_hash, p_session, p_code);
 end;
 $$;
 
