@@ -651,6 +651,21 @@ create function pg_temp.pid(p_tag text, p_i int) returns uuid language sql as
 create function pg_temp.act(p_session uuid, p_tag text, p_action text, p_payload jsonb default '{}') returns jsonb language sql as
   $$ select chase.host_action(p_session, pg_temp.h('host-' || p_tag), p_action, p_payload) $$;
 
+-- Array of objects without the random ids / created_at, sorted, so contents can be compared exactly.
+create function pg_temp.norm(j jsonb) returns jsonb language sql as $$
+  select case when jsonb_typeof(j) = 'array'
+              then (select coalesce(jsonb_agg(x order by x::text), '[]'::jsonb) from (select e - 'id' - 'created_at' as x from jsonb_array_elements(j) e) q)
+              else j end
+$$;
+-- Posts: random spawns (position, value and id from random()/gen_random_uuid, which differ between
+-- the rolled-back old run and the new one) are compared by count; every post that exists before the call
+-- (same id in both answers) is compared exactly.
+create function pg_temp.common(a jsonb, b jsonb) returns jsonb language sql as $$
+  select case when jsonb_typeof(a) = 'array' and jsonb_typeof(b) = 'array'
+              then pg_temp.norm((select coalesce(jsonb_agg(e), '[]'::jsonb) from jsonb_array_elements(a) e
+                                  where e ->> 'id' in (select x ->> 'id' from jsonb_array_elements(b) x)))
+              else a end
+$$;
 create function pg_temp.alen(j jsonb) returns int language sql as $$ select case when jsonb_typeof(j) = 'array' then jsonb_array_length(j) else -1 end $$;
 
 -- Everything tick writes for one player (and the session's event count).
@@ -659,8 +674,12 @@ create function pg_temp.state(p_player uuid) returns jsonb language sql as $$
     'live',   (select to_jsonb(l) from chase.player_live l where l.player_id = p_player),
     'stats',  (select to_jsonb(st) from chase.player_stats st where st.player_id = p_player),
     'player', (select to_jsonb(p) from chase.players p where p.id = p_player),
-    'events', (select count(*) from chase.events e where e.session_id = (select session_id from chase.players where id = p_player)),
-    'alarms', (select count(*) from chase.alarms a where a.player_id = p_player),
+    'events', (select coalesce(jsonb_agg(jsonb_build_object('t', e.type, 'a', e.actor_player_id, 'to', e.target_player_id, 'p', e.payload)
+                                         order by e.type, e.payload::text), '[]'::jsonb)
+                 from chase.events e where e.session_id = (select session_id from chase.players where id = p_player)),
+    'alarms', (select coalesce(jsonb_agg(jsonb_build_object('k', a.kind, 'l', a.level, 'pos', a.pos::text, 'acked', a.acked_at is not null)
+                                         order by a.kind), '[]'::jsonb)
+                 from chase.alarms a where a.player_id = p_player),
     'claims', (select count(*) from chase.post_claims c where c.player_id = p_player))
 $$;
 
@@ -674,15 +693,17 @@ declare
   a jsonb; b jsonb; sa jsonb; sb jsonb;
 begin
   begin
+    perform setseed(0.42);
     a := chase._old_tick(pl, th, p_lat, p_lng, p_acc, null, p_ts, null, p_steps);
     sa := pg_temp.state(pl);
     raise exception 'undo' using errcode = 'XX999';
   exception when sqlstate 'XX999' then null;
   end;
+  perform setseed(0.42);
   b := chase.tick(pl, th, p_lat, p_lng, p_acc, null, p_ts, null, p_steps);
   sb := pg_temp.state(pl);
-  -- Posts spawn at random places with random ids (lazy upkeep in _advance): compare them by count.
-  assert pg_temp.alen(a -> 'posts') = pg_temp.alen(b -> 'posts'), 'tick posts count';
+  -- Post ids are random (gen_random_uuid): compare posts by content without them.
+  assert pg_temp.alen(a -> 'posts') = pg_temp.alen(b -> 'posts') and pg_temp.common(a -> 'posts', b -> 'posts') is not distinct from pg_temp.common(b -> 'posts', a -> 'posts'), format('tick %s/%s posts differ:%s old: %s%s new: %s', p_tag, p_i, E'\n', a -> 'posts', E'\n', b -> 'posts');
   assert (a - 'posts') = (b - 'posts'), format('tick %s/%s answers differ:%s old: %s%s new: %s', p_tag, p_i, E'\n', a, E'\n', b);
   assert sa = sb, format('tick %s/%s rows differ:%s old: %s%s new: %s', p_tag, p_i, E'\n', sa, E'\n', sb);
   return b;
@@ -695,16 +716,18 @@ declare
   a jsonb; b jsonb; ca int; cb int;
 begin
   begin
+    perform setseed(0.42);
     a := chase._old_host_snapshot(p_session, hh, p_geo);
     ca := (select count(*) from chase.alarms where session_id = p_session);
     raise exception 'undo' using errcode = 'XX999';
   exception when sqlstate 'XX999' then null;
   end;
+  perform setseed(0.42);
   b := chase.host_snapshot(p_session, hh, p_geo);
   cb := (select count(*) from chase.alarms where session_id = p_session);
   assert ca = cb, 'snapshot alarms written: ' || ca || ' vs ' || cb;
-  assert jsonb_array_length(a -> 'alarms') = jsonb_array_length(b -> 'alarms'), 'snapshot alarm strip';
-  assert pg_temp.alen(a -> 'posts') = pg_temp.alen(b -> 'posts'), 'snapshot posts count';
+  assert pg_temp.norm(a -> 'alarms') is not distinct from pg_temp.norm(b -> 'alarms'), format('snapshot alarms differ:%s old: %s%s new: %s', E'\n', a -> 'alarms', E'\n', b -> 'alarms');
+  assert pg_temp.alen(a -> 'posts') = pg_temp.alen(b -> 'posts') and pg_temp.common(a -> 'posts', b -> 'posts') is not distinct from pg_temp.common(b -> 'posts', a -> 'posts'), format('snapshot posts differ:%s old: %s%s new: %s', E'\n', a -> 'posts', E'\n', b -> 'posts');
   assert (a - 'alarms' - 'posts') = (b - 'alarms' - 'posts'), format('snapshot differs:%s old: %s%s new: %s', E'\n', a - 'alarms' - 'posts', E'\n', b - 'alarms' - 'posts');
   return b;
 end $$;
@@ -764,7 +787,7 @@ begin
   r := pg_temp.cmp_snap(s, 'pj');
   assert (pg_temp.act(s, 'pj', 'ceremony_start') ->> 'ok')::boolean, 'ceremony';
   r := pg_temp.cmp_tick('pj', 1);
-  assert r ->> 'status' = 'ceremony' and r -> 'summary' is not null or r ? 'ceremony', 'ceremony tick: ' || r::text;
+  assert r ->> 'status' = 'ceremony' and r ? 'ceremony', 'ceremony tick: ' || r::text;
   r := pg_temp.cmp_snap(s, 'pj');
   assert r ->> 'status' = 'ceremony' and r -> 'ceremony' <> 'null'::jsonb and r ? 'referee_awards', 'ceremony snapshot: ' || r::text;
   update chase.players set status = 'left' where id = pg_temp.pid('pj', 3);
@@ -773,6 +796,8 @@ begin
   perform chase.end_session(s, pg_temp.h('host-pj'), true);
   r := pg_temp.cmp_tick('pj', 1);
   assert r ->> 'error' = 'ended', 'ended: ' || r::text;
+  r := pg_temp.cmp_snap(s, 'pj');
+  assert r ->> 'status' = 'ended' or r ? 'error', 'ended snapshot: ' || r::text;
   raise notice '0018 posts: ok';
 end $$;
 
@@ -829,7 +854,8 @@ begin
       assert (pg_temp.cmp_tick('tz1', 1) -> 'team') is not null, 'team view in tick';
     end if;
     if k = 3 then
-      assert pg_temp.cmp_tick('tz3', 1) -> 'relay' is not null or true, 'relay tick';
+      r := pg_temp.cmp_tick('tz3', 1);
+      assert r -> 'round' ->> 'mode' = 'relay' and r -> 'team' is not null, 'relay tick: ' || r::text;
     end if;
     if k = 4 then
       -- An event in flight (entries in the snapshot) and mission confirmations.
@@ -857,19 +883,33 @@ end $$;
 
 -- ───────────────────────── tick_batch runs through the flat tick ─────────────────────────
 do $$
-declare s uuid; r jsonb;
+declare s uuid; r jsonb; g int; olds jsonb[4];
 begin
   s := pg_temp.mk('fb', '{"rounds":[{"mode":"tag","duration_s":300}],"countdown_s":0}', 4);
   perform pg_temp.act(s, 'fb', 'start');
   perform chase._advance(s);
-  r := chase.tick_batch(s, (select jsonb_agg(jsonb_build_object('player', pg_temp.pid('fb', g), 'token_hash', pg_temp.h('tok-fb-' || g),
-                                                               'lat', 59.91045 + g * 0.00003, 'lng', 10.7509, 'acc', 5, 'steps', 5))
-                              from generate_series(1, 4) g));
+  -- First tick everyone once, then compare each batch entry with what a lone old-chain tick gives
+  -- at the same positions (rolled back), so the others' positions in the view are identical.
+  for g in 1 .. 4 loop perform pg_temp.cmp_tick('fb', g, 59.91045 + g * 0.00003, 10.7509); end loop;
+  for g in 1 .. 4 loop
+    begin
+      perform setseed(0.42);
+      olds[g] := chase._old_tick(pg_temp.pid('fb', g), pg_temp.h('tok-fb-' || g), 59.91045 + g * 0.00003, 10.7509, 5, null, null, s, 5);
+      raise exception 'undo' using errcode = 'XX999';
+    exception when sqlstate 'XX999' then null;
+    end;
+  end loop;
+  perform setseed(0.42);
+  r := chase.tick_batch(s, (select jsonb_agg(jsonb_build_object('player', pg_temp.pid('fb', q.n), 'token_hash', pg_temp.h('tok-fb-' || q.n),
+                                                               'lat', 59.91045 + q.n * 0.00003, 'lng', 10.7509, 'acc', 5, 'steps', 5))
+                              from generate_series(1, 4) q(n)));
   assert (r ->> 'ok')::boolean and jsonb_array_length(r -> 'results') = 4, 'batch: ' || r::text;
-  assert (select bool_and((e -> 'r' ->> 'ok')::boolean and e -> 'r' ? 'voice' and e -> 'r' -> 'stats' ? 'steps') from jsonb_array_elements(r -> 'results') e), 'every entry has the full answer';
-  assert (select count(*) from chase.player_live where session_id = s and hc_at is not null) = 4, 'batch moves the anchors';
-  -- Each entry equals what a lone tick returns (old chain, rolled back) for a second batch.
-  update chase.player_live set last_client_ts = null where session_id = s;
+  for g in 1 .. 4 loop
+    assert (select e -> 'r' from jsonb_array_elements(r -> 'results') e where (e ->> 'player')::uuid = pg_temp.pid('fb', g)) - 'posts'
+         = olds[g] - 'posts', format('batch entry %s differs from a lone tick:%s batch: %s%s lone: %s', g, E'\n',
+           (select e -> 'r' from jsonb_array_elements(r -> 'results') e where (e ->> 'player')::uuid = pg_temp.pid('fb', g)), E'\n', olds[g]);
+  end loop;
+  assert (select count(*) from chase.player_live where session_id = s and hc_at is not null) = 4, 'anchors set';
   assert chase.host_snapshot_svc(s) ->> 'ok' = 'true', 'snapshot_svc';
   raise notice '0018 tick_batch: ok';
 end $$;

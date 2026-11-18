@@ -21,14 +21,19 @@
 -- 8-args tick og 3-args host_snapshot på nytt, 0006/0007/0009/0012/0015/0017 pakker
 -- dem inn igjen (guardene gir dem nytt navn når mellomleddet mangler), og dette
 -- skriptet lager den flate versjonen på nytt og dropper mellomleddene. Sluttilstanden
--- er altså den samme etter hver full kjøring. Kjøres 0012/0015/0017 alene etter 0018,
--- ender tick som en tynn wrapper rundt den flate (harmløst: samme resultat) til 0018
--- kjøres på nytt.
+-- er altså den samme etter hver full kjøring.
+--
+-- VIKTIG: migrasjonene kan bare kjøres som HELE rekken i rekkefølge. 0004 og 0012 skal
+-- aldri kjøres alene etter 0018: 0012 finner da ingen 8-args tick å gi nytt navn, og
+-- lager en 9-args wrapper rundt den droppede _tick_base, så alle tick-kall feiler. Det
+-- samme gjelder 0015/0017 alene (de pakker flat tick inn i en wrapper). Ved feil: kjør
+-- hele rekken på nytt.
 --
 -- Funksjonene med flere lag i 0016 (create_session, _spawn_post, library_*, share_*,
 -- claim_qr) er med vilje IKKE flatet her, se PR-beskrivelsen.
 
 set search_path = chase, extensions, public;
+set local lock_timeout = '3s';
 
 -- ───────────────────────── tick (flat) ─────────────────────────
 
@@ -572,3 +577,5 @@ drop function if exists chase._host_snapshot_base(uuid, text, boolean);
 
 revoke execute on all functions in schema chase from public, anon, authenticated;
 grant execute on all functions in schema chase to service_role;
+
+notify pgrst, 'reload schema';
