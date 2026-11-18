@@ -10,8 +10,8 @@
 # role, like in Supabase. Tears the container down on exit.
 set -euo pipefail
 
-CONTAINER="chase-testdb"
-PORT=55443
+CONTAINER="${CHASE_TESTDB_CONTAINER:-chase-testdb}"
+PORT="${CHASE_TESTDB_PORT:-55443}"
 PW=postgres
 IMG="${CHASE_TEST_IMAGE:-public.ecr.aws/supabase/postgres:17.6.1.106}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
