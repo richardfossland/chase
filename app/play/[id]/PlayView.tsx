@@ -19,6 +19,7 @@ import { no } from "@/lib/locale/no";
 import { bearing, haversine } from "@/lib/geo";
 import { addEventLayer, addMeLayer, addPostsLayer, addRadarLayer, addSessionLayers, addTeamLayer, addZoneLayer, boundsOf, setEvent, setMe, setPosts, setRadar, setTeam, setZone } from "@/lib/map/layers";
 import { loadMapLibre } from "@/lib/map/maplibre";
+import { registerTileCache } from "@/lib/map/tile-cache";
 import { kartverketStyle } from "@/lib/map/style";
 import { formatClock, phaseLeftS, type PlanRound } from "@/lib/rules/game";
 import { catchQr, parseCatch } from "@/lib/rules/tag";
@@ -59,6 +60,7 @@ import {
 } from "@/lib/client/ui/icons";
 import { BADGE_ICONS, IconBaton, IconDrop, IconFox, IconMedal, IconSteps, type Icon } from "./icons";
 
+registerTileCache();
 const t = no.play;
 
 function roundTitle(r: { mode: string; variant?: string | null; zone?: unknown; zoned?: boolean; team?: boolean }): string {
