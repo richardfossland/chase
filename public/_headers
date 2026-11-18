@@ -1,0 +1,10 @@
+# Cloudflare Workers Assets: gjelder bare statiske filer som serveres direkte
+# (/vendor/*, /sw.js, /_next/static/*). Sider og API får headere fra
+# next.config.ts via lib/security/headers.ts. Hold verdiene i takt.
+/*
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=(self), camera=(self), microphone=(), payment=(), usb=(), screen-wake-lock=(self)
+/sw.js
+  Content-Security-Policy: default-src 'self'; connect-src 'self' https://cache.kartverket.no; object-src 'none'; base-uri 'none'

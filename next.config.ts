@@ -1,8 +1,23 @@
 import path from "node:path";
 import type { NextConfig } from "next";
+import { securityHeaders } from "./lib/security/headers";
 
 const nextConfig: NextConfig = {
   env: { NEXT_PUBLIC_BUILD_ID: (process.env.GITHUB_SHA ?? process.env.NEXT_PUBLIC_BUILD_ID ?? "").slice(0, 8) },
+  // Sikkerhetsheadere på alt Next svarer på (sider + API). Statiske filer fra
+  // Cloudflare Assets går utenom Next og dekkes av public/_headers.
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: securityHeaders({
+          supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
+          liveWsBase: process.env.NEXT_PUBLIC_LIVE_WS_BASE,
+          dev: process.env.NODE_ENV !== "production",
+        }),
+      },
+    ];
+  },
   // Pin the workspace root: a stray parent lockfile (~/package-lock.json) would
   // otherwise be auto-selected and break output tracing / env resolution.
   turbopack: {
