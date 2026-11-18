@@ -4,7 +4,7 @@
 // test/hotcold.test.ts diffs HOTCOLD against the SQL and runs the same vectors as
 // test/sql/0017_hotcold.test.sql.
 
-import type { RoundMode } from "./game";
+import { GAME, type RoundMode } from "./game";
 
 export const HOTCOLD = {
   sniff_m: 50,
@@ -13,7 +13,13 @@ export const HOTCOLD = {
   thermo_min_s: 15,
   thermo_max_s: 60,
   tie_m: 5,
+  fresh_s: 10,
 } as const;
+
+/** Same as the SQL: a fix worse than kg('claim_max_acc_m') gives `bad_acc`; such targets are skipped. */
+export function accOk(accM: number): boolean {
+  return accM <= GAME.claim_max_acc_m;
+}
 
 export const HOTCOLD_KINDS = ["sniff", "thermo"] as const;
 export type HotColdKind = (typeof HOTCOLD_KINDS)[number];

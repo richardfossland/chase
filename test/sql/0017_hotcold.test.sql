@@ -139,6 +139,23 @@ begin
   -- ... the hunter is 51 m? No: 100 m away now → no.
   assert not (r ->> 'near')::boolean, 'prey sees hunter 100 m away: ' || r::text;
 
+  -- Bad GPS: my own acc over 25 m → bad_acc; a target with acc over 25 m is skipped.
+  update chase.player_live set hc_used_at = null, acc = 30 where player_id = pg_temp.pid('hc', v_h);
+  assert pg_temp.hc(s, 'hc', v_h, 'sniff') ->> 'error' = 'bad_acc', 'own bad acc';
+  update chase.player_live set acc = 25 where player_id = pg_temp.pid('hc', v_h);
+  assert (pg_temp.hc(s, 'hc', v_h, 'sniff') ->> 'ok')::boolean, 'acc 25 is fine';
+  update chase.player_live set hc_used_at = null where player_id = pg_temp.pid('hc', v_h);
+  update chase.player_live set acc = 30 where session_id = s and player_id <> pg_temp.pid('hc', v_h);
+  assert pg_temp.hc(s, 'hc', v_h, 'sniff') ->> 'error' = 'no_target', 'targets with bad acc skipped';
+  update chase.player_live set acc = 5 where session_id = s;
+  -- Fix 15 s old (fresh for tick, too old here): no_fix for me, no_target when it is the targets' fix.
+  update chase.player_live set fix_at = now() - interval '15 seconds' where player_id = pg_temp.pid('hc', v_h);
+  assert pg_temp.hc(s, 'hc', v_h, 'sniff') ->> 'error' = 'no_fix', '15 s old own fix';
+  update chase.player_live set fix_at = now() where player_id = pg_temp.pid('hc', v_h);
+  update chase.player_live set fix_at = now() - interval '15 seconds' where session_id = s and player_id <> pg_temp.pid('hc', v_h);
+  assert pg_temp.hc(s, 'hc', v_h, 'sniff') ->> 'error' = 'no_target', '15 s old target fix';
+  update chase.player_live set fix_at = now() where session_id = s;
+
   -- Stale target: nobody with a fresh fix → no_target.
   update chase.player_live set hc_used_at = null where player_id = pg_temp.pid('hc', v_h);
   update chase.player_live set fix_at = now() - interval '120 seconds' where player_id <> pg_temp.pid('hc', v_h) and session_id = s;

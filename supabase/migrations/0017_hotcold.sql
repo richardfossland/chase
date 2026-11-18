@@ -42,6 +42,7 @@ as $$
     when 'thermo_min_s'   then 15   -- eldste anker må være minst så gammelt
     when 'thermo_max_s'   then 60   -- ...og høyst så gammelt
     when 'tie_m'          then 5    -- «omtrent likt» under dette (eller GPS-nøyaktighet)
+    when 'fresh_s'        then 10   -- egen og målets fix må være så fersk
   end::real;
 $$;
 
@@ -84,11 +85,13 @@ $$;
 
 -- ───────────────────────── ankre i player_live ─────────────────────────
 
-alter table chase.player_live add column if not exists hc_pos       geography(Point, 4326);
-alter table chase.player_live add column if not exists hc_at        timestamptz;
-alter table chase.player_live add column if not exists hc_prev_pos  geography(Point, 4326);
-alter table chase.player_live add column if not exists hc_prev_at   timestamptz;
-alter table chase.player_live add column if not exists hc_used_at   timestamptz;   -- nedkjøling, ingen posisjon
+set local lock_timeout = '2s';   -- player_live brukes av tick: heller feile raskt enn å stå i kø
+alter table chase.player_live
+  add column if not exists hc_pos       geography(Point, 4326),
+  add column if not exists hc_at        timestamptz,
+  add column if not exists hc_prev_pos  geography(Point, 4326),
+  add column if not exists hc_prev_at   timestamptz,
+  add column if not exists hc_used_at   timestamptz;   -- nedkjøling, ingen posisjon
 
 -- ───────────────────────── tick: flytt ankeret ─────────────────────────
 
@@ -183,8 +186,11 @@ begin
   end if;
 
   select * into v_l from chase.player_live where player_id = p_player;
-  if v_l.player_id is null or v_l.fix_at < now() - make_interval(secs => chase.kt('fix_fresh_s')) then
+  if v_l.player_id is null or v_l.fix_at < now() - make_interval(secs => chase.kh('fresh_s')) then
     return jsonb_build_object('ok', false, 'error', 'no_fix');
+  end if;
+  if v_l.acc > chase.kg('claim_max_acc_m') then
+    return jsonb_build_object('ok', false, 'error', 'bad_acc');
   end if;
   v_left := chase.kh('cooldown_s') - extract(epoch from now() - v_l.hc_used_at);
   if v_l.hc_used_at is not null and v_left > 0 then
@@ -196,7 +202,8 @@ begin
   select l.pos into v_tpos
     from chase.players q join chase.player_live l on l.player_id = q.id
    where q.session_id = p_session and q.status = 'active' and q.role = v_want and q.id <> p_player
-     and l.fix_at > now() - make_interval(secs => chase.kt('fix_fresh_s'))
+     and l.fix_at > now() - make_interval(secs => chase.kh('fresh_s'))
+     and l.acc <= chase.kg('claim_max_acc_m')
    order by ST_Distance(l.pos, v_l.pos), q.id
    limit 1;
   if v_tpos is null then

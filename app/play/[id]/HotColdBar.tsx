@@ -33,6 +33,7 @@ export function HotColdBar({
   mode,
   role,
   now,
+  sosActive,
 }: {
   sessionId: string;
   playerId: string;
@@ -40,6 +41,8 @@ export function HotColdBar({
   mode: RoundMode | null | undefined;
   role: string | undefined;
   now: number;
+  /** SOS open or acknowledged: never cover the SOS screen (rule 4), so no answer overlay. */
+  sosActive: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const [usedAt, setUsedAt] = useState<number | null>(null);
@@ -74,8 +77,8 @@ export function HotColdBar({
           const w = Number((e.payload as { wait_s?: number } | null)?.wait_s);
           if (Number.isFinite(w)) setUsedAt(Date.now() - (HOTCOLD.cooldown_s - w) * 1000);
         }
-        cue("lost");
-        setErr(h.errors[code] ?? no.play.qrError);
+        if (code !== "cooldown") cue("lost");
+        setErr(h.errors[code] ?? h.errors.generic);
       } finally {
         setBusy(false);
       }
@@ -108,7 +111,7 @@ export function HotColdBar({
           </span>
         )}
       </div>
-      {shown && (
+      {shown && !sosActive && (
         <div
           key={shown.id}
           className={`pointer-events-none fixed inset-0 z-40 flex flex-col items-center justify-center text-center text-white ${

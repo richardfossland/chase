@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { HOTCOLD, cooldownLeftS, hotColdCheck, sniffAnswer, thermoAnswer } from "@/lib/rules/hotcold";
+import { HOTCOLD, accOk, cooldownLeftS, hotColdCheck, sniffAnswer, thermoAnswer } from "@/lib/rules/hotcold";
 
 const sql = readFileSync(new URL("../supabase/migrations/0017_hotcold.sql", import.meta.url), "utf8");
 
@@ -37,6 +37,9 @@ describe("hot/cold rules", () => {
     expect(hotColdCheck("sniff", "tag", "sitting_out")).toBe("not_useful");
     expect(hotColdCheck("sniff", "tag", "referee")).toBe("not_useful");
     expect(hotColdCheck("radar", "tag", "hunter")).toBe("bad_kind");
+  });
+  it("bad GPS accuracy limit", () => {
+    expect([5, 25, 25.1, 60].map(accOk)).toEqual([true, true, false, false]);
   });
   it("cooldown", () => {
     expect(cooldownLeftS(null, 1000)).toBe(0);

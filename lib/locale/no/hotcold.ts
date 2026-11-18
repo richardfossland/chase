@@ -21,6 +21,8 @@ export const hotcold = {
       no_target: "Fant ingen å måle mot",
       no_baseline: "Gå litt først, så virker den",
       no_fix: "Venter på GPS",
+      bad_acc: "GPS-en er for upresis nå",
+      generic: "Det gikk ikke, prøv igjen",
       blackout: "Radaren er av",
       not_now: "Ikke nå",
       not_useful: "Passer ikke nå",
