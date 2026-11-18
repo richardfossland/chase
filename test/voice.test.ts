@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { pickVoice, speak, speakLines, unlockVoice, voiceLinesFor, type VoiceView } from "@/lib/client/voice";
+import { HOLD_MS, mayInterrupt, pickVoice, resetVoiceState, speak, speakKey, speakLines, unlockVoice, voiceLinesFor, type VoiceView } from "@/lib/client/voice";
 
 const base = (o: Partial<VoiceView> = {}): VoiceView => ({
   status: "live",
@@ -76,6 +76,7 @@ describe("pickVoice", () => {
 });
 
 describe("speak", () => {
+  beforeEach(() => resetVoiceState());
   afterEach(() => vi.unstubAllGlobals());
 
   it("kaster aldri når speechSynthesis mangler", () => {
@@ -119,6 +120,8 @@ describe("speak", () => {
     vi.stubGlobal("SpeechSynthesisUtterance", U);
     vi.stubGlobal("window", {
       speechSynthesis: {
+        speaking: true,
+        pending: false,
         cancel: () => calls.push("cancel"),
         speak: (u: U) => calls.push(`speak:${u.lang}:${u.text}`),
         getVoices: () => [],
@@ -126,5 +129,45 @@ describe("speak", () => {
     });
     speakLines(["go"]);
     expect(calls).toEqual(["cancel", "speak:nb-NO:Kjør!"]);
+  });
+});
+
+describe("prioritet", () => {
+  beforeEach(() => resetVoiceState());
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("mayInterrupt: lavere prioritet kutter ikke en høyere innen holdetiden", () => {
+    expect(mayInterrupt(null, 5, 0)).toBe(true);
+    expect(mayInterrupt({ rank: 0, at: 1000 }, 3, 1500)).toBe(false);
+    expect(mayInterrupt({ rank: 0, at: 1000 }, 3, 1000 + HOLD_MS)).toBe(true);
+    expect(mayInterrupt({ rank: 3, at: 1000 }, 0, 1100)).toBe(true);
+    expect(mayInterrupt({ rank: 3, at: 1000 }, 3, 1100)).toBe(true);
+  });
+
+  it("sone krymper kutter ikke «Sperret område» i samme tick, og cancel kalles bare når noe pågår", () => {
+    const calls: string[] = [];
+    class U {
+      lang = "";
+      constructor(public text: string) {}
+    }
+    const synthStub = {
+      speaking: false,
+      pending: false,
+      cancel: () => calls.push("cancel"),
+      speak: (u: U) => calls.push(u.text),
+      getVoices: () => [],
+    };
+    vi.stubGlobal("SpeechSynthesisUtterance", U);
+    vi.stubGlobal("window", { speechSynthesis: synthStub });
+    vi.spyOn(Date, "now").mockReturnValue(50_000);
+    speakKey("forbidden");
+    expect(calls).toEqual(["Sperret område. Gå ut."]); // ingenting pågikk: ingen cancel
+    synthStub.speaking = true;
+    speakKey("zoneShrink");
+    expect(calls).toEqual(["Sperret område. Gå ut."]); // droppet
+    vi.spyOn(Date, "now").mockReturnValue(50_000 + HOLD_MS + 1);
+    speakKey("zoneShrink");
+    expect(calls.slice(1)).toEqual(["cancel", "Sonen krymper. Gå inn mot midten."]);
+    vi.restoreAllMocks();
   });
 });

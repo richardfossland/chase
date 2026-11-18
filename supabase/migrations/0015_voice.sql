@@ -57,8 +57,8 @@ begin
   end if;
   return v_r || jsonb_build_object('voice', coalesce(
     (select (s.settings ->> 'voice') = 'true'
-       from chase.players p join chase.sessions s on s.id = p.session_id
-      where p.id = p_player), false));
+       from chase.sessions s
+      where s.id = coalesce(p_session, (select session_id from chase.players where id = p_player))), false));
 end;
 $$;
 

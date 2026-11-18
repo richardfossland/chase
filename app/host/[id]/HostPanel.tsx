@@ -481,6 +481,7 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
                     type="button"
                     role="switch"
                     aria-checked={snap.voice === true}
+                    disabled={hs.voiceBusy}
                     className={sheetBtn()}
                     onClick={() => void hs.setVoice(snap.voice !== true)}
                     data-testid="voice-toggle"

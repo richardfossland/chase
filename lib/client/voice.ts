@@ -81,17 +81,40 @@ export function unlockVoice(): void {
   }
 }
 
-/** Si én kort setning. Avbryter forrige ytring. Feil svelges alltid. */
-export function speak(text: string): void {
+/** Hvor lenge en ytring med høyere prioritet får snakke ut før en lavere kan avbryte den. */
+export const HOLD_MS = 2000;
+
+export interface LastSpoken {
+  rank: number;
+  at: number;
+}
+
+/** Ren regel: en lavere prioritet (høyere rank) kutter aldri en høyere ytring som nylig startet. */
+export function mayInterrupt(last: LastSpoken | null, rank: number, nowMs: number): boolean {
+  return !last || rank <= last.rank || nowMs - last.at >= HOLD_MS;
+}
+
+let last: LastSpoken | null = null;
+
+/** Bare for tester. */
+export function resetVoiceState(): void {
+  last = null;
+}
+
+/** Si én kort setning. Avbryter forrige ytring, men aldri en viktigere som nettopp startet. Feil svelges alltid. */
+export function speak(text: string, rank = PRIORITY.length, nowMs = Date.now()): void {
   try {
     const s = synth();
     if (!s) return;
-    s.cancel();
+    if (!mayInterrupt(last, rank, nowMs)) return;
+    // Safari kan droppe ytringen rett etter cancel(): bare avbryt når noe faktisk pågår.
+    if (s.speaking || s.pending) s.cancel();
     const u = new SpeechSynthesisUtterance(text);
     u.lang = "nb-NO";
     u.rate = 1.05;
     const v = pickVoice(s.getVoices());
     if (v) u.voice = v;
+    last = { rank, at: nowMs };
     s.speak(u);
   } catch {
     /* ingen tale: lyd og blink gjør jobben */
@@ -100,7 +123,7 @@ export function speak(text: string): void {
 
 export function speakKey(key: VoiceKey): void {
   try {
-    speak(no.voice[key]);
+    speak(no.voice[key], PRIORITY.indexOf(key));
   } catch {
     /* aldri la tale påvirke varslene */
   }
