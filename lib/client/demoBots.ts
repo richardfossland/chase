@@ -9,6 +9,10 @@ export const DEMO_MAX_BOTS = 20;
 export const DEMO_DEFAULT_BOTS = 12;
 /** Samme grense som serveren (purge_expired): demoen er over etter 30 min. */
 export const DEMO_MAX_MS = 30 * 60 * 1000;
+/** Serveren avslutter demoer fra purge_expired (hvert 15. min), så senest 45 min etter start. */
+export const DEMO_END_MS = 45 * 60 * 1000;
+/** Demo-boter tikker sjeldnere enn ekte elever for å spare databasen. */
+export const DEMO_TICK_MS = 5000;
 
 const FLAG = (sessionId: string) => `chase:demo:${sessionId}`;
 
@@ -78,6 +82,7 @@ export async function startDemoBots(opts: { sessionId: string; pin: string; n: n
     transport: httpTransport(""),
     pin: opts.pin,
     kinds: defaultMix(clampBots(opts.n)),
+    tickMs: DEMO_TICK_MS,
     seed: Math.floor(Math.random() * 1_000_000),
     sosAfterS: 120,
     dropoutAfterS: 90,

@@ -655,7 +655,14 @@ export default function Wizard() {
         ...(demoBotCount ? { demo: true } : {}),
       });
       identity.saveHostToken(res.sessionId, res.hostToken);
-      if (demoBotCount) await startDemoBots({ sessionId: res.sessionId, pin: res.pin, n: demoBotCount });
+      if (demoBotCount) {
+        // Panelet åpnes uansett: feiler botstarten, er økta likevel laget.
+        try {
+          await startDemoBots({ sessionId: res.sessionId, pin: res.pin, n: demoBotCount });
+        } catch (e) {
+          console.warn("[demo] bots failed to start", e);
+        }
+      }
       router.replace(`/host/${res.sessionId}`);
     } catch (e) {
       setCreateError(errorText(e instanceof ApiError ? e.code : "default"));
@@ -1079,7 +1086,7 @@ export default function Wizard() {
                           className={cx(field, "w-20 text-center")}
                         />
                       </label>
-                      <Button variant="secondary" disabled={creating} onClick={() => void create(clampBots(demoBots))} data-testid="create-demo">
+                      <Button variant="secondary" disabled={!allChecked || creating} onClick={() => void create(clampBots(demoBots))} data-testid="create-demo">
                         {creating ? no.demo.starting : no.demo.try}
                       </Button>
                     </div>

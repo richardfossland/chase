@@ -60,6 +60,7 @@ const STATUS: Record<string, number> = {
   cooldown: 429,
   demo_limit: 429,
   demo_busy: 503,
+  demo_off: 503,
   no_baseline: 409,
   blackout: 409,
   bad_acc: 409,

@@ -1,4 +1,4 @@
--- Assertions for 0022_demo_sessions.sql: demo_gate, demo-tak i join, ingen sammendrag for sim, demo avsluttes etter 30 min.
+-- Assertions for 0022_demo_sessions.sql: demo_gate/refund, ingen sammendrag for sim, demo avsluttes etter 30 min.
 set search_path = chase, extensions, public;
 
 create function pg_temp.h(t text) returns text language sql as
@@ -38,18 +38,13 @@ begin
   assert (chase.demo_gate(array['k-d'], 3, 1000) ->> 'ok')::boolean, 'høyere tak ok';
 end $$;
 
--- join-tak 30 i demo-økt; vanlig sim-økt (uten demo) har ikke taket.
+-- demo_refund fjerner siste rad per nøkkel (mislykket opprettelse brenner ikke kvoten).
 do $$
-declare d jsonb := pg_temp.mk('jd', true, '{"demo":true}'); n jsonb := pg_temp.mk('jn', true); j jsonb;
 begin
-  for i in 1 .. 30 loop
-    j := chase.join_session(d ->> 'pin', 'B' || i, pg_temp.h('t' || i), pg_temp.h('r' || i));
-    assert (j ->> 'ok')::boolean, 'join ' || i || ' ' || j::text;
-  end loop;
-  j := chase.join_session(d ->> 'pin', 'B31', pg_temp.h('t31'), pg_temp.h('r31'));
-  assert j ->> 'error' = 'full', 'demo full ved 30';
-  j := chase.join_session(n ->> 'pin', 'N1', pg_temp.h('tn1'), pg_temp.h('rn1'));
-  assert (j ->> 'ok')::boolean, 'ikke-demo uberørt';
+  perform chase.demo_gate(array['k-r'], 3, 100);
+  perform chase.demo_gate(array['k-r'], 3, 100);
+  perform chase.demo_refund(array['k-r']);
+  assert (select count(*) from chase.demo_log where key_hash = 'k-r') = 1, 'refund fjerner én rad';
 end $$;
 
 -- ingen anonymt sammendrag for sim/demo, men fortsatt for ekte økter.
@@ -64,6 +59,7 @@ begin
   s := pg_temp.mk('sum-real', false);
   perform chase._end_session((s ->> 'session_id')::uuid);
   assert (select count(*) from chase.session_summaries) = n0 + 1, 'ekte økt beholder sammendrag';
+  assert (select status from chase.sessions where id = (s ->> 'session_id')::uuid) = 'ended' and (select ended_at from chase.sessions where id = (s ->> 'session_id')::uuid) is not null, 'ekte økt avsluttet';
 end $$;
 
 -- purge_expired: demo eldre enn 30 min avsluttes, yngre og vanlige sim-økter ikke; gammel demo_log ryddes.

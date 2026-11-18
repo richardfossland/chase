@@ -1,8 +1,8 @@
 -- 0022 Demo-økter («Prøv med boter», fase 10.6).
--- Additiv. Rører ikke tick, host_snapshot eller tabeller tickene bruker.
---   * chase.demo_log + chase.demo_gate(): rate-limit per nøkkel (IP / lærernøkkel, hashet) og tak på aktive demoer.
---   * join_session: en demo-økt (is_sim og settings.demo = true) tar høyst 30 spillere (20 boter + noen få ekte).
---   * _end_session: sim-/demo-økter legger ikke igjen anonymt sammendrag (de skal ikke telle i statistikk).
+-- Additiv. Rører ikke tick eller host_snapshot.
+--   * chase.demo_log + demo_gate() + demo_refund(): rate-limit per nøkkel (HMAC av IP / lærernøkkel) og tak på aktive demoer.
+--   * _end_session_p7: sim-/demo-økter lager ikke anonymt sammendrag (de skal ikke telle i statistikk). Samme
+--     funksjon som 0006, uendret bortsett fra vakten rundt insert, og uten sletting etterpå.
 --   * purge_expired: demo-økter avsluttes etter 30 min, og demo_log ryddes. pg_cron kjører hvert 15. minutt,
 --     så en demo lever 30–45 min.
 -- Kjøres to ganger i test-db.sh: omdøping er vokted med to_regprocedure.
@@ -19,7 +19,7 @@ alter table chase.demo_log enable row level security;   -- deny-all, som resten 
 
 -- Slipper en demo gjennom og logger den, eller avviser. p_keys er hashede nøkler (IP og evt. lærernøkkel);
 -- har en av dem brukt opp p_limit siste time, avvises den nye.
-create or replace function chase.demo_gate(p_keys text[], p_limit int default 3, p_max_active int default 40)
+create or replace function chase.demo_gate(p_keys text[], p_limit int default 3, p_max_active int default 10)
 returns jsonb
 language plpgsql
 security definer
@@ -49,65 +49,72 @@ begin
 end;
 $$;
 
--- ───────────────────────── join_session: tak i demo-økter ─────────────────────────
-
-do $$
-begin
-  if to_regprocedure('chase._join_session_p22(text,text,text,text,text)') is null then
-    alter function chase.join_session(text, text, text, text, text) rename to _join_session_p22;
-  end if;
-end $$;
-
-create or replace function chase.join_session(
-  p_pin              text,
-  p_nickname         text,
-  p_token_hash       text,
-  p_resume_code_hash text,
-  p_device_id        text default null)
-returns jsonb
-language plpgsql
-security definer
-set search_path = chase, extensions, public
-as $$
-begin
-  if exists (
-    select 1 from chase.sessions s
-     where s.join_pin = p_pin and s.status <> 'ended' and s.is_sim and s.settings ->> 'demo' = 'true'
-       and (select count(*) from chase.players p where p.session_id = s.id) >= 30
-  ) then
-    return jsonb_build_object('ok', false, 'error', 'full');
-  end if;
-  return chase._join_session_p22(p_pin, p_nickname, p_token_hash, p_resume_code_hash, p_device_id);
-end;
-$$;
-
 -- ───────────────────────── _end_session: ingen sammendrag for sim/demo ─────────────────────────
+-- Bytter ut laget under 0013-wrapperen (_end_session_p7 = 0006-versjonen) med full logikk + is_sim-vakt.
+-- Finnes ikke _end_session_p7 (0013 ikke kjørt) feiler migrasjonen ikke: 0013 kjører alltid først.
 
-do $$
-begin
-  if to_regprocedure('chase._end_session_p22(uuid)') is null then
-    alter function chase._end_session(uuid) rename to _end_session_p22;
-  end if;
-end $$;
-
-create or replace function chase._end_session(p_session uuid)
+create or replace function chase._end_session_p7(p_session uuid)
 returns void
 language plpgsql
 set search_path = chase, extensions, public
 as $$
 declare
-  v_before uuid[];
-  v_sim    boolean;
+  v_s     chase.sessions;
+  v_first timestamptz;
 begin
-  select is_sim into v_sim from chase.sessions where id = p_session;
-  if coalesce(v_sim, false) then
-    select coalesce(array_agg(id), '{}') into v_before from chase.session_summaries;
+  select * into v_s from chase.sessions where id = p_session for update;
+  if v_s.id is null or v_s.status = 'ended' then
+    return;
   end if;
-  perform chase._end_session_p22(p_session);
-  if coalesce(v_sim, false) then
-    delete from chase.session_summaries where id <> all (v_before);
+  select min(started_at) into v_first from chase.rounds where session_id = p_session;
+
+  -- 0022: sim-/demo-økter gir ikke sammendrag.
+  if not v_s.is_sim then
+  insert into chase.session_summaries (teacher_id, duration_s, player_count, modes,
+      total_distance_m, median_distance_m, median_active_s, active_histogram, catches_total,
+      again_yes, again_no, teacher_again)
+  select v_s.teacher_id,
+         greatest(0, extract(epoch from now() - coalesce(v_first, now()) - v_s.pause_accum))::int,
+         count(p.id),
+         coalesce((select array_agg(distinct r.mode) from chase.rounds r where r.session_id = p_session), '{}'),
+         coalesce(sum(st.distance_m), 0),
+         coalesce(percentile_cont(0.5) within group (order by st.distance_m), 0),
+         coalesce(percentile_cont(0.5) within group (order by st.active_s), 0)::int,
+         coalesce((select jsonb_object_agg(b, n) from (
+             select (floor(st2.active_s / 300) * 5)::int::text as b, count(*) as n
+               from chase.player_stats st2 join chase.players p2 on p2.id = st2.player_id
+              where st2.session_id = p_session and p2.role <> 'referee'
+              group by 1) h), '{}'::jsonb),
+         coalesce(sum(st.catches), 0),
+         v_s.again_yes, v_s.again_no, v_s.teacher_again
+    from chase.players p join chase.player_stats st on st.player_id = p.id
+   where p.session_id = p_session and p.role <> 'referee' and p.status <> 'kicked';
   end if;
+
+  delete from chase.player_live where session_id = p_session;
+  delete from chase.posts where session_id = p_session;          -- cascades post_claims
+  update chase.players set catch_code = null, immune_until = null where session_id = p_session;
+  update chase.player_stats set explorer_n = cardinality(cells), cells = '{}' where session_id = p_session;
+  update chase.alarms
+     set pos = null, resolved_at = coalesce(resolved_at, now())
+   where session_id = p_session;
+  update chase.sessions
+     set status = 'ended', ended_at = now(), teacher_phone = null, paused_at = null,
+         phase_ends_at = null, frozen_at = null
+   where id = p_session;
+  insert into chase.events (session_id, type) values (p_session, 'session_ended');
 end;
+$$;
+
+-- Angrer en logget demo (opprettelsen feilet): fjerner siste rad per nøkkel.
+create or replace function chase.demo_refund(p_keys text[])
+returns void
+language sql
+security definer
+set search_path = chase, extensions, public
+as $$
+  delete from chase.demo_log d
+   where d.id in (select max(l.id) from chase.demo_log l where l.key_hash = any(p_keys) group by l.key_hash)
 $$;
 
 -- ───────────────────────── purge_expired: demo 30 min + demo_log ─────────────────────────

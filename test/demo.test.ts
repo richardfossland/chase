@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { clampBots, DEMO_MAX_BOTS, DEMO_MIN_BOTS } from "@/lib/client/demoBots";
-import { demoKeys, sessionFlags, simKeyOk } from "@/lib/server/demo";
+import { demoKeys, demoSalt, normalizeIp, sessionFlags, simKeyOk } from "@/lib/server/demo";
 import { createSessionBody } from "@/lib/server/schemas";
 import { statusFor } from "@/lib/server/rpc";
 
@@ -35,17 +35,34 @@ describe("sessionFlags", () => {
 });
 
 describe("demo-vern", () => {
-  it("nøkler er hashet og inkluderer lærernøkkel bare når den finnes", async () => {
-    const a = await demoKeys("1.2.3.4");
-    const b = await demoKeys("1.2.3.4", "ABCD");
+  it("nøkler er HMAC (saltet), og lærernøkkel kommer bare med når den finnes", async () => {
+    const salt = "s".repeat(24);
+    const a = await demoKeys(salt, "1.2.3.4");
+    const b = await demoKeys(salt, "1.2.3.4", "ABCD");
     expect(a).toHaveLength(1);
     expect(b).toHaveLength(2);
     expect(a[0]).toMatch(/^[0-9a-f]{64}$/);
     expect(b[0]).toBe(a[0]);
+    expect((await demoKeys("t".repeat(24), "1.2.3.4"))[0]).not.toBe(a[0]);
+  });
+  it("IPv6 normaliseres til /64", async () => {
+    expect(normalizeIp("2001:db8:1:2:aaaa:bbbb:cccc:dddd")).toBe(normalizeIp("2001:0db8:0001:0002::1"));
+    expect(normalizeIp("2001:db8::1")).toBe("2001:db8:0:0::/64");
+    expect(normalizeIp("2001:db8:1:3::1")).not.toBe(normalizeIp("2001:db8:1:2::1"));
+    expect(normalizeIp("::ffff:10.0.0.1")).toBe("10.0.0.1");
+    expect(normalizeIp("10.0.0.1")).toBe("10.0.0.1");
+    const s = "s".repeat(24);
+    expect(await demoKeys(s, "2001:db8:1:2::5")).toEqual(await demoKeys(s, "2001:db8:1:2::9999"));
+  });
+  it("demo er avslått i prod uten DEMO_SALT, men har testverdi i dev", () => {
+    expect(demoSalt({ NODE_ENV: "production" })).toBeNull();
+    expect(demoSalt({ NODE_ENV: "production", DEMO_SALT: "x".repeat(20) })).toBe("x".repeat(20));
+    expect(demoSalt({ NODE_ENV: "development" })).toBeTruthy();
   });
   it("grense og travelhet gir 429 og 503", () => {
     expect(statusFor("demo_limit")).toBe(429);
     expect(statusFor("demo_busy")).toBe(503);
+    expect(statusFor("demo_off")).toBe(503);
   });
   it("antall boter holdes mellom 8 og 20", () => {
     expect(clampBots(3)).toBe(DEMO_MIN_BOTS);

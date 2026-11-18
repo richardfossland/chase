@@ -1,6 +1,6 @@
 import { rpc, respond, guarded } from "@/lib/server/rpc";
-import { clientIp } from "@/lib/server/http";
-import { demoKeys, DEMO_MAX_ACTIVE, DEMO_PER_HOUR, sessionFlags } from "@/lib/server/demo";
+import { clientIp, fail } from "@/lib/server/http";
+import { demoKeys, demoSalt, DEMO_MAX_ACTIVE, DEMO_PER_HOUR, sessionFlags } from "@/lib/server/demo";
 import { ipKey, limited, parseBody } from "@/lib/server/route";
 import { createSessionBody } from "@/lib/server/schemas";
 import { newToken, sha256Hex } from "@/lib/server/tokens";
@@ -16,26 +16,34 @@ export const POST = guarded(async (req) => {
 
   // `sim` krever SIM_ENABLED=1 eller riktig x-sim-key (Worker-secret SIM_KEY). `demo` er åpen, men går gjennom demo_gate.
   const flags = sessionFlags(body, process.env, req.headers.get("x-sim-key"));
+  let keys: string[] | null = null;
   if (flags.demo) {
-    const gate = await rpc("demo_gate", {
-      p_keys: await demoKeys(clientIp(req), body.teacherKey),
-      p_limit: DEMO_PER_HOUR,
-      p_max_active: DEMO_MAX_ACTIVE,
-    });
+    const salt = demoSalt(process.env);
+    if (!salt) return fail(503, "demo_off"); // prod uten DEMO_SALT: demo er avslått
+    keys = await demoKeys(salt, clientIp(req), body.teacherKey);
+    const gate = await rpc("demo_gate", { p_keys: keys, p_limit: DEMO_PER_HOUR, p_max_active: DEMO_MAX_ACTIVE });
     if (!gate.ok) return respond(gate, () => ({}));
   }
 
   const hostToken = newToken();
-  const r = await rpc("create_session", {
-    p_host_token_hash: await sha256Hex(hostToken),
-    p_teacher_key_hash: body.teacherKey ? await sha256Hex(body.teacherKey) : null,
-    p_boundary: body.boundary,
-    p_assembly: body.assembly,
-    p_forbidden: body.forbidden ?? null,
-    p_plan: body.plan ?? DEFAULT_PLAN,
-    p_settings: flags.demo ? { ...(body.settings ?? {}), demo: true } : (body.settings ?? {}),
-    p_teacher_phone: body.teacherPhone ?? null,
-    p_is_sim: flags.isSim,
-  });
+  let r;
+  try {
+    r = await rpc("create_session", {
+      p_host_token_hash: await sha256Hex(hostToken),
+      p_teacher_key_hash: body.teacherKey ? await sha256Hex(body.teacherKey) : null,
+      p_boundary: body.boundary,
+      p_assembly: body.assembly,
+      p_forbidden: body.forbidden ?? null,
+      p_plan: body.plan ?? DEFAULT_PLAN,
+      p_settings: flags.demo ? { ...(body.settings ?? {}), demo: true } : (body.settings ?? {}),
+      p_teacher_phone: body.teacherPhone ?? null,
+      p_is_sim: flags.isSim,
+    });
+  } catch (e) {
+    if (keys) await rpc("demo_refund", { p_keys: keys }).catch(() => {});
+    throw e;
+  }
+  // En mislykket opprettelse brenner ikke demokvoten.
+  if (!r.ok && keys) await rpc("demo_refund", { p_keys: keys }).catch(() => {});
   return respond(r, (x) => ({ sessionId: x.session_id, pin: x.pin, areaM2: x.area_m2, hostToken }));
 });
