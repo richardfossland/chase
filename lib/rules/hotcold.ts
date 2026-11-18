@@ -5,6 +5,7 @@
 // test/sql/0017_hotcold.test.sql.
 
 import { GAME, type RoundMode } from "./game";
+import { HIDE } from "./hide";
 
 export const HOTCOLD = {
   sniff_m: 50,
@@ -39,16 +40,25 @@ export function thermoAnswer(dThenM: number, dNowM: number, accM: number | null 
 }
 
 export type HotColdError = "bad_kind" | "not_useful";
-/** Same as chase._hc_check(): null = usable (hunter or prey in a tag round). */
-export function hotColdCheck(kind: string, mode: RoundMode | null | undefined, role: string): HotColdError | null {
+/**
+ * Same as chase._hc_check() (+ the Gjemsel rule of chase.use_hotcold from 0023): null = usable
+ * (hunter or prey in a tag round; in Gjemsel, `variant: "hide"`, only hunters search).
+ */
+export function hotColdCheck(kind: string, mode: RoundMode | null | undefined, role: string, variant?: string | null): HotColdError | null {
   if (!(HOTCOLD_KINDS as readonly string[]).includes(kind)) return "bad_kind";
   if (mode !== "tag") return "not_useful";
   if (role !== "hunter" && role !== "prey") return "not_useful";
+  if (variant === "hide" && role !== "hunter") return "not_useful";
   return null;
 }
 
+/** Cooldown per player: 60 s in Smittejakt, 30 s in Gjemsel (0023). */
+export function cooldownS(variant?: string | null): number {
+  return variant === "hide" ? HIDE.cooldown_s : HOTCOLD.cooldown_s;
+}
+
 /** Seconds left of the cooldown (0 = ready), from the last-used time in ms. */
-export function cooldownLeftS(usedAtMs: number | null, nowMs: number): number {
+export function cooldownLeftS(usedAtMs: number | null, nowMs: number, cooldown: number = HOTCOLD.cooldown_s): number {
   if (usedAtMs === null) return 0;
-  return Math.max(0, Math.ceil(HOTCOLD.cooldown_s - (nowMs - usedAtMs) / 1000));
+  return Math.max(0, Math.ceil(cooldown - (nowMs - usedAtMs) / 1000));
 }

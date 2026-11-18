@@ -18,7 +18,7 @@ import { speakKey, speakLines, unlockVoice, voiceLinesFor } from "@/lib/client/v
 import { useLiveTick } from "./useLiveTick";
 import { no } from "@/lib/locale/no";
 import { bearing, haversine } from "@/lib/geo";
-import { addEventLayer, addMeLayer, addPostsLayer, addRadarLayer, addSessionLayers, addTeamLayer, addZoneLayer, boundsOf, setEvent, setMe, setPosts, setRadar, setTeam, setZone } from "@/lib/map/layers";
+import { addEventLayer, addMeLayer, addPlingLayer, addPostsLayer, addRadarLayer, addSessionLayers, addTeamLayer, addZoneLayer, boundsOf, setEvent, setMe, setPlings, setPosts, setRadar, setTeam, setZone } from "@/lib/map/layers";
 import { loadMapLibre } from "@/lib/map/maplibre";
 import { registerTileCache } from "@/lib/map/tile-cache";
 import { kartverketStyle } from "@/lib/map/style";
@@ -652,6 +652,10 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
   const isHunter = !!tag && role === "hunter";
   const isPrey = !!tag && role === "prey";
   const immuneLeft = tag?.immune_until ? phaseLeftS(tag.immune_until, offsetMs, now) : null;
+  // 0023 Gjemsel: seconds to the release (the server's clock; 0 = released).
+  const isHide = tag?.variant === "hide";
+  const hideLeft = isHide ? phaseLeftS(tag?.hide?.release_at ?? round?.hide?.release_at ?? null, offsetMs, now) : null;
+  const hideWait = isHide && !!hideLeft && !tag?.hide?.released ? hideLeft : 0;
   const zoneOut = status === "live" && !!zn && view?.zone?.inside === false;
   const evView = view?.event ?? null;
   const team = view?.team ?? null;
@@ -689,7 +693,18 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
     title = t.countdown;
     body = `${t.roundOf(round.idx + 1, round.count)} · ${roundTitle(round)}`;
   }
-  if (status === "live" && isHunter && tag?.fox) {
+  if (status === "live" && isHunter && isHide) {
+    // 0023 Gjemsel: wait at the assembly point, then seek.
+    tone = "hunter";
+    TitleIcon = IconTarget;
+    title = hideWait ? no.hide.waitTitle : no.hide.seekTitle;
+    body = hideWait ? no.hide.waitBody(hideWait) : tag?.hide?.still?.length ? no.hide.pling(tag.hide.still.length) : no.hide.seekHint;
+  } else if (status === "live" && isPrey && isHide) {
+    tone = "live";
+    TitleIcon = IconMove;
+    title = no.hide.hideTitle;
+    body = hideWait ? no.hide.hideHead(hideWait) : tag?.hunter_near ? t.hunterNear : no.hide.hideHint;
+  } else if (status === "live" && isHunter && tag?.fox) {
     // 0013 Revejakt: everybody hunts the one fox.
     tone = "hunter";
     title = no.fox.hunt;
@@ -841,7 +856,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
         <div className="flex items-center justify-between gap-3 px-5 pb-3 text-sm font-bold opacity-90">
           <span className="flex items-center gap-1.5">
             <IconUsers size={16} />
-            {tag.fox ? no.host.round.foxCounts(tag.hunters) : t.counts(tag.hunters, tag.prey)}
+            {tag.fox ? no.host.round.foxCounts(tag.hunters) : isHide ? no.hide.counts(tag.hunters, tag.prey) : t.counts(tag.hunters, tag.prey)}
           </span>
           {isHunter && tag.blackout ? <span>{no.events.blackout}</span>
             : isHunter && tag.radar?.length ? <span>{t.radarAge(Math.min(...tag.radar.map((r) => r.age_s)))}</span> : null}
@@ -886,7 +901,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
         />
       )}
       {status === "live" && (
-        <HotColdBar sessionId={sessionId} playerId={me.playerId} token={me.token} mode={round?.mode} role={role} now={now} safetyActive={!!sosOpen || sosAcked || gpsLost || zoneOut || !!view?.safety.forbidden || (view?.safety.geofence ?? 0) >= 2} />
+        <HotColdBar sessionId={sessionId} playerId={me.playerId} token={me.token} mode={round?.mode} variant={round?.variant ?? tag?.variant ?? null} releaseAt={round?.hide?.release_at ?? tag?.hide?.release_at ?? null} offsetMs={offsetMs} role={role} now={now} safetyActive={!!sosOpen || sosAcked || gpsLost || zoneOut || !!view?.safety.forbidden || (view?.safety.geofence ?? 0) >= 2} />
       )}
       {view?.power && (status === "live" || status === "paused") && (
         <PowerBar power={view.power} round={round} role={role} offsetMs={offsetMs} now={now} busy={puBusy} onUse={(k) => void firePowerup(k)} />
@@ -904,6 +919,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
           posts={posts}
           activeId={view?.claim?.post_id ?? null}
           radar={isHunter ? (tag?.radar ?? []) : []}
+          plings={isHunter && isHide ? (tag?.hide?.still ?? NO_PLINGS) : NO_PLINGS}
           zoneLat={zoneState?.c.lat ?? null}
           zoneLng={zoneState?.c.lng ?? null}
           zoneR={zn?.r ?? null}
@@ -1127,6 +1143,7 @@ function PlayerMap({
   posts,
   activeId,
   radar,
+  plings,
   zoneLat,
   zoneLng,
   zoneR,
@@ -1144,6 +1161,8 @@ function PlayerMap({
   posts: PostView[];
   activeId: string | null;
   radar: NonNullable<TagView["radar"]>;
+  /** 0023 Gjemsel: circles around shifted points of hiders who stand still (hunters only). */
+  plings: { pos: { lat: number; lng: number }; r_m: number }[];
   /** Primitives, so the map redraws only when the circle changes (the 1 s clock re-renders). */
   zoneLat: number | null;
   zoneLng: number | null;
@@ -1186,6 +1205,7 @@ function PlayerMap({
         addZoneLayer(m);
         addPostsLayer(m);
         addRadarLayer(m);
+        addPlingLayer(m);
         addEventLayer(m);
         addTeamLayer(m);
         addMeLayer(m);
@@ -1258,6 +1278,12 @@ function PlayerMap({
     if (ready && map.current) setRadar(map.current, radar);
   }, [ready, radar]);
 
+  // Gjemsel: by value, the list is new on every tick.
+  const plingKey = JSON.stringify(plings);
+  useEffect(() => {
+    if (ready && map.current) setPlings(map.current, JSON.parse(plingKey) as typeof plings);
+  }, [ready, plingKey]);
+
   useEffect(() => {
     if (!ready || !map.current) return;
     setZone(map.current, zoneLat !== null && zoneLng !== null && zoneR !== null
@@ -1290,6 +1316,7 @@ function PlayerMap({
 }
 
 const NO_LIVE: { lat: number; lng: number }[] = [];
+const NO_PLINGS: { pos: { lat: number; lng: number }; r_m: number }[] = [];
 
 function SosButton({ onFire, disabled }: { onFire: () => void; disabled: boolean }) {
   const [holding, setHolding] = useState(false);

@@ -81,7 +81,10 @@ begin
   assert (select practice from chase.player_stats where player_id = pg_temp.pid('pr', 1)), 'stats flagged';
   assert (select count(*) from chase.posts where session_id = s and round_idx = 0) >= 3, 'posts exist';
   assert (select max(value) from chase.posts where session_id = s and round_idx = 0) = 0, 'practice posts are worth 0';
-  select id into v_post from chase.posts where session_id = s and round_idx = 0 limit 1;
+  -- Posts are placed at random; one within 12 m of where the player already stands (the assembly point) would be claimed
+  -- by the ticks before the claim helper, so the test takes one that is clearly away from it (deterministic, not weaker).
+  select p.id into v_post from chase.posts p join chase.sessions x on x.id = p.session_id
+   where p.session_id = s and p.round_idx = 0 and ST_Distance(p.pos, x.assembly_point) > 14 limit 1;
   t := pg_temp.claim('pr', 1, v_post);
   assert t -> 'claimed' ->> 'value' = '0', 'claim works, 0 p: ' || coalesce(t ->> 'claimed', 'null');
   select * into st from chase.player_stats where player_id = pg_temp.pid('pr', 1);
@@ -107,7 +110,8 @@ begin
   assert not (select practice from chase.player_stats where player_id = pg_temp.pid('pr', 1)), 'flag cleared';
   t := pg_temp.tick('pr', 1);
   assert not (t -> 'round' ->> 'practice')::boolean, 'round 2 is not practice';
-  select id into v_post from chase.posts where session_id = s and round_idx = 1 and value > 0 limit 1;
+  select p.id into v_post from chase.posts p join chase.sessions x on x.id = p.session_id
+   where p.session_id = s and p.round_idx = 1 and p.value > 0 and ST_Distance(p.pos, x.assembly_point) > 14 limit 1;
   assert v_post is not null, 'real posts have value';
   t := pg_temp.claim('pr', 1, v_post);
   assert (t -> 'claimed' ->> 'value')::int >= 10, 'real claim: ' || coalesce(t ->> 'claimed', 'null');
@@ -143,7 +147,11 @@ begin
   assert (t -> 'scoreo' ->> 'past') = 'false', 'before the limit';
 
   -- Claims: each player once per post; others can take it too.
-  select id, value into v_p1, v_val from chase.posts where session_id = s order by value desc limit 1;
+  -- A post with no other post within the claim radius (12 m), so the second claim attempt cannot hit a neighbour.
+  select p.id, p.value into v_p1, v_val from chase.posts p
+   where p.session_id = s and not exists (select 1 from chase.posts o where o.session_id = s and o.id <> p.id and ST_DWithin(o.pos, p.pos, 13))
+   order by p.value desc limit 1;
+  assert v_p1 is not null, 'an isolated post exists';
   t := pg_temp.claim('xso', 1, v_p1);
   assert (t -> 'scoreo' -> 'claimed' ->> 'value')::int = v_val, 'claimed value: ' || (t -> 'scoreo')::text;
   assert t -> 'scoreo' ->> 'got' = '1' and jsonb_array_length(t -> 'scoreo' -> 'posts') = 11, 'post gone from my list';

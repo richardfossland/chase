@@ -10,7 +10,8 @@ import { ApiError, api, type HotColdResult } from "@/lib/client/api";
 import { cue } from "@/lib/client/feedback";
 import { unlockAudio } from "@/lib/client/sound";
 import { no } from "@/lib/locale/no";
-import { HOTCOLD, cooldownLeftS, hotColdCheck, type HotColdKind } from "@/lib/rules/hotcold";
+import { HOTCOLD, cooldownLeftS, cooldownS, hotColdCheck, type HotColdKind } from "@/lib/rules/hotcold";
+import { phaseLeftS } from "@/lib/rules/game";
 import type { RoundMode } from "@/lib/rules/game";
 
 const h = no.hotcold;
@@ -31,6 +32,9 @@ export function HotColdBar({
   playerId,
   token,
   mode,
+  variant,
+  releaseAt,
+  offsetMs,
   role,
   now,
   safetyActive,
@@ -39,6 +43,10 @@ export function HotColdBar({
   playerId: string;
   token: string;
   mode: RoundMode | null | undefined;
+  /** 0023: Gjemsel (`hide`) — hunters only, a shorter cooldown, and not before the release. */
+  variant?: string | null;
+  releaseAt?: string | null;
+  offsetMs?: number;
   role: string | undefined;
   now: number;
   /** SOS, danger, zone-out or GPS lost: never cover those (CLAUDE.md rule 4). */
@@ -75,7 +83,7 @@ export function HotColdBar({
         const code = e instanceof ApiError ? e.code : "";
         if (code === "cooldown" && e instanceof ApiError) {
           const w = Number((e.payload as { wait_s?: number } | null)?.wait_s);
-          if (Number.isFinite(w)) setUsedAt(Date.now() - (HOTCOLD.cooldown_s - w) * 1000);
+          if (Number.isFinite(w)) setUsedAt(Date.now() - (cooldownS(variant) - w) * 1000);
         }
         if (code !== "cooldown") cue("lost");
         setErr(h.errors[code] ?? h.errors.generic);
@@ -83,11 +91,13 @@ export function HotColdBar({
         setBusy(false);
       }
     },
-    [busy, sessionId, playerId, token],
+    [busy, sessionId, playerId, token, variant],
   );
 
-  if (hotColdCheck("sniff", mode, role ?? "neutral") !== null) return null;
-  const left = cooldownLeftS(usedAt, now);
+  if (hotColdCheck("sniff", mode, role ?? "neutral", variant) !== null) return null;
+  const left = cooldownLeftS(usedAt, now, cooldownS(variant));
+  // Gjemsel: the tools wake up at the release (server decides; this only greys the buttons out).
+  const waiting = variant === "hide" && (phaseLeftS(releaseAt ?? null, offsetMs ?? 0, now) ?? 1) > 0;
   const kinds: HotColdKind[] = ["sniff", "thermo"];
   return (
     <>
@@ -95,7 +105,7 @@ export function HotColdBar({
         {kinds.map((k) => (
           <button
             key={k}
-            disabled={busy || left > 0}
+            disabled={busy || left > 0 || waiting}
             title={k === "sniff" ? h.sniffHelp(HOTCOLD.sniff_m) : h.thermoHelp}
             className="ui-press flex min-h-12 items-center gap-2 rounded-full border-2 border-white/70 bg-black/45 px-4 text-base font-black text-white disabled:opacity-40"
             onClick={() => void use(k)}

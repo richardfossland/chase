@@ -57,6 +57,9 @@ export default function BigScreen({ sessionId }: { sessionId: string }) {
   const roundName = r ? (r.mode === "tag" ? no.host.round.variants[r.variant ?? "convert"] : modes[r.mode]) + (r.practice ? no.host.round.practiceTag : "") : "";
   const teams = [...(snap.teams ?? [])].sort((a, b) => a.n - b.n);
   const ev = snap.event && !snap.event.done ? snap.event : null;
+  // 0023 Gjemsel: the projector shows no player dots while the hunt is on (the teacher's own panel still sees everybody).
+  const hideLive = r?.variant === "hide" && (snap.status === "live" || snap.status === "paused");
+  const hideLeft = hideLive ? (phaseLeftS(r?.hide?.release_at ?? null, offset, now) ?? 0) : 0;
 
   if (snap.status === "ceremony" && snap.ceremony) {
     const c = snap.ceremony;
@@ -109,7 +112,7 @@ export default function BigScreen({ sessionId }: { sessionId: string }) {
       <div className="relative">
         <HostMap
           geo={hs.geo}
-          players={snap.players}
+          players={hideLive ? [] : snap.players}
           posts={snap.posts ?? []}
           sosPlayers={noSos}
           status={snap.status}
@@ -131,6 +134,7 @@ export default function BigScreen({ sessionId }: { sessionId: string }) {
           {r && <p className="mt-2 text-4xl font-black leading-tight">{roundName}</p>}
           {r && <p className="mt-1 text-2xl font-bold text-txt-dim">{no.host.round.of(r.idx + 1, r.count)}</p>}
           {r?.practice && <p className="mt-2 text-2xl font-black text-gold-text">{no.host.round.practice}</p>}
+          {hideLive && <p className="mt-2 text-2xl font-black text-gold-text">{hideLeft > 0 ? no.host.round.hideBoard(hideLeft) : no.host.round.hideBoardLive}</p>}
           {snap.playlist_done ? (
             <p className="mt-8 flex items-start gap-4 text-4xl font-black leading-tight">
               <span className="mt-1 grid size-12 shrink-0 place-items-center rounded-full bg-ok text-on-accent" aria-hidden>

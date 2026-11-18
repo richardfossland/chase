@@ -143,6 +143,13 @@ En **modusdefinisjon** er data (`mode` + `config` jsonb) med TS-validering (zod)
 - Sonen er en **ren funksjon av tid**: `zone(t) = circle(center, r(t)) ∩ område`. Den beregnes identisk i SQL og TS uten noen planlagt jobb.
 - Utenfor sonen gir −1 p per 3 s (aldri under 0 for runden), med rød kant og en pil mot sonen. Den som er inne ved faseskifte, får +5.
 
+### 3.5 Gjemsel (fase 10.9)
+
+Variant av Smittejakt (`mode: tag`, `variant: hide`, `head_start_s` 60–90, standard 75). Få jegere (ceil(n/6)), resten gjemmere.
+Jegerne står ved møteplassen til slipp (ingen straff, men ingen fangst, Snus eller Termometer før). Etter slipp er gjemmerne usynlige: ingen radar-ping og ingen «Bytte i nærheten».
+Se migrasjon 0023 for konstantene (`kv()`).
+Stillstand (§ 1 punkt 2): etter 90 s uten å flytte seg mer enn 10 m får jegerne en 100 m-sirkel rundt et forskjøvet punkt. Fangst som i Smittejakt (`convert`).
+
 ### 3.4 Senere moduser (fase 5+)
 
 - **Lag mot lag / Flaggjakt** – 2–4 lag, erobre poster eller flagg, laget ser hverandre.
@@ -659,7 +666,7 @@ Valgt av eier 2026-11-18. Sonnet-agenter bygger, én samlet Opus-review, én dep
 6. **Prøv med boter.** Lærere kan starte en demo-økt (`is_sim`) med 8–20 simulerte elever i nettleseren, med tak og rate-limit. Prod-simer merkes også `is_sim`.
 7. **Prøverunde** (migr. 0020). En rundetype på 60 s som ikke teller, med hint om knappene, posten og fangst. Flagget `practice` på en Postjakt- eller Smittejakt-runde: poeng, merker og fangst-/postantall fryses i databasen, distanse og aktive sekunder teller.
 8. **Poengorientering** (migr. 0020, modus `scoreo`). 12 poster med verdi 10/20/30/40 etter avstand fra møteplassen, hver spiller tar hver post én gang, fast tidsgrense (rundens lengde) og 120 s innkomst. For sent tilbake på møteplassen: −5 p per påbegynte 10 s, aldri mer enn rundens poeng; ikke inne innen fasen er slutt = alle rundepoengene. Pall «Orienterer».
-9. **Gjemsel** (migr. 0021). Gjemmerne får forsprang og må holde seg i sin sone. Jegerne snevrer inn med Snus og Termometer og fanger med kode.
+9. **Gjemsel** (migr. 0023; nummer 0021 ble ikke brukt). En variant av Smittejakt (`tag`/`hide`): få jegere (ceil(n/6)), gjemmerne får 60–90 s forsprang (standard 75) og er usynlige for jegerne (ingen radar, ingen «Bytte i nærheten»). Jegerne snevrer inn med Snus og Termometer (30 s nedkjøling, bare etter slipp) og fanger med kode. Gjemmere som står stille i 90 s gir jegerne et «pling»: en 100 m-sirkel rundt en tilfeldig forskjøvet posisjon (20–70 m fra gjemmeren, regnet ved visning, aldri lagret). Poeng: 10 per minutt gjemt + 25 til de som ikke er funnet; jegere 15 per fangst. Pall «Mestergjemmer». Ingen sone, lag, prøverunde eller hendelser i Gjemsel.
 
 **Ferdig når:** alle ni punktene er levert, prod-sim er grønn, og ekte-iPhone-punktene står i PILOT.md.
 

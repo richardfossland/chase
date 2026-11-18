@@ -47,6 +47,7 @@ const CAT_ICONS: Record<string, Icon> = {
   teamplay: IconUsers,
   quiz: IconHelp,
   scoreo: IconMap,
+  hide: IconEye,
   team: IconUsers,
 };
 

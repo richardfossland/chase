@@ -10,6 +10,7 @@ import { TEAMS } from "./teams";
 import { normMissions } from "./library";
 import { normQuiz, type QuizItem } from "./quiz";
 import { SCOREO } from "./scoreo";
+import { HIDE, minRoundS, validHeadStart } from "./hide";
 
 export const GAME = {
   countdown_s: 10,
@@ -50,8 +51,10 @@ export type RoundMode = "free" | "posts" | "tag" | "flag" | "king" | "relay" | "
 export interface PlanRound {
   mode: RoundMode;
   duration_s: number;
-  /** Smittejakt only: «smitte» (convert), «sisten» (swap) or 0013 «sporing» (fox: one fox, everybody hunts). */
-  variant?: "convert" | "swap" | "fox";
+  /** Smittejakt only: «smitte» (convert), «sisten» (swap), 0013 «sporing» (fox: one fox, everybody hunts) or 0023 «gjemsel» (hide). */
+  variant?: "convert" | "swap" | "fox" | "hide";
+  /** 0023 Gjemsel only: the hiders' head start in seconds (60–90, default 75). Always present on a normalised hide round. */
+  head_start_s?: number;
   /** Krympende sone on top of the round (0005, lib/rules/zone.ts). */
   zone?: boolean;
   /** 0009: a Postjakt / free round played as teams (flag and king always are). */
@@ -144,9 +147,19 @@ export function normPlan(p: Partial<Plan> & { rounds?: unknown }): Plan | null {
     let out: PlanRound;
     if (r.mode === "tag") {
       const v = r.variant ?? "convert";
-      if (v !== "convert" && v !== "swap" && v !== "fox") return null;
+      if (v !== "convert" && v !== "swap" && v !== "fox" && v !== "hide") return null;
       out = { mode: "tag", duration_s: d, variant: v };
-    } else out = { mode: m, duration_s: d };
+      if (v === "hide") {
+        // 0023: Gjemsel has no zone, no team and no prøverunde; the round must outlast the head start by 60 s.
+        const hs = r.head_start_s === undefined || r.head_start_s === null ? HIDE.head_default_s : r.head_start_s;
+        if (!validHeadStart(hs) || d < minRoundS(hs)) return null;
+        if (r.zone === true || r.team === true || r.practice === true) return null;
+        out.head_start_s = hs;
+      } else if (r.head_start_s !== undefined) return null;
+    } else {
+      if (r.head_start_s !== undefined) return null;
+      out = { mode: m, duration_s: d };
+    }
     if (r.zone !== undefined && r.zone !== null && typeof r.zone !== "boolean") return null;
     if (r.zone === true) out.zone = true;
     // 0009: teams. Flag/king: no zone (flags and hill must stay reachable); tag stays individual.
@@ -217,7 +230,8 @@ export function withPractice(p: Plan): Plan {
   const first = p.rounds[0];
   const round: PlanRound =
     first?.mode === "tag"
-      ? { mode: "tag", variant: first.variant ?? "convert", duration_s: SCOREO.practice_s, practice: true }
+      // Gjemsel has no prøverunde (the head start alone is longer than 60 s): a Smittejakt-prøve instead.
+      ? { mode: "tag", variant: first.variant === "hide" ? "convert" : (first.variant ?? "convert"), duration_s: SCOREO.practice_s, practice: true }
       : { mode: "posts", duration_s: SCOREO.practice_s, practice: true };
   return { ...p, rounds: [round, ...p.rounds] };
 }

@@ -21,6 +21,7 @@ export const ceremony = {
       teamplay: "Lagspiller",
       quiz: "Flest riktige",
       scoreo: "Orienterer",
+      hide: "Mestergjemmer",
       team: "Beste lag",
     } as Record<string, string>,
     value: (cat: string, v: number | null): string => {
@@ -28,6 +29,7 @@ export const ceremony = {
       switch (cat) {
         case "distance_m": return `${Math.round(v).toLocaleString("nb-NO")} m`;
         case "active_s": return `${Math.round(v / 60)} min`;
+        case "hide": return `${Math.floor(v / 60)}:${String(Math.round(v) % 60).padStart(2, "0")}`;
         case "survival_s": return `${Math.floor(v / 60)}:${String(Math.round(v) % 60).padStart(2, "0")}`;
         case "posts": return v === 1 ? "1 post" : `${v} poster`;
         case "catches": return v === 1 ? "1 fangst" : `${v} fangster`;
