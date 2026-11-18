@@ -744,7 +744,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
         </div>
         <div key={title} className={cx("mt-4 flex items-center gap-3", !safetyTone && "m-rise-in")}>
           {TitleIcon && <TitleIcon size={44} strokeWidth={2.5} className="flex-none" />}
-          <h1 className="min-w-0 text-5xl font-black leading-none tracking-tight" data-testid="play-title">
+          <h1 className="min-w-0 text-5xl font-black leading-none tracking-tight [@media(max-height:700px)]:text-4xl" data-testid="play-title">
             {title}
           </h1>
         </div>
