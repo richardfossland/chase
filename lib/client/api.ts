@@ -501,6 +501,8 @@ export const api = {
     /** 0015: `voice`; 0016: `fixed_posts: FixedPost[]`. */
     settings?: { voice?: boolean; fixed_posts?: unknown } & Record<string, unknown>;
     sim?: boolean;
+    /** Fase 10.6: demo-økt (is_sim + settings.demo). */
+    demo?: boolean;
   }) => post<CreatedSession>("/api/sessions", body),
 
   join: (pin: string, nickname: string, deviceId?: string) => post<Joined>("/api/join", { pin, nickname, deviceId }),

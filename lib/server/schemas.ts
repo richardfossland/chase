@@ -43,6 +43,8 @@ export const createSessionBody = z.object({
     .optional(),
   settings: z.record(z.string(), z.unknown()).optional(),
   sim: z.boolean().optional(),
+  /** Fase 10.6: demo-økt («Prøv med boter»). Boter kjører i lærerens nettleser. */
+  demo: z.boolean().optional(),
 });
 
 export const joinBody = z.object({

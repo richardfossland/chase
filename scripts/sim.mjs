@@ -8,7 +8,8 @@
 // Options
 //   --base URL        Chase base URL (default http://localhost:3120)
 //   --pin PIN         join an existing session (e.g. one made in /ny)
-//   --create          create a sim session (needs SIM_ENABLED=1 on the server),
+//   --create          create a sim session (needs SIM_ENABLED=1 on the server, or env CHASE_SIM_KEY
+//                     = the Worker secret SIM_KEY so prod marks the session is_sim),
 //                     start it, and check alarm latency as the teacher
 //   --bots N          number of bots (default 10, max 300)
 //   --mix SPEC        e.g. "runner:50,sos:2,forbidden:2" (default: one of each special)
@@ -78,7 +79,8 @@ try {
   fail(e.message);
 }
 if (cfg.sessions > 1 && !args.create) fail("--sessions N krever --create (hver økt trenger sin egen PIN)");
-const http = sim.httpTransport(base);
+// Prod: SIM_KEY (Worker-secret) i env CHASE_SIM_KEY merker --create-øktene is_sim. Uten nøkkel ignoreres `sim: true` i prod.
+const http = sim.httpTransport(base, process.env.CHASE_SIM_KEY ? { "x-sim-key": process.env.CHASE_SIM_KEY } : undefined);
 const wsBase = cfg.liveWs ?? sim.toWsBase(base);
 
 const runs = await Promise.all(Array.from({ length: cfg.sessions }, (_, k) => runSession(k)));
