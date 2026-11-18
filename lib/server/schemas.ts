@@ -78,6 +78,8 @@ export const eventBody = z.discriminatedUnion("action", [
   playerAuth.extend({ action: z.literal("mission") }),
   playerAuth.extend({ action: z.literal("team_msg"), kind: z.enum(["help", "come", "mine", "ok"]) }),
   playerAuth.extend({ action: z.literal("quiz"), choice: z.number().int().min(0).max(3) }),
+  // 0017: Snus / Termometer (varmere/kaldere).
+  playerAuth.extend({ action: z.literal("hotcold"), kind: z.enum(["sniff", "thermo"]) }),
 ]);
 
 export const sosBody = playerAuth.extend({ lat: lat.optional(), lng: lng.optional() });

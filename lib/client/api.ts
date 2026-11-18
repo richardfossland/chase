@@ -5,11 +5,20 @@
 
 import type { Badge, Plan, PlanRound, RoundMode } from "@/lib/rules/game";
 import type { EventKind, Powerup } from "@/lib/rules/events";
+import type { HotColdKind, Trend } from "@/lib/rules/hotcold";
 import type { BestCard, PodiumCat } from "@/lib/rules/podiums";
 import type { ZoneState } from "@/lib/rules/zone";
 import type { TeamMsgKind } from "@/lib/rules/teams";
 import type { QuizItem } from "@/lib/rules/quiz";
 import type { FixedPost } from "@/lib/rules/library";
+
+export interface HotColdResult {
+  kind: HotColdKind;
+  near: boolean | null;
+  rangeM: number | null;
+  trend: Trend | null;
+  cooldownS: number;
+}
 
 export class ApiError extends Error {
   constructor(
@@ -509,6 +518,8 @@ export const api = {
     post<{ already: boolean }>(`/api/s/${sessionId}/again`, body, 8000),
   powerup: (sessionId: string, body: { playerId: string; token: string; kind: Powerup }) =>
     post<{ kind: Powerup; until: string | null; newBadges: Badge[] }>(`/api/s/${sessionId}/event`, { ...body, action: "powerup" }, 8000),
+  hotcold: (sessionId: string, body: { playerId: string; token: string; kind: HotColdKind }) =>
+    post<HotColdResult>(`/api/s/${sessionId}/event`, { ...body, action: "hotcold" }, 8000),
   missionDone: (sessionId: string, body: { playerId: string; token: string }) =>
     post<{ state: "pending" | "done" | null }>(`/api/s/${sessionId}/event`, { ...body, action: "mission" }, 8000),
   quizAnswer: (sessionId: string, body: { playerId: string; token: string; choice: number }) =>
