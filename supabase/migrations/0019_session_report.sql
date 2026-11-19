@@ -47,6 +47,8 @@ begin
       select jsonb_agg(jsonb_build_object(
                'idx', r.idx,
                'mode', r.mode,
+               'variant', v_s.plan -> 'rounds' -> r.idx ->> 'variant',
+               'practice', coalesce((v_s.plan -> 'rounds' -> r.idx ->> 'practice') = 'true', false),
                'duration_s', nullif(v_s.plan -> 'rounds' -> r.idx ->> 'duration_s', '')::int)
              order by r.idx)
         from chase.rounds r where r.session_id = v_s.id and r.started_at is not null), '[]'::jsonb),

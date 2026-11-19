@@ -43,6 +43,7 @@
 -- _unfreeze, _ev_upkeep, host_action, use_powerup, catch (→ _catch_hide). Omdefinert i sin helhet: use_hotcold, _team_ceremony.
 
 set search_path = chase, extensions, public;
+set local lock_timeout = '3s';   -- ALTER TABLE takes ACCESS EXCLUSIVE: never queue the ticks behind it for long
 
 -- ───────────────────────── schema ─────────────────────────
 
@@ -380,7 +381,8 @@ begin
     return;
   end if;
   -- 0004's upkeep just pinged the prey; Gjemsel has no radar (the pling is derived at view time).
-  update chase.player_live set ping_pos = null, ping_at = null, ping_stealth = false
+  -- ping_at = now() (not null): a null ping_at makes 0004's upkeep re-ping every hider every second.
+  update chase.player_live set ping_pos = null, ping_at = now(), ping_stealth = false
    where session_id = p_session and ping_pos is not null;
   -- A hider who became a hunter by other means than catch() (_tag_rebalance promotes one when nobody hunts) banks the time.
   update chase.player_stats st
@@ -447,7 +449,7 @@ begin
                                                    'r_m', chase.kv('still_r_m')::int, 'age_s', c.age_s) order by c.age_s desc, c.pid), '[]'::jsonb)
         into v_still
         from (select z.pid, z.anchor, z.age_s, chase._hide_offset(z.seed) as o
-                from (select left(md5('pling-id:' || l.player_id::text || ':' || v_idx::text), 8) as pid,
+                from (select left(md5('pling-id:' || l.player_id::text || ':' || v_idx::text || ':' || v_salt), 8) as pid,
                              l.still_anchor as anchor,
                              floor(extract(epoch from now() - l.still_since) - chase.kv('still_s'))::int as age_s,
                              l.player_id::text || ':' || v_idx::text || ':' || v_salt as seed
@@ -580,6 +582,11 @@ declare
   v_r   jsonb;
   v_prey uuid;
 begin
+  -- Lock order as _advance (0008): session lock, then every player row by id, BEFORE the catcher/prey rows.
+  -- Without it a catch at the round end deadlocks against the tick that advances the round (40P01 → 500s).
+  -- The tick only TRIES the session lock, so it never waits on a catch here.
+  perform pg_advisory_xact_lock(hashtextextended('chase:' || p_session::text, 0));
+  perform 1 from chase.players where session_id = p_session order by id for update;
   -- Hunters wait for the release (live clock, rule 6): 'not_yet' before it.
   select (r.state -> 'hide' ->> 'release_at')::timestamptz into v_rel
     from chase.sessions s join chase.rounds r on r.session_id = s.id and r.idx = s.round_idx
