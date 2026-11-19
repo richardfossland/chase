@@ -714,7 +714,21 @@ Runde med Sonnet-agenter (én per punkt, egen Sonnet-review for PR-ene med datab
 - Sperret sone: alle 4 sto allerede hos læreren da den sanne posisjonen kom inn (`early`). Før ble de målt til ~1,8 s, som var ventetiden på neste push.
 - På en ekte telefon kommer GPS omtrent hvert sekund, og et eskalerende fix sendes nå straks. Da blir GPS-steget ≤ 1 s, mens simen bare sampler hvert 2. s.
 
-**Ikke gjort:** prod-sim og deploy av `chase-live` og Next venter på eierens ja. Ekte iPhone er ikke testet.
+**Deploy 2026-11-19 (eier sa ja):**
+- chase#35 er merget (`68ca7a0`). Ingen migrasjon siden forrige deploy.
+- `chase-live` er deployet først: `a0afb4a6` (rollback `29143e3a`).
+- Ny `SIM_KEY` er satt på Worker `chase`.
+- Next-workeren er deployet: `a18f28c7` fra `68ca7a0` (rollback `8722341f`), med `LIVE_TRANSPORT=ws`. Bygget med Node 22 fra en løsrevet worktree, uten secrets i env.
+- Portene var grønne: ingen secret-navn eller -verdier i bunten, bare `localhost:9999` (auth-js-standard) og prod-`BASE_URL`.
+- Røyktesten var lik før og etter (rot 12×200, /ny, /bibliotek, /personvern, /j og /sw.js gir 200). Konsollen på /j og /ny var uten feil.
+
+**Prod-sim over ws** (40 boter, merket `is_sim`):
+- Frø 42 med standardmiks: alarmer 4/4, maks 0,39 s. «Utenfor» kom på **0,39 s** (før: 3,68–3,73 s). Fix→view p95/p99 1607/1840 ms, 0 feil.
+- Frø 7: alarmer 4/4, maks 0,46 s, 0 feil.
+- Frø 42 med 12 vandrere og 4 i sperret sone, 3 min: alarmer 17/17. «Utenfor» maks 2,29 s, der transportdelen var maks 0,46 s og GPS-steget 2,00 s (simens 2 s-sampling). Sperret sone 4/4 sto allerede hos læreren (`early`). Fix→view p95 1633 ms, 0 feil.
+- Kjørt på batteri med `caffeinate -dims`.
+
+**Ikke gjort:** ekte iPhone (utetesten, `docs/PILOT.md`).
 
 Tester: `test/live-urgent.test.ts` (terskler, eskalering, wire-format) og `test/live-core.test.ts` (hastefix skrives straks, takten flyttes ikke, vakt, koalesering, busy, `alert_host`).
 
