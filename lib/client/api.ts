@@ -547,7 +547,7 @@ export const api = {
 
   me: (sessionId: string, playerId: string, token: string) =>
     post<PlayerBootstrap>(`/api/s/${sessionId}/me`, { playerId, token }),
-  tick: (sessionId: string, body: { playerId: string; token: string; lat: number; lng: number; acc: number; speed?: number | null; ts?: number; steps?: number }) =>
+  tick: (sessionId: string, body: { playerId: string; token: string; lat: number; lng: number; acc: number; speed?: number | null; ts?: number; steps?: number; urgent?: boolean }) =>
     post<TickView>(`/api/s/${sessionId}/tick`, body, 6000),
   catch: (sessionId: string, body: { playerId: string; token: string; code: string }) =>
     post<CatchResult>(`/api/s/${sessionId}/catch`, body, 8000),

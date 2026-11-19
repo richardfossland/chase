@@ -18,6 +18,8 @@ import { createGpsFilter, type GpsFilter } from "@/lib/client/gpsFilter";
 import { rng } from "./rng";
 import { WsLink, type ServerLike, type WsCtor } from "./ws";
 import { createBot, type Behaviour, type Bot, type BotFix, type SimGeo } from "./behaviours";
+import { signedDistanceToRing, type LngLat } from "@/lib/geo";
+import { escalates, fixSafety, type FixSafety } from "@/lib/live/urgent";
 
 export type AlarmKind = "sos" | "forbidden" | "outside" | "signal";
 
@@ -45,6 +47,8 @@ export interface SimPlayer {
   /** When the bot took its current position (its step); the fix's age is counted from here. */
   lastFixSampledAt?: number;
   lastFixSentAt?: number;
+  /** What the server last heard from this bot, geofence-wise (useLiveTick's lastSafety). */
+  lastSafety?: FixSafety | null;
   /** A fix held back by the 1.9 s client throttle (useLiveTick's `pending`). */
   deferredFix?: ReturnType<typeof setTimeout> | null;
   /** Same jump rejection + smoothing as useDeviceGps. */
@@ -56,7 +60,7 @@ export interface SimPlayer {
 }
 
 /** Why a fix went out: the 2 s interval, a hint from the room, or late because of the 1.9 s throttle. */
-export type FixKind = "interval" | "hint" | "deferred";
+export type FixKind = "interval" | "hint" | "deferred" | "urgent";
 
 /** Counters for the ws transport (SimStats.ws is set only in ws mode). */
 export interface WsStats {
@@ -88,6 +92,15 @@ export interface AlarmCheck {
   kind: AlarmKind;
   expectedAt: number;
   seenAt: number | null;
+  /**
+   * «outside» only: where the time went (ms timestamps). serverOut = the step whose
+   * filtered fix (what the server sees) is > 40 m out; sent = that fix left the phone;
+   * view = its tick answer came back. expectedAt → serverOut is GPS noise/smoothing,
+   * not transport.
+   */
+  stages?: { serverOut?: number; sent?: number; view?: number };
+  /** The teacher's latest snapshot already showed this alarm when the bot got there. */
+  early?: boolean;
 }
 
 export interface SimStats {
@@ -170,6 +183,8 @@ export interface SwarmOptions {
   namePrefix?: string;
   /** ws transport: base like ws://127.0.0.1:8787 (the path comes from /me live.path). */
   ws?: { base: string; impl?: WsCtor; iphoneFraction?: number };
+  /** false: never flag fixes urgent (the pre-ADR-038 phone), for before/after runs. */
+  urgent?: boolean;
   onUpdate?: (players: SimPlayer[], stats: SimStats) => void;
   onLog?: (line: string) => void;
 }
@@ -209,7 +224,7 @@ export function startSwarm(opts: SwarmOptions) {
   };
   const wsOn = !!opts.ws;
   if (wsOn) {
-    stats.ws = { fixView: [], fixViewBy: { interval: [], hint: [], deferred: [] }, sampleView: [], superseded: 0, deferred: 0, reconnects: 0, iphoneDrops: 0, httpFallbackTicks: 0, hints: 0, wsErrors: {}, closes: {}, terminal: {},
+    stats.ws = { fixView: [], fixViewBy: { interval: [], hint: [], deferred: [], urgent: [] }, sampleView: [], superseded: 0, deferred: 0, reconnects: 0, iphoneDrops: 0, httpFallbackTicks: 0, hints: 0, wsErrors: {}, closes: {}, terminal: {},
       hostPushes: 0, hostAlarmMsgs: 0, hostConnected: false, kill: null, connectedNow: 0 };
   }
   let hostLink: WsLink | null = null;
@@ -217,6 +232,19 @@ export function startSwarm(opts: SwarmOptions) {
   const timers: ReturnType<typeof setInterval>[] = [];
   let stopped = false;
   let sessionId = "";
+  let ring: LngLat[] | null = null;
+  /** Unresolved alarms in the teacher's latest snapshot, as player:kind. */
+  let teacherHas = new Set<string>();
+  let simGeo: SimGeo | null = null;
+  const urgentOn = opts.urgent !== false;
+  /** Mirror of useLiveTick: does this fix start or escalate an alarm the server has not heard of? */
+  const urgentCheck = (p: SimPlayer, fx: BotFix) => {
+    const safety = fixSafety(fx, simGeo);
+    return { safety, urgent: urgentOn && escalates(p.lastSafety ?? null, safety) };
+  };
+  const OUTSIDE_M = 40; // chase.k('outside_alarm_m')
+  const openOutside = (p: SimPlayer) =>
+    stats.alarms.find((a) => a.player === p.playerId && a.kind === "outside" && a.seenAt === null);
 
   const err = (code: string) => {
     stats.errors[code] = (stats.errors[code] ?? 0) + 1;
@@ -224,7 +252,11 @@ export function startSwarm(opts: SwarmOptions) {
   const expect = (player: string, kind: AlarmKind, at: number) => {
     if (!opts.hostToken) return;
     if (stats.alarms.some((a) => a.player === player && a.kind === kind && (a.seenAt === null || a.expectedAt === at))) return;
-    stats.alarms.push({ player, kind, expectedAt: at, seenAt: null });
+    // The server judges the reported position with GPS slack (forbidden: within min(acc, 15 m)),
+    // so it often raises the alarm before the bot's TRUE position gets there. Then the teacher
+    // already has it: latency 0, not «until the next 2 s host push».
+    const early = teacherHas.has(`${player}:${kind}`) && kind !== "sos" && kind !== "signal";
+    stats.alarms.push({ player, kind, expectedAt: at, seenAt: early ? at : null, ...(early ? { early } : {}) });
   };
 
   async function tickOne(p: SimPlayer) {
@@ -250,6 +282,10 @@ export function startSwarm(opts: SwarmOptions) {
     if (out) {
       p.lastFix = { lat: out.lat, lng: out.lng, acc: out.acc, speed: out.speed };
       p.lastFixSampledAt = now;
+      const a = ring && openOutside(p);
+      if (a && !a.stages?.serverOut && signedDistanceToRing([out.lng, out.lat], ring!) > OUTSIDE_M) {
+        a.stages = { serverOut: now };
+      }
     }
     const fx = p.lastFix;
     if (!fx) return;
@@ -259,6 +295,10 @@ export function startSwarm(opts: SwarmOptions) {
     }
     if (wsOn) stats.ws!.httpFallbackTicks++;
     const t0 = Date.now();
+    const uc = urgentCheck(p, fx);
+    p.lastSafety = uc.safety;
+    const oa = openOutside(p);
+    if (oa?.stages?.serverOut && !oa.stages.sent) oa.stages.sent = t0;
     const r = opts.transport.tick
       ? await opts.transport.tick(sessionId, p, fx)
       : await opts.transport.post(`/api/s/${sessionId}/tick`, {
@@ -271,9 +311,11 @@ export function startSwarm(opts: SwarmOptions) {
           ts: Date.now(),
           // 0012: a moving bot reports ~2 steps per second it moved.
           steps: fx.speed > 0.5 ? Math.round(fx.speed * (tickMs / 1000) * 1.3) : undefined,
+          urgent: uc.urgent || undefined,
         });
     stats.latencies.push(Date.now() - t0);
     if (stats.latencies.length > 200_000) stats.latencies.splice(0, 100_000);
+    if (oa?.stages?.sent && !oa.stages.view && r.status === 200) oa.stages.view = Date.now();
     if (r.status === 200) await applyView(p, r.data, fx);
     else err(`tick_${r.status}_${String(r.data.error ?? "")}`);
   }
@@ -285,7 +327,8 @@ export function startSwarm(opts: SwarmOptions) {
    */
   function wsTick(p: SimPlayer, kind: FixKind) {
     if (!p.lastFix || p.done) return;
-    const wait = fixDelayMs(Date.now(), p.lastFixSentAt ?? null);
+    const uc = urgentCheck(p, p.lastFix);
+    const wait = uc.urgent ? 0 : fixDelayMs(Date.now(), p.lastFixSentAt ?? null);
     if (wait > 0) {
       if (!p.deferredFix) {
         stats.ws!.deferred++;
@@ -296,10 +339,15 @@ export function startSwarm(opts: SwarmOptions) {
       }
       return;
     }
-    sendFix(p, p.lastFix, kind);
+    if (!sendFix(p, p.lastFix, uc.urgent ? "urgent" : kind, uc.urgent)) return;
+    p.lastSafety = uc.safety;
+    if (uc.urgent && p.deferredFix) {
+      clearTimeout(p.deferredFix);
+      p.deferredFix = null;
+    }
   }
 
-  function sendFix(p: SimPlayer, fix: BotFix, kind: FixKind) {
+  function sendFix(p: SimPlayer, fix: BotFix, kind: FixKind, urgent = false): boolean {
     const now = Date.now();
     const sent = p.link!.send({
       t: "fix",
@@ -309,11 +357,15 @@ export function startSwarm(opts: SwarmOptions) {
       speed: fix.speed,
       ts: now,
       steps: fix.speed > 0.5 ? Math.round(fix.speed * (tickMs / 1000) * 1.3) : undefined,
+      urgent: urgent || undefined,
     });
-    if (!sent) return;
+    if (!sent) return false;
+    const oa = openOutside(p);
+    if (oa?.stages?.serverOut && !oa.stages.sent) oa.stages.sent = now;
     p.pendingFix ??= [];
     p.pendingFix.push({ at: now, kind, sampledAt: p.lastFixSampledAt ?? now });
     p.lastFixSentAt = now;
+    return true;
   }
 
   function onPlayerMsg(p: SimPlayer, m: ServerLike) {
@@ -329,6 +381,8 @@ export function startSwarm(opts: SwarmOptions) {
       const f = q.pop();
       w.superseded += q.length;
       q.length = 0;
+      const oa = openOutside(p);
+      if (oa?.stages?.sent && !oa.stages.view) oa.stages.view = now;
       if (f !== undefined) {
         w.fixView.push(now - f.at);
         w.fixViewBy[f.kind].push(now - f.at);
@@ -617,6 +671,7 @@ export function startSwarm(opts: SwarmOptions) {
     }
     if (!matchAlarms) return;
     const alarms = (r.data.alarms as Array<{ player_id: string; kind: AlarmKind; resolved: boolean; created_at: string }>) ?? [];
+    teacherHas = new Set(alarms.filter((a) => !a.resolved).map((a) => `${a.player_id}:${a.kind}`));
     for (const c of stats.alarms) {
       if (c.seenAt !== null || c.expectedAt > now + 1000) continue;
       // An old, resolved-but-unacked alarm of the same kind must not count for a new event.
@@ -747,6 +802,8 @@ export function startSwarm(opts: SwarmOptions) {
     const me = await opts.transport.post(`/api/s/${sessionId}/me`, { playerId: players[0].playerId, token: players[0].token });
     if (me.status !== 200) throw new Error(`me ${me.status}`);
     const geo = me.data.geo as SimGeo;
+    ring = geo.boundary.coordinates[0] as unknown as LngLat[];
+    simGeo = geo;
     const live = me.data.live as { path?: string } | null | undefined;
     if (wsOn && !live?.path) {
       throw new Error("Serveren har LIVE_TRANSPORT=http (live er null i /me). Sett LIVE_TRANSPORT=ws på serveren, eller kjør uten --transport ws.");
@@ -824,6 +881,20 @@ export function httpTransport(base: string, extraHeaders?: Record<string, string
   };
 }
 
+/** Per «outside» alarm: seconds spent in each stage (see AlarmCheck.stages). */
+export function outsideStages(alarms: AlarmCheck[]) {
+  const s = (a: number | undefined, b: number | undefined) => (a !== undefined && b !== undefined ? Math.round(b - a) / 1000 : null);
+  return alarms
+    .filter((a) => a.kind === "outside" && a.seenAt !== null)
+    .map((a) => ({
+      totalS: (a.seenAt! - a.expectedAt) / 1000,
+      gpsS: s(a.expectedAt, a.stages?.serverOut),
+      phoneS: s(a.stages?.serverOut, a.stages?.sent),
+      roomS: s(a.stages?.sent, a.stages?.view),
+      hostS: s(a.stages?.view, a.seenAt ?? undefined),
+    }));
+}
+
 export function summarize(stats: SimStats) {
   const lat = stats.latencies;
   const alarmLat = stats.alarms.filter((a) => a.seenAt !== null).map((a) => (a.seenAt! - a.expectedAt) / 1000);
@@ -885,9 +956,11 @@ export function summarize(stats: SimStats) {
       byKind: Object.fromEntries(
         (["sos", "forbidden", "outside", "signal"] as const).map((k) => {
           const xs = stats.alarms.filter((a) => a.kind === k && a.seenAt !== null).map((a) => (a.seenAt! - a.expectedAt) / 1000);
-          return [k, xs.length ? { n: xs.length, maxS: Math.max(...xs) } : null];
+          const early = stats.alarms.filter((a) => a.kind === k && a.early).length;
+      return [k, xs.length ? { n: xs.length, maxS: Math.max(...xs), ...(early ? { early } : {}) } : null];
         }),
       ),
+      outsideStages: outsideStages(stats.alarms),
     },
   };
 }
