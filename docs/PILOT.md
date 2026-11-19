@@ -50,6 +50,14 @@
 - [ ] **Innendørs og skog:** GPS-hopp skal ikke gi falske plinger (sirkelen følger bare 10 m-ankeret).
 - [ ] **Fangst** med kode når jegeren er innen ca. 30 m. Den fangede blir jeger og kan fange videre.
 
+## Fase 10 (ADR-037) – sjekk i utetesten
+- [ ] **Sikkerhetsheadere på iPhone/Safari:** åpne en økt som elev. Kart, QR-skanner og talte varsler virker, og bli-med-siden viser «sanntid» (WebSocket) og ikke HTTP-reserven. Se etter CSP-feil i Safari-konsollen om du kan.
+- [ ] **Prøverunde først:** hintene om knappene, posten og fangst er lette å forstå. Etterpå står poengtavla på 0, og spørsmålet ved posten vises, men teller ikke.
+- [ ] **Poengorientering:** postene lenger unna gir mer. Kommer man for sent tilbake til møteplassen, trekkes poeng, og trekket står forklart på mobilen.
+- [ ] **Øktrapport:** «Skriv ut / lagre PDF» fra premieutdelingen gir en lesbar side. Den har ingen kart eller posisjoner.
+- [ ] **Prøv med boter** fra veiviseren på lærerens PC: botene beveger seg, og økta avsluttes av seg selv.
+- [ ] **Feillogging:** en feil på mobilen havner i Worker-loggene uten kallenavn og posisjon (`wrangler tail chase`).
+
 ## Sanntidsforbindelse (ADR-033) – sjekk i utetesten
 - [ ] **Låst skjerm på iPhone** i en pustepause, så lås opp: eleven er tilbake i spillet innen et par sekunder, uten å laste siden på nytt.
 - [ ] **Bytt app** (åpne kamera eller meldinger) i 30 s og kom tilbake: posisjonen oppdateres igjen.

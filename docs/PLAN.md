@@ -671,6 +671,8 @@ Valgt av eier 2026-11-18. Sonnet-agenter bygger, én samlet Opus-review, én dep
 
 **Ferdig når:** alle ni punktene er levert, prod-sim er grønn, og ekte-iPhone-punktene står i PILOT.md.
 
+**Status 2026-11-19:** ✅ alle ni punktene er levert og live (ADR-037). Next-worker `8722341f`, migrasjon 0018–0023 i prod. Gjenstår: ekte iPhone (PILOT.md, «Fase 10»).
+
 ---
 
 ## 14. Risikoer og tiltak
