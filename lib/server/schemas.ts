@@ -69,6 +69,9 @@ export const tickBody = playerAuth.extend({
   ts: z.number().int().positive().optional(), // client epoch ms, ordering only
   // 0012: new steps since the last tick (opt-in step counter); the server caps them.
   steps: z.number().int().min(0).max(500).optional(),
+  // ADR-038: the phone thinks this fix starts or escalates a geofence/forbidden alarm,
+  // so the session room writes it at once. A pacing hint only; the server still decides.
+  urgent: z.boolean().optional(),
 });
 
 export const qrBody = playerAuth.extend({ code: z.string().min(3).max(16) });

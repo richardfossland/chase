@@ -338,6 +338,8 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
     hasView: view !== null,
     fixRef,
     hasFix: gps.fix !== null,
+    fix: gps.fix,
+    geo: boot.geo,
     takeSteps,
     onView,
     onEnded,

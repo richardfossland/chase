@@ -691,8 +691,30 @@ Runde med Sonnet-agenter (én per punkt, egen Sonnet-review for PR-ene med datab
 **Runbook:** Kjør aldri 0004, 0012, 0015 eller 0017 alene etter 0018, for de gjenoppretter gamle lag. Etter all migrasjonskjøring skal `scripts/chain-check.sql` være grønn. Den gamle sjekken med `_tick_voice` er utgått: nå skal `tick`-prosrc inneholde `hc_prev_pos`, og `_tick_voice` skal ikke finnes. Kjør `provision-shared.mjs` bare når ingen økter er aktive, fordi den gir mellomtilstander mellom filene.
 
 **Kjent, ikke gjort:**
-- **Oppfølging (regel 4):** «utenfor»-alarmen bruker opptil 3,7 s over ws når eleven går sakte over 40 m-grensen. Undersøk om `chase-live` bør sende en fix videre straks når den krysser grensen eller en sperret sone, i stedet for å vente på 1,9 s-regelen.
+- **Oppfølging (regel 4), løst i ADR-038:** «utenfor»-alarmen bruker opptil 3,7 s over ws når eleven går sakte over 40 m-grensen. Undersøk om `chase-live` bør sende en fix videre straks når den krysser grensen eller en sperret sone, i stedet for å vente på 1,9 s-regelen.
 - `connect-src 'self'` dekker kanskje ikke `wss` mot samme opphav i eldre WebKit. Da faller klienten tilbake til HTTP. Det er ingen sikkerhetsrisiko, men gir høyere DB-last.
 - `_so_tick` gjør én ekstra spørring per tick i alle moduser. Den må måles under full last.
 - `provision-shared.mjs` bør nekte å kjøre når det finnes aktive økter.
 - Ekte iPhone er ikke testet. Sjekklisten står i `docs/PILOT.md`.
+
+## ADR-038 — Hastefix: et fix som utløser en grense- eller sonealarm sendes med en gang (2026-11-19)
+**Kontekst:** I prod-simen etter fase 10 (ADR-037) brukte «utenfor»-alarmen opptil 3,7 s over ws. Simen har fått en oppdeling per «utenfor»-alarm (`outsideStages`: gps/telefon/rom/lærer). Lokalt med `wrangler dev` viser den at tiden går på tre steder. **Rom:** opptil 1,3 s fordi `chase-live` venter på 1,9 s-regelen per spiller og 1 s-takten. **Telefon:** opptil 1,9 s når fixet havner bak klientens 1,9 s-sperre etter et hint. **GPS:** opptil 2,0 s, som er en måleeffekt. Simen starter klokka når den *sanne* posisjonen er 40 m ute, men serveren dømmer den støyete, glattede posisjonen, og den kan ligge under 40 m ett 2 s-sample til. Det er samme regel som før, og serveren kan ikke varsle om et sted den ikke har fått høre om. Lærerpushen var ikke en del av problemet, for `alert_host` henter et nytt øyeblikksbilde med en gang.
+
+**Beslutning:**
+- `lib/live/urgent.ts`: `fixSafety()` regner ut det `tick()` vil gjøre med fixet, uten 30 s-regelen. Den bruker samme terskler som `lib/rules/safety.ts` og geometrien telefonen allerede har fra bootstrap. `escalates()` er sann når fixet starter eller øker en alarm sammenlignet med det serveren sist fikk: utenfor med mer enn acc (30 s-klokka starter), mer enn 40 m ute, eller inn i en sperret sone. Å komme tilbake haster ikke.
+- **Telefonen** (`useLiveTick`): et slikt fix sendes straks med `urgent: true`, forbi 1,9 s-sperren. Et nytt GPS-fix som eskalerer, venter heller ikke på neste 2 s-intervall. HTTP-tick sender samme flagg.
+- **Rommet** (`RoomCore`): et hastefix skrives med en gang (egen flush når den som eventuelt kjører er ferdig), forbi spillerens 1,9 s-regel og 1 s-takten. Takten for de andre flyttes ikke. Vakt: maks ett hastefix per spiller per `URGENT_EVERY_MS` = 3 s. En klient som merker alt, får vanlig tempo og vanlig DB-last. Et hastefix som får `busy` eller RPC-feil, prøves igjen i vanlig tempo.
+- **Ingen endring i SQL eller alarmregelen.** Flagget styrer bare *når* et fix skrives, ikke hva det betyr. Kostnaden er spillregnskap: et kortere gap kan få `tick()` til å lese én strekning som for rask og hoppe over distansen for den. Geofence-avgjørelsen bruker ikke gapet.
+- **Simen** speiler telefonen (`--no-urgent` gir den gamle oppførselen for før/etter-kjøringer). Den teller også en alarm som allerede sto hos læreren da boten kom dit, som 0 s (`early`). Før ventet den på neste 2 s-push. Dette gjaldt sperret sone, der serveren regner med en margin på min(acc, 15 m).
+
+**Testet lokalt** (`wrangler dev` + `next dev`, ws, 40 boter med 12 vandrere og 4 i sperret sone, 3 min, før = `--no-urgent`):
+- Frø 42: «utenfor» maks 3,14 s → 2,19 s. Transportdelen (telefon + rom + lærer) maks 1,28 s → 0,20 s. Resten er GPS-steget på 2,00 s (sann posisjon over 40 m ett sample før den rapporterte), likt før og etter. Alarmer 17/17, 0 feil. Rommet skrev 65 hastefix, og fix→view p95 var 1434 ms mot 1454 ms før.
+- Frø 7: rom-steget maks 1,31 s → 0,58 s, og «utenfor» maks 1,32 s → 1,39 s (ingen GPS-forsinkelse i den kjøringen, så ingen gevinst å hente).
+- Standardmiksen med frø 42 (én vandrer): 0,37 s → 0,035 s.
+- Sperret sone: alle 4 sto allerede hos læreren da den sanne posisjonen kom inn (`early`). Før ble de målt til ~1,8 s, som var ventetiden på neste push.
+- På en ekte telefon kommer GPS omtrent hvert sekund, og et eskalerende fix sendes nå straks. Da blir GPS-steget ≤ 1 s, mens simen bare sampler hvert 2. s.
+
+**Ikke gjort:** prod-sim og deploy av `chase-live` og Next venter på eierens ja. Ekte iPhone er ikke testet.
+
+Tester: `test/live-urgent.test.ts` (terskler, eskalering, wire-format) og `test/live-core.test.ts` (hastefix skrives straks, takten flyttes ikke, vakt, koalesering, busy, `alert_host`).
+

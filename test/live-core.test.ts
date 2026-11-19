@@ -9,6 +9,7 @@ import {
   HOST_EVERY_MS,
   RETRY_MS,
   RoomCore,
+  URGENT_EVERY_MS,
   WATCHDOG_EVERY_MS,
   type WatchdogState,
   type Attachment,
@@ -365,6 +366,119 @@ describe("RoomCore batching", () => {
     const a = await player(1);
     for (let i = 0; i < 40 && !a.closed; i++) await core.message(a, JSON.stringify({ t: "fix", lat: 59, lng: 10, acc: 5 }));
     expect(a.closed?.code).toBe(CLOSE.rate);
+  });
+});
+
+describe("RoomCore urgent fixes (rule 4, ADR-038)", () => {
+  it("writes an urgent fix at once, inside the player's 1.9 s gap and the 1 s cadence", async () => {
+    const { clock, player, fix, calls, core } = setup();
+    const a = await player(1);
+    const b = await player(2);
+    await fix(a);
+    await fix(b);
+    await clock.advance(60);
+    expect(calls).toHaveLength(1);
+    await clock.advance(300); // 0.36 s after a's last tick: normally it waits until 1.9 s
+    await fix(a, 59.2, { urgent: true });
+    await clock.advance(0);
+    expect(calls).toHaveLength(2);
+    expect(calls[1].map((e) => e.player)).toEqual([pid(1)]);
+    expect(calls[1][0].lat).toBe(59.2);
+    expect(views(a)).toHaveLength(2);
+    expect(core.stats().urgent).toBe(1);
+  });
+
+  it("does not move the 1 s cadence for the others", async () => {
+    const { clock, player, fix, calls } = setup();
+    const a = await player(1);
+    const b = await player(2);
+    await fix(b);
+    await clock.advance(60); // b ticks at t0
+    await clock.advance(FLUSH_EVERY_MS);
+    await fix(a, 59.2, { urgent: true }); // urgent flush at ~1.06 s
+    await clock.advance(0);
+    expect(calls).toHaveLength(2);
+    await fix(b); // eligible at 1.9 s after its tick, the cadence allows it from 1.06 s
+    // b ticked at 50 ms, so it may go at 1.95 s; had the urgent flush at 1.06 s moved
+    // the cadence, b would wait until 2.06 s.
+    await clock.advance(MIN_PLAYER_GAP_MS - FLUSH_EVERY_MS);
+    expect(calls).toHaveLength(3);
+    expect(calls[2].map((e) => e.player)).toEqual([pid(2)]);
+  });
+
+  it("lets one urgent fix per player through every URGENT_EVERY_MS; the rest get the normal pace", async () => {
+    const { clock, player, fix, calls, core } = setup();
+    const a = await player(1);
+    await fix(a, 59.1, { urgent: true });
+    await clock.advance(0);
+    expect(calls).toHaveLength(1);
+    await clock.advance(500);
+    await fix(a, 59.2, { urgent: true }); // flagged again 0.5 s later: guard says normal pace
+    await clock.advance(0);
+    expect(calls).toHaveLength(1);
+    await clock.advance(MIN_PLAYER_GAP_MS - 500);
+    expect(calls).toHaveLength(2);
+    expect(core.stats().urgent).toBe(1);
+    await clock.advance(URGENT_EVERY_MS);
+    await fix(a, 59.3, { urgent: true });
+    await clock.advance(0);
+    expect(calls).toHaveLength(3);
+    expect(core.stats().urgent).toBe(2);
+  });
+
+  it("a newer plain fix keeps the pending fix urgent (newest position goes out at once)", async () => {
+    let release: () => void = () => {};
+    const { clock, player, fix, calls, setBatch } = setup();
+    const a = await player(1);
+    const b = await player(2);
+    setBatch((entries) => new Promise((r) => (release = () => void okBatch(entries).then(r))));
+    await fix(b);
+    await clock.advance(60); // a flush is in flight
+    await fix(a, 59.1, { urgent: true });
+    await fix(a, 59.2);
+    await clock.advance(0);
+    expect(calls).toHaveLength(1); // never two flushes at once
+    setBatch(okBatch);
+    release();
+    await clock.advance(0);
+    expect(calls).toHaveLength(2);
+    expect(calls[1]).toEqual([expect.objectContaining({ player: pid(1), lat: 59.2 })]);
+  });
+
+  it("a busy urgent fix retries at the normal pace, not in a tight loop", async () => {
+    let busy = 3;
+    const { clock, player, fix, calls, setBatch } = setup();
+    setBatch(async (entries) =>
+      busy-- > 0
+        ? { ok: true, server_now: "n", status: "live", hint_all: false, alert_host: false,
+            results: entries.map((e) => ({ player: e.player, r: { ok: false, error: "busy" } })) }
+        : okBatch(entries));
+    const a = await player(1);
+    await fix(a, 59.1, { urgent: true });
+    await clock.advance(10);
+    expect(calls).toHaveLength(1);
+    // One normal retry (the urgent flag is gone), then the 1 s cadence: no tight loop.
+    await clock.advance(FLUSH_EVERY_MS - 100);
+    expect(calls).toHaveLength(2);
+    await clock.advance(FLUSH_EVERY_MS * 2 + 100);
+    expect(calls).toHaveLength(4);
+    expect(views(a)).toHaveLength(1);
+  });
+
+  it("alert_host from an urgent fix reaches the teacher screen at once", async () => {
+    const { clock, player, fix, host, setBatch, snapCalls } = setup();
+    const h = await host();
+    await clock.advance(10);
+    const before = snapCalls();
+    const a = await player(1);
+    await fix(a);
+    await clock.advance(60);
+    setBatch(async (entries) => ({ ...(await okBatch(entries)), alert_host: true } as BatchResult));
+    await clock.advance(200);
+    await fix(a, 59.2, { urgent: true });
+    await clock.advance(0);
+    expect(h.sent.some((m) => m.t === "alarm")).toBe(true);
+    expect(snapCalls()).toBeGreaterThan(before);
   });
 });
 

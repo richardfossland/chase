@@ -31,6 +31,16 @@ export const FLUSH_EVERY_MS = 1000;
  * band of ADR-014 stay valid.
  */
 export const MIN_PLAYER_GAP_MS = 1900;
+/**
+ * Urgent fixes (ADR-038, rule 4): a fix the phone flags as starting or escalating
+ * a geofence/forbidden alarm skips MIN_PLAYER_GAP_MS and the 1 s cadence and is
+ * written at once. At most one per player this often, so a client that flags
+ * everything gets the normal pace (and the DB its normal load) instead. The cost
+ * of the shorter gap is game bookkeeping only: chase.tick may read that one
+ * segment as too fast and skip its distance; the geofence decision does not use
+ * the gap.
+ */
+export const URGENT_EVERY_MS = 3000;
 /** chase.tick_batch accepts 50; stay below so nested subtransactions (alarms) keep headroom. */
 export const CHUNK = 40;
 /** A fix waits at least this long so fixes arriving together share one call. */
@@ -136,6 +146,8 @@ type Pending = {
   entry: TickEntry;
   tokenHash: string;
   receivedAt: number;
+  /** Flagged urgent and allowed by URGENT_EVERY_MS: flush now, ignore the gap. */
+  urgent: boolean;
   waiters: Array<(r: HttpReply) => void>;
 };
 
@@ -156,6 +168,8 @@ export type RoomStats = {
   everyP50: number; everyP95: number; waitP50: number; waitP95: number; waitMax: number;
   /** Fixes left pending at a flush only because of the per-player 1.9 s gap. */
   held: number;
+  /** Fixes written at once because the phone flagged them urgent (and the guard let them). */
+  urgent: number;
   hostSnapshots: number; hostPushes: number; hostSnapshotErrors: number;
   watchdogRuns: number; watchdogHints: number; notifies: number;
   status: string | null; watchdogArmed: boolean;
@@ -176,6 +190,7 @@ export class RoomCore<S> {
   private conns = new Map<S, Conn>();
   private pending = new Map<string, Pending>();
   private lastTickAt = new Map<string, number>();
+  private lastUrgentAt = new Map<string, number>();
   private flushing = false;
   private lastFlushStart = -Infinity;
   private timer: unknown = null;
@@ -201,6 +216,7 @@ export class RoomCore<S> {
   private everyMs: number[] = [];
   private waitMs: number[] = [];
   private held = 0;
+  private urgentN = 0;
 
   constructor(readonly session: string, private d: RoomDeps<S>) {}
 
@@ -360,21 +376,36 @@ export class RoomCore<S> {
     };
     const waiters = prev?.waiters ?? [];
     if (waiter) waiters.push(waiter);
-    this.pending.set(playerId, { entry, tokenHash, receivedAt: prev?.receivedAt ?? this.d.now(), waiters });
+    const now = this.d.now();
+    let urgent = prev?.urgent ?? false;
+    if (m.urgent && !urgent && now - (this.lastUrgentAt.get(playerId) ?? -Infinity) >= URGENT_EVERY_MS) {
+      urgent = true;
+      this.lastUrgentAt.set(playerId, now);
+    }
+    this.pending.set(playerId, { entry, tokenHash, receivedAt: prev?.receivedAt ?? now, waiters, urgent });
     this.schedule();
   }
 
   private eligibleAt(playerId: string): number {
+    if (this.pending.get(playerId)?.urgent) return -Infinity;
     return (this.lastTickAt.get(playerId) ?? -Infinity) + MIN_PLAYER_GAP_MS;
   }
 
-  /** One timer for the next flush: never before the 1 s cadence, never while a flush runs. */
+  /**
+   * One timer for the next flush: never before the 1 s cadence, never while a
+   * flush runs. An urgent fix skips the cadence (and its player's gap): it goes
+   * out as soon as the running flush, if any, is done.
+   */
   private schedule(): void {
     if (this.flushing || this.ended || this.pending.size === 0) return;
     let earliest = Infinity;
-    for (const id of this.pending.keys()) earliest = Math.min(earliest, this.eligibleAt(id));
+    let urgent = false;
+    for (const [id, p] of this.pending) {
+      earliest = Math.min(earliest, this.eligibleAt(id));
+      urgent ||= p.urgent;
+    }
     const now = this.d.now();
-    const at = Math.max(earliest, this.lastFlushStart + FLUSH_EVERY_MS, now + COALESCE_MS);
+    const at = urgent ? now : Math.max(earliest, this.lastFlushStart + FLUSH_EVERY_MS, now + COALESCE_MS);
     if (this.timer !== null && this.timerAt <= at) return;
     if (this.timer !== null) this.d.clearTimer(this.timer);
     this.timerAt = at;
@@ -395,8 +426,13 @@ export class RoomCore<S> {
     if (!due.length) return this.schedule();
 
     this.flushing = true;
-    if (Number.isFinite(this.lastFlushStart)) push(this.everyMs, start - this.lastFlushStart);
-    this.lastFlushStart = start;
+    // An urgent flush does not move the 1 s cadence: the others keep their slot.
+    const urgent = due.some(([, p]) => p.urgent);
+    if (!urgent) {
+      if (Number.isFinite(this.lastFlushStart)) push(this.everyMs, start - this.lastFlushStart);
+      this.lastFlushStart = start;
+    }
+    this.urgentN += due.filter(([, p]) => p.urgent).length;
     this.held += this.pending.size - due.length;
     for (const [, p] of due) push(this.waitMs, start - p.receivedAt);
     for (const [id] of due) this.pending.delete(id);
@@ -490,6 +526,8 @@ export class RoomCore<S> {
   /** Put a fix back unless a newer one arrived meanwhile; waiters move along. */
   private requeue(p: Pending): void {
     if (!this.keep(p)) return;
+    // A failed or busy urgent write retries at the normal pace, not in a tight loop.
+    p.urgent = false;
     const newer = this.pending.get(p.entry.player);
     if (newer) {
       newer.waiters.push(...p.waiters);
@@ -748,6 +786,7 @@ export class RoomCore<S> {
       everyP50: pct(this.everyMs, 50), everyP95: pct(this.everyMs, 95),
       waitP50: pct(this.waitMs, 50), waitP95: pct(this.waitMs, 95), waitMax: this.waitMs.length ? Math.max(...this.waitMs) : 0,
       held: this.held,
+      urgent: this.urgentN,
       batchP50: pct(this.batchSizes, 50), batchMax: this.batchSizes.length ? Math.max(...this.batchSizes) : 0,
     };
   }

@@ -49,6 +49,7 @@
 //   --sessions N      N independent sessions at once (needs --create); seed + k per session
 //   --kill-at S       at S s close ALL sockets at once (chase-live redeploy); reports the
 //                     time until ≥ 95 % are back on ws and alarms missed meanwhile
+//   --no-urgent       bots never flag a fix urgent (the phone before ADR-038), for before/after runs
 //   --live-stats URL  fetch <URL>/live/s/<id>/stats per session at the end (internal,
 //                     local wrangler port only: http://127.0.0.1:8787)
 //   --assert (ws)     adds: 0 5xx, alarm max < 5 s and p95 < 3 s, fix→view p95 < 2 s and
@@ -187,6 +188,7 @@ async function runSession(k) {
     kinds,
     seed: seedK,
       ws: cfg.transport === "ws" ? { base: wsBase } : undefined,
+    urgent: !args["no-urgent"],
     hostToken,
     sosAfterS: 45,
     dropoutAfterS: 30,
@@ -473,8 +475,11 @@ function printTable(runs) {
       w ? `reconnects ${w.reconnects} (iPhone-drop ${w.iphoneDrops})` : "",
       w ? `posisjon→view p50/p95/p99 ${w.sampleView.p50}/${w.sampleView.p95}/${w.sampleView.p99} ms` : "",
       w ? `erstattet ${w.superseded} utsatt ${w.deferred} hint ${w.hints}` : "",
+      s.alarms.outsideStages?.length
+        ? `utenfor (gps/telefon/rom/lærer → sum s): ${s.alarms.outsideStages.map((o) => `${o.gpsS ?? "-"}/${o.phoneS ?? "-"}/${o.roomS ?? "-"}/${o.hostS ?? "-"}→${o.totalS}`).join(", ")}`
+        : "",
       w?.kill ? `kill: tilbake på ${w.kill.recoveryS ?? "aldri"} s, mistet alarmer ${w.kill.missedAlarms}` : "",
-      rs ? `rom: flush ${rs.flushes} batch maks ${rs.batchMax} snitt ${rs.flushes ? Math.round((rs.entries / rs.flushes) * 10) / 10 : 0} busy ${rs.busy} p50/p95 ${rs.flushP50}/${rs.flushP95} ms vert-push ${rs.hostPushes} vakthund ${rs.watchdogRuns} intervall p50/p95 ${rs.everyP50}/${rs.everyP95} ms venting p50/p95/maks ${rs.waitP50}/${rs.waitP95}/${rs.waitMax} ms holdt ${rs.held}` : "",
+      rs ? `rom: flush ${rs.flushes} batch maks ${rs.batchMax} snitt ${rs.flushes ? Math.round((rs.entries / rs.flushes) * 10) / 10 : 0} busy ${rs.busy} p50/p95 ${rs.flushP50}/${rs.flushP95} ms vert-push ${rs.hostPushes} vakthund ${rs.watchdogRuns} intervall p50/p95 ${rs.everyP50}/${rs.everyP95} ms venting p50/p95/maks ${rs.waitP50}/${rs.waitP95}/${rs.waitMax} ms holdt ${rs.held} haster ${rs.urgent ?? "-"}` : "",
     ].filter(Boolean).join(" | ");
   };
   console.log("\n" + runs.map(row).join("\n"));

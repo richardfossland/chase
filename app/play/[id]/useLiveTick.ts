@@ -12,6 +12,7 @@ import type { Fix } from "@/lib/client/gps";
 import { LiveSocket, fixDelayMs } from "@/lib/client/live";
 import { useChannel } from "@/lib/client/useChannel";
 import { CLOSE, type ServerMsg } from "@/lib/live/protocol";
+import { escalates, fixSafety, type FixSafety, type SafetyGeo } from "@/lib/live/urgent";
 import { channels } from "@/lib/realtime";
 
 const FAST_MS = 2000; // active round / gathering (PLAN §9.2)
@@ -31,6 +32,10 @@ export interface LiveTickOpts {
   hasView: boolean;
   fixRef: MutableRefObject<Fix | null>;
   hasFix: boolean;
+  /** The current fix (state, not ref): a new one that escalates an alarm is sent at once. */
+  fix: Fix | null;
+  /** Session geometry, for the urgent-fix check (ADR-038). */
+  geo: SafetyGeo | null;
   takeSteps: () => number;
   onView: (v: TickView) => void;
   onEnded: () => void;
@@ -38,7 +43,7 @@ export interface LiveTickOpts {
 }
 
 export function useLiveTick(o: LiveTickOpts): { tickNow: () => void } {
-  const { sessionId, playerId, token, live, ready, ended, kicked, fast, hasView, fixRef, hasFix, takeSteps } = o;
+  const { sessionId, playerId, token, live, ready, ended, kicked, fast, hasView, fixRef, hasFix, takeSteps, fix, geo } = o;
   const cb = useRef(o);
   useEffect(() => {
     cb.current = o;
@@ -50,11 +55,20 @@ export function useLiveTick(o: LiveTickOpts): { tickNow: () => void } {
   const pending = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [wsReady, setWsReady] = useState(false);
   const tickRef = useRef<() => void>(() => {});
+  /** What the server last heard from us, geofence-wise (urgent check, ADR-038). */
+  const lastSafety = useRef<FixSafety | null>(null);
+  const geoRef = useRef(geo);
+  useEffect(() => {
+    geoRef.current = geo;
+  }, [geo]);
 
   const httpTick = useCallback(async () => {
     const f = fixRef.current;
     if (!f || inflight.current || Date.now() - f.at > STALE_FIX_MS) return;
     inflight.current = true;
+    const safety = fixSafety(f, geoRef.current);
+    const urgent = escalates(lastSafety.current, safety) || undefined;
+    lastSafety.current = safety;
     try {
       const v = await api.tick(sessionId, {
         playerId,
@@ -65,6 +79,7 @@ export function useLiveTick(o: LiveTickOpts): { tickNow: () => void } {
         speed: f.speed,
         ts: Date.now(), // send time: orders requests; the same fix may be re-sent while standing still
         steps: takeSteps() || undefined,
+        urgent,
       });
       cb.current.onView(v);
     } catch (e) {
@@ -82,7 +97,9 @@ export function useLiveTick(o: LiveTickOpts): { tickNow: () => void } {
     if (!s || s.state !== "ready") return false;
     const f = fixRef.current;
     if (!f || Date.now() - f.at > STALE_FIX_MS) return true; // nothing fresh to say; not a transport failure
-    const wait = fixDelayMs(Date.now(), lastSent.current);
+    const safety = fixSafety(f, geoRef.current);
+    const urgent = escalates(lastSafety.current, safety);
+    const wait = urgent ? 0 : fixDelayMs(Date.now(), lastSent.current);
     if (wait > 0) {
       // Too soon after the last fix: send one at the earliest allowed moment.
       if (!pending.current) {
@@ -100,8 +117,17 @@ export function useLiveTick(o: LiveTickOpts): { tickNow: () => void } {
       speed: f.speed,
       ts: Date.now(),
       steps: takeSteps() || undefined,
+      urgent: urgent || undefined,
     });
-    if (ok) lastSent.current = Date.now();
+    if (ok) {
+      lastSent.current = Date.now();
+      lastSafety.current = safety;
+      // An urgent fix just went out with the newest position: a deferred one has nothing to add.
+      if (urgent && pending.current) {
+        clearTimeout(pending.current);
+        pending.current = null;
+      }
+    }
     return ok;
   }, [fixRef, takeSteps]);
 
@@ -161,6 +187,13 @@ export function useLiveTick(o: LiveTickOpts): { tickNow: () => void } {
       clearInterval(iv);
     };
   }, [ready, ended, kicked, fast, tickNow]);
+
+  // Safety first (rule 4, ADR-038): a GPS fix that starts or escalates a geofence
+  // or forbidden-zone alarm goes out now, not on the next 2 s interval.
+  useEffect(() => {
+    if (!ready || ended || kicked || !fix) return;
+    if (escalates(lastSafety.current, fixSafety(fix, geoRef.current))) tickNow();
+  }, [fix, ready, ended, kicked, tickNow]);
 
   // First fix after «Jeg er klar»: report at once instead of waiting a full interval.
   useEffect(() => {
