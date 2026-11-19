@@ -673,6 +673,23 @@ Valgt av eier 2026-11-18. Sonnet-agenter bygger, én samlet Opus-review, én dep
 
 **Status 2026-11-19:** ✅ alle ni punktene er levert og live (ADR-037). Next-worker `8722341f`, migrasjon 0018–0023 i prod. Gjenstår: ekte iPhone (PILOT.md, «Fase 10»).
 
+
+### Fase 11 – Inspirasjon fra SCRAM: Hide and Seek
+
+Valgt av eier 2026-11-19 etter en gjennomgang av SCRAM (Moveera, iOS/Android, versjon 1.0.5). SCRAM er en native app med konto for den som arrangerer. Chase forblir i nettleseren og uten innlogging, så vi tar bare ideer som virker under de vilkårene. Én PR per punkt, samme oppskrift som fase 9/10.
+
+1. **Plinger med alder i Gjemsel.** Læreren velger pling hvert 1., 2. eller 3. minutt, eller av (standard 2 min). Ved pling får jegerne hver gjemmers posisjon som et punkt merket med alder («for 40 s siden»), og punktet blekner til neste pling. Gjemmerne får «Pling om 10 s» før hver pling. Plingen regnes ved visning fra `player_live` og et tidsvindu, akkurat som stillstandssirkelen fra 0023, og lagres aldri. Bestem i ADR-en om plingen viser eksakt posisjon eller er forskjøvet (som stillstandssirkelen), og hvordan det henger sammen med Snus/Termometer. Berører: ny migrasjon (`kv()`-konstanter og `config`), `lib/rules/hide.ts`, veiviseren, elevskjermen.
+2. **Spillkonsekvens for å være utenfor området.** Etter 30 s utenfor (samme klokke som dagens «utenfor»-alarm) blir spilleren **avslørt**: synlig live for jegerne til hen er inne igjen. Etter 2 min utenfor i Smittejakt `convert` og Gjemsel blir hen **smittet** (jeger), aldri utslått (regel 5 i CLAUDE.md). I Postjakt og Poengorientering beholder vi minuspoengene. Lærervarselet er uendret og blir ikke tregere (regel 4). Berører: ny migrasjon (`tick`), `lib/rules/safety.ts`/`tag.ts`, elevskjermen.
+3. **Stille modus for gjemmere.** I Gjemsel og for bytter i Smittejakt er talte varsler og spillyder av som standard for gjemmeren. Telefonen skal ikke avsløre noen. Varsler vises med blink og fullskjermfarge (iOS har ikke vibrasjon). Eleven kan slå lyden på selv. Lyd for SOS-kvittering og lærerbeskjed går **alltid** gjennom (regel 4). Berører: `lib/client/feedback.ts`, `sound.ts`, elevskjermen.
+4. **Ruta mi på sluttkortet.** Telefonen tar vare på egne fix i minnet (ikke `localStorage`, ikke serveren) og tegner ruta på kart på «ditt beste»-kortet sammen med distanse og hvor lenge man overlevde. Ruta forsvinner når fanen lukkes. Ingenting nytt sendes eller lagres, så § 8 er uendret. Ingen deling ut av appen. Berører: `useDeviceGps`, sluttkortet.
+5. **Hvor er jeg? på nødskjermen.** Når nødknappen er trykket, viser elevskjermen koordinatene (desimalgrader, store tall til å lese opp), retning og avstand til møteplassen, og navnet på nærmeste post. Det regnes lokalt fra data telefonen allerede har. **Adresse** (Kartverkets adresse-API, `punktsok`) krever at posisjonen går i en URL til en ekstern tjeneste. Det strider mot regel 3, så det gjøres bare hvis en ADR godkjenner det (for eksempel et kall fra Worker som ikke logges, og bare ved aktiv SOS). Berører: SOS-skjermen, `lib/geo.ts`.
+
+**Ikke med:** taleradio og fritekst (de fire hurtigmeldingene holder for skole), konto, venner og ranglister (ingen innlogging, § 0), lommelykt (virker ikke i iOS Safari).
+**Senere, egne beslutninger:** Imposter-modus (hemmelige roller, møter og avstemning, men avstemning kan bli ubehagelig i en klasse), tilskuermodus for fangede (krever en variant der fangede går ut, jf. regel 5), satellittkart til å tegne område (sjekk vilkårene for Norge i bilder).
+**Begrensning:** SCRAM deler posisjon når skjermen er låst. Det kan ikke nettleseren. En gjemmer som står stille, vil gjerne låse skjermen, og det kan gi mange signaltapvarsler og blinde plinger. Prøves i den felles utetesten (ADR-019). Hvis det skjer, avgjør vi i en egen ADR om Gjemsel skal tåle signaltap mildere, uten å skjule varselet for læreren.
+
+**Ferdig når:** alle fem punktene er levert eller avsluttet med begrunnelse i DECISIONS, prod-sim er grønn (inkludert alarmtidene fra ADR-038), og iPhone-punktene står i PILOT.md («Fase 11»).
+
 ---
 
 ## 14. Risikoer og tiltak
