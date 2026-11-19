@@ -119,7 +119,7 @@ export function HostReport({ load, alarms, onClose }: { load: () => Promise<Repo
               <dd>
                 {data.rounds.length
                   ? data.rounds.map((x) => (
-                      <div key={x.idx}>{r.roundLine(x.idx + 1, r.modes[x.mode] ?? no.host.round.modes[x.mode] ?? r.modeFallback, x.duration_s ? Math.round(x.duration_s / 60) : null)}</div>
+                      <div key={x.idx}>{r.roundLine(x.idx + 1, ((x.variant && no.host.round.variants[x.variant]) || r.modes[x.mode] || no.host.round.modes[x.mode] || r.modeFallback) + (x.practice ? r.practiceSuffix : ""), x.duration_s ? Math.round(x.duration_s / 60) : null)}</div>
                     ))
                   : r.noRounds}
               </dd>

@@ -63,6 +63,7 @@
 -- tick og host_snapshot (flate etter 0018) er IKKE rørt.
 
 set search_path = chase, extensions, public;
+set local lock_timeout = '3s';   -- ALTER TABLE takes ACCESS EXCLUSIVE: never queue the ticks behind it for long
 
 -- ───────────────────────── schema ─────────────────────────
 
@@ -229,6 +230,9 @@ begin
   new.current_survival_start := v.current_survival_start;  new.surv_pts_stint := v.surv_pts_stint;
   new.radar_until := v.radar_until;           new.turbo_until := v.turbo_until;
   new.turbo_base_m := v.turbo_base_m;         new.turbo_paid := v.turbo_paid;
+  -- The question at a post shows in practice too (quiz_right/answered stay frozen).
+  new.quiz_q := v.quiz_q;                     new.quiz_until := v.quiz_until;
+  new.quiz_asked := v.quiz_asked;
   return new;
 end;
 $$;

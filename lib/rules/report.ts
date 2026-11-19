@@ -16,7 +16,7 @@ export interface ReportPlayer {
 export interface ReportData {
   started_at: string;
   duration_s: number | null;
-  rounds: { idx: number; mode: string; duration_s: number | null }[];
+  rounds: { idx: number; mode: string; variant?: string | null; practice?: boolean; duration_s: number | null }[];
   players: ReportPlayer[];
 }
 

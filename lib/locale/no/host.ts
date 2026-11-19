@@ -212,6 +212,7 @@ export const host = {
     satOut: "satt over",
     satOutNote: "Elever som satt over er med i tabellen, men ikke i snitt og median.",
     modeFallback: "Runde",
+    practiceSuffix: " (prøverunde)",
     modes: { zone_only: "Krympende sone", teams: "Lagjakt" } as Record<string, string>,
     privacy:
       "Rapporten lages i nettleseren din og lagres ikke av Chase. Den har ingen posisjoner, kart eller ruter. Tallene slettes senest 24 timer etter at økta er avsluttet, så skriv ut eller lagre PDF nå om du vil ha den.",
