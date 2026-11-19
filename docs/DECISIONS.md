@@ -646,3 +646,53 @@ Runde med Sonnet-agenter (én per punkt, egen Sonnet-review for PR-ene med datab
 - **Deploy 2026-11-18:** 0015 → 0016 → 0017 kjørt hver for seg via Management API, hver i én transaksjon med `notify pgrst`. Kjedesjekk: `tick` peker til `_tick_voice`, og anon har ikke tilgang. Next-worker `f1e2a9de` fra `9c00152` (rollback `469d7143`), `LIVE_TRANSPORT=ws`, `chase-live` uendret. Røyk før og etter er lik. Prod-sim over ws (40 boter, Postjakt, Smittejakt og Sporing med quiz og QR): alle krav oppfylt, 0 feil, alarmer 14/14 med maks 1,37 s, fix→view p95 1,75 s, Snus/Termometer 102 bruk.
 - **Runbook:** kjøres 0015 på nytt alene etter 0017, mister `tick` hotcold-ankeret uten feilmelding. Etter all migrasjonskjøring: `select prosrc like '%_tick_voice%' from pg_proc where proname='tick' and pronamespace='chase'::regnamespace` skal gi `t`.
 - **Ikke testet:** ekte iPhone (stemme, QR-skanning i dårlig lys, offline-kart, utskrift på papir). Legges til i den felles utetesten (`docs/PILOT.md`).
+
+## ADR-037 — Fase 10: drift, lærerverktøy og nye moduser (2026-11-19)
+
+**Kontekst:** Eier valgte ni punkter 2026-11-18 (PLAN § 13, fase 10). Samme oppskrift som fase 9: Sonnet-agenter i egne worktrees, Sonnet-review per PR med databaseendringer, én samlet Opus-review, én deploy.
+
+**Beslutning (PR #24–#33):**
+- **Flat tick (0018):** `tick` og `host_snapshot` er igjen én funksjon hver. Mellomleddene `_tick_*` og `_host_snapshot_*` fra 0012/0015/0017 er slettet. Likhetstesten sammenligner med de gamle på felles vektorer, med radarlista sortert.
+- **Sikkerhetsheadere (#28):** CSP i `lib/security/headers.ts`, med `wasm-unsafe-eval` for zxing og `unsafe-inline` for Next. Den tillater Kartverket, Supabase (https og wss) og `frame-ancestors 'none'`. I tillegg kommer HSTS og Permissions-Policy, der posisjon, kamera og skjermlås bare er tillatt for siden selv. `/sw.js` har sin egen, smalere CSP i `public/_headers`.
+- **Feillogging (#25):** `POST /api/log` vasker meldingen (`lib/errorSanitize.ts`) og har rate-limit. Den lagrer ingen posisjoner, tokener eller kallenavn, og loggene går bare til Worker-observability.
+- **Øktrapport (0019):** `session_report` blir lest i lærerens nettleser og lagres ikke. § 8 er uendret.
+- **Quizpakker (#27):** 10 LK20-pakker som statisk TS-data.
+- **Demo med boter (0022):** `demo_gate` har HMAC med `DEMO_SALT`, IPv6 som /64, maks 10 aktive og 3 per time. `_end_session_p7` lager ikke sammendrag for `is_sim`. Prod-simer blir merket `is_sim` når headeren `x-sim-key` stemmer med `SIM_KEY`.
+- **Prøverunde og Poengorientering (0020):** Flagget `practice` setter en hviteliste-trigger på `player_stats`. Den fryser poeng og tellere, mens distanse, aktive sekunder og quizspørsmålet (`quiz_q`/`quiz_until`/`quiz_asked`) fortsatt oppdateres. Score-O bruker `ks()` og `lib/rules/scoreo.ts`.
+- **Gjemsel (0023):** Gjemsel er en variant av Smittejakt (`tag`/`hide`) og bruker `kv()` og `lib/rules/hide.ts`. Plingen beregnes ved visning og lagres aldri. Pling-id-en er saltet med øktsaltet.
+
+**Opus-review (#33):**
+- Blokker: en vranglås mellom `catch` og ticken som avslutter runden. `catch` tok jeger- og byttelåsene i vilkårlig rekkefølge, mens `_advance` låser alle spillere `order by id`. `catch` tar nå sesjonslåsen og alle spillerrader i id-rekkefølge først, som 0008. Tick prøver bare låsen og venter aldri.
+- Gjemsel satte `ping_at = null`, så upkeep pinget alle gjemmere på nytt hvert sekund. Nå settes `ping_at = now()`.
+- `lock_timeout 3s` før `ALTER TABLE` i 0020 og 0023.
+- Pling-id-en er saltet.
+- Prøverunden viser quizspørsmål.
+- Rapporten viser Gjemsel og «(prøverunde)» riktig.
+- Ny rad i § 8 for `hs_since`, `hs_pts` og `hide_best_s`.
+
+**Testet:**
+- Vitest 391/391 og DB-tester grønne.
+- Lokal sim med migrasjonene i prod-rekkefølge, 40 boter i Gjemsel og Smittejakt: før fiksen var det ikke mulig å gjenskape 500-feilene. Etter fiksen var det 58 fangster og 0 feil, p95 23 ms og alarmer 23/23.
+- Hele planen (prøve-Postjakt, Poengorientering, Gjemsel og Smittejakt, med quiz, QR og premieutdeling) gikk uten 500-feil. Quizen fikk 55 svar, hvorav 22 riktige. Den kjøringen hadde et opphold på 170 s fordi Macen sov på batteri, så p95 fra den teller ikke.
+
+**Deploy 2026-11-19:**
+- Det var ingen aktive økter. Først ble secrets satt: `SIM_KEY` og `DEMO_SALT` på Worker `chase`.
+- Migrasjonene 0018 → 0019 → 0020 → 0022 → 0023 ble kjørt hver for seg via Management API, hver i én transaksjon med `notify pgrst`. Nummer 0021 er ikke brukt.
+- Kjedesjekken (`scripts/chain-check.sql`) var grønn: alle 23 lag kaller riktig indre funksjon, tick er flat, catch har låsen, triggerne finnes, og anon har 0 funksjoner.
+- Next-worker `8722341f` er deployet fra `8758cb9` (rollback `3b5cafa7` = fase 9-koden med de nye secrets), med `LIVE_TRANSPORT=ws`. `chase-live` er uendret.
+- Røyktesten var lik før og etter. CSP, HSTS og Permissions-Policy er på `/`, `/play/*` og `/sw.js`, og det var ingen CSP-feil i konsollen på `/` og `/ny`.
+- **Prod-sim over ws** (merket `is_sim`, `SIM_KEY` virker):
+  - Full plan med 40 boter (prøve-Postjakt, Poengorientering, Gjemsel og Smittejakt, med quiz, QR og premieutdeling): 0 feil, 52 fangster, 57 quizsvar, 0 dobbeltklaim i score-O og 0 Gjemsel-lekkasjer. Alarmene kom alle fram (37/37). SOS kom på 0,33 s og sperret område på maks 2,08 s, men **«utenfor» kom på maks 3,68 s**, så kravet p95 < 3 s ble ikke oppfylt.
+  - Kontrollkjøring uten fangster (score-O og Postjakt): «utenfor» kom på 3,73 s, så det er ikke catch-låsen.
+  - Fase 9-konfigurasjonen (frø 7, 2 min): alle krav oppfylt, alarm maks 1,70 s.
+  - Forsinkelsen gjelder bare «utenfor» med frø 42 over ws. Lokalt over HTTP er den ≤ 1,03 s. Koden for alarmen (0002 → 0018), `chase-live` og GPS-filteret er uendret i fase 10.
+  - Mest sannsynlig skyldes forsinkelsen tre ting som legges sammen: simen måler fra sann posisjon mens serveren ser den glattede, DO-en utsetter fix (1,9 s-regelen per spiller), og lærerpushen kommer i tillegg. Se oppfølging.
+
+**Runbook:** Kjør aldri 0004, 0012, 0015 eller 0017 alene etter 0018, for de gjenoppretter gamle lag. Etter all migrasjonskjøring skal `scripts/chain-check.sql` være grønn. Den gamle sjekken med `_tick_voice` er utgått: nå skal `tick`-prosrc inneholde `hc_prev_pos`, og `_tick_voice` skal ikke finnes. Kjør `provision-shared.mjs` bare når ingen økter er aktive, fordi den gir mellomtilstander mellom filene.
+
+**Kjent, ikke gjort:**
+- **Oppfølging (regel 4):** «utenfor»-alarmen bruker opptil 3,7 s over ws når eleven går sakte over 40 m-grensen. Undersøk om `chase-live` bør sende en fix videre straks når den krysser grensen eller en sperret sone, i stedet for å vente på 1,9 s-regelen.
+- `connect-src 'self'` dekker kanskje ikke `wss` mot samme opphav i eldre WebKit. Da faller klienten tilbake til HTTP. Det er ingen sikkerhetsrisiko, men gir høyere DB-last.
+- `_so_tick` gjør én ekstra spørring per tick i alle moduser. Den må måles under full last.
+- `provision-shared.mjs` bør nekte å kjøre når det finnes aktive økter.
+- Ekte iPhone er ikke testet. Sjekklisten står i `docs/PILOT.md`.
