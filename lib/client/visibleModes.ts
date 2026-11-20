@@ -1,7 +1,7 @@
 // enkel start (B): which round kinds the wizard shows by default. The rest sit behind
 // «Flere moduser». Nothing is removed: saved and shared plans play as before.
 
-import type { Plan, PlanRound } from "./game";
+import type { Plan, PlanRound } from "@/lib/rules/game";
 
 export const ROUND_KINDS = ["posts", "convert", "hide", "flag", "swap", "fox", "free", "king", "relay", "scoreo"] as const;
 export type Kind = (typeof ROUND_KINDS)[number];

@@ -15,7 +15,7 @@ describe("playChrome", () => {
   it("Gjemsel only gets the hot/cold bar", () => {
     expect(playChrome({ ...base, mode: "tag", variant: "hide" }).hotCold).toBe(true);
     expect(playChrome({ ...base, mode: "tag", variant: "convert" }).hotCold).toBe(false);
-    expect(playChrome({ ...base, mode: "tag", variant: "swap" }).hotCold).toBe(false);
+    expect(playChrome({ ...base, mode: "tag", variant: "swap" }).hotCold).toBe(true);
   });
   it("team strips only in team rounds", () => {
     const c = playChrome({ ...base, teamRound: true });

@@ -28,8 +28,8 @@ import { planSummary } from "@/lib/client/planSummary";
 import { no } from "@/lib/locale/no";
 import { normMissions } from "@/lib/rules/library";
 import { HEAD_STARTS, HIDE, minRoundS } from "@/lib/rules/hide";
-import { DEFAULT_PLAN, GAME, TEMPLATES, hasPractice, withPractice, withoutPractice, type Plan, type RoundMode, type TemplateId } from "@/lib/rules/game";
-import { ROUND_KINDS, VISIBLE_KINDS, kindOf, usesHiddenModes, type Kind } from "@/lib/rules/visibleModes";
+import { GAME, TEMPLATES, hasPractice, withPractice, withoutPractice, type Plan, type RoundMode, type TemplateId } from "@/lib/rules/game";
+import { ROUND_KINDS, VISIBLE_KINDS, kindOf, usesHiddenModes, type Kind } from "@/lib/client/visibleModes";
 import type { QuizItem } from "@/lib/rules/quiz";
 import { TEAMS, isTeamRound } from "@/lib/rules/teams";
 import { STARTER_PACKS, type StarterPack } from "@/lib/starter";
@@ -63,7 +63,6 @@ type Round = Plan["rounds"][number];
 
 type Preset = { id: string; testId: string; name: string; plan: Plan; starter?: StarterPack };
 const PRESETS: Preset[] = [
-  { id: "standard", testId: "template-standard", name: p.standard, plan: DEFAULT_PLAN },
   ...(Object.keys(TEMPLATES) as TemplateId[]).map((id) => ({ id, testId: `template-${id}`, name: p.template[id], plan: TEMPLATES[id] as Plan })),
   ...STARTER_PACKS.map((pk) => ({ id: pk.id, testId: `starter-${pk.id}`, name: pk.name, plan: pk.plan, starter: pk })),
 ];
@@ -163,7 +162,7 @@ export function RoundsStep(props: {
 
         <div className="mt-3 rounded-2xl border border-line bg-ink px-3 py-1">
           <Switch label={p.moreModes} on={moreModes} onChange={(on) => !hidden && setMoreModes(on)} testId="more-modes" />
-          <Help>{p.moreModesHint}</Help>
+          <Help>{hidden ? p.moreModesLocked : p.moreModesHint}</Help>
         </div>
 
         {moreModes && (

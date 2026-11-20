@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { TEMPLATES, hasPractice, normPlan, planTotalS, withPractice, type Plan } from "@/lib/rules/game";
 import { STARTER_PACKS } from "@/lib/starter";
-import { usesHiddenModes } from "@/lib/rules/visibleModes";
+import { usesHiddenModes } from "@/lib/client/visibleModes";
 
 describe("enkel start: maler", () => {
   const base = (n: number, d: number) => 10 * n + (n - 1) * 60 + n * d;

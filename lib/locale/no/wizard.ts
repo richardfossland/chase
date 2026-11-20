@@ -142,6 +142,7 @@ export const wizard = {
       // enkel start (B)
       moreModes: "Flere moduser",
       moreModesHint: "Fri løping, Sisten, Revejakt, Konge, Stafett, Poengorientering og ferdige opplegg.",
+      moreModesLocked: "Opplegget bruker en av disse modusene, så de vises.", // enkel start (review)
       advanced: "Avansert",
     },
     ready: {
@@ -160,6 +161,7 @@ export const wizard = {
       phone: "Mobilnummer (valgfritt)",
       phoneHint: "Gir elevene en «Ring lærer»-knapp. Slettes når økta slutter.",
       checkAll: "Kryss av alle tre for å fortsette.",
+      planInvalid: "Noe i rundene må rettes. Åpne Tilpass eller Ekstra.", // enkel start (review)
       // enkel start (B)
       tryDemo: "Prøv med boter først",
       create: "Opprett økt",

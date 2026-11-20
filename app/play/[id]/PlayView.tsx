@@ -946,7 +946,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
           </div>
         )}
         {playlistDone && view ? (
-          <SessionCard totals={sessionTotals(view.stats)} />
+          <SessionCard totals={sessionTotals(view.stats)} scoreoLine={view?.scoreo?.done ? no.scoreo.done(view.scoreo.got ?? 0, view.scoreo.total ?? 0, view.scoreo.penalty ?? 0) : null} />
         ) : summary && (status === "breather" || status === "gathering") && (
           <SummaryCard summary={summary} next={status === "breather" ? (round?.next ?? null) : null} practice={practice} scoreoLine={view?.scoreo?.done ? no.scoreo.done(view.scoreo.got ?? 0, view.scoreo.total ?? 0, view.scoreo.penalty ?? 0) : null} />
         )}
@@ -1537,7 +1537,7 @@ function Compass({ m, deg, label }: { m: number; deg: number; label: string }) {
 }
 
 /** After the last round: the whole session in my own numbers, no place or ranking. Shown before «Avslutt», which deletes the data. */
-function SessionCard({ totals }: { totals: SessionTotals }) {
+function SessionCard({ totals, scoreoLine }: { totals: SessionTotals; scoreoLine: string | null }) {
   const cell = "rounded-2xl bg-ink-3 px-3 py-3";
   const s = no.totals;
   return (
@@ -1548,6 +1548,7 @@ function SessionCard({ totals }: { totals: SessionTotals }) {
       <p className="text-sm font-black uppercase tracking-wider text-gold-text">{s.title}</p>
       <p className="mt-1 text-4xl font-black leading-tight">{s.thanks}</p>
       <p className="mt-1 text-sm font-bold text-txt-dim">{s.thanksBody}</p>
+      {scoreoLine && <p className="mt-1 text-sm font-bold text-txt-dim">{scoreoLine}</p>}
       <dl className={cx("m-stagger mt-4 grid gap-2", totals.posts > 0 ? "grid-cols-3" : "grid-cols-2")}>
         <div className={cell} style={{ "--i": 1 } as CSSProperties}>
           <dt className="flex items-center gap-1 text-xs font-bold uppercase text-txt-dim">

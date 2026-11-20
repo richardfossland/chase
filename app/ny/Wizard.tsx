@@ -1105,6 +1105,11 @@ export default function Wizard() {
                   </label>
 
                   {!allChecked && <p className="mt-5 text-sm text-txt-dim">{t.ready.checkAll}</p>}
+                  {!planOk && (
+                    <div className="mt-3">
+                      <Note tone="danger">{t.ready.planInvalid}</Note>
+                    </div>
+                  )}
                   {createError && (
                     <Note tone="danger" alert>
                       {createError}

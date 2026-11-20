@@ -32,7 +32,7 @@ export function playChrome(i: ChromeInput): Chrome {
     headerStats: i.mode === "posts",
     eventStrip: i.hasEvents,
     powerBar: i.hasEvents,
-    hotCold: i.mode === "tag" && i.variant === "hide",
+    hotCold: i.mode === "tag" && !!i.variant && i.variant !== "convert",
     teamStrip: i.teamRound,
     teamMsgBar: i.teamRound,
   };
