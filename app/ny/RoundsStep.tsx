@@ -1,13 +1,14 @@
 "use client";
 
-// Step 2 «Runder»: pick a ready-made opplegg, optionally tailor the rounds,
-// and (folded away) the extras: breather, teams, QR-kort, Overraskelser,
+// «Tilpass» on the Klar step (enkel start, B): optionally tailor the rounds
+// (Postjakt, Smittejakt, Gjemsel, Flaggjakt; the rest behind «Flere moduser», with the
+// ready-made opplegg), and (folded away) «Ekstra»: breather, teams, QR-kort, Overraskelser,
 // Egne øvelser and Quiz. Plan rules live in lib/rules/game.ts (normPlan).
 
 import { useEffect, useRef, useState } from "react";
 
 import { QuizEditor } from "@/lib/client/QuizEditor";
-import { Button, Chip, cx } from "@/lib/client/ui";
+import { Chip, cx } from "@/lib/client/ui";
 import {
   IconArrowUp,
   IconChevronDown,
@@ -27,20 +28,19 @@ import { planSummary } from "@/lib/client/planSummary";
 import { no } from "@/lib/locale/no";
 import { normMissions } from "@/lib/rules/library";
 import { HEAD_STARTS, HIDE, minRoundS } from "@/lib/rules/hide";
-import { DEFAULT_PLAN, GAME, TEMPLATES, hasPractice, normPlan, planTotalS, withPractice, withoutPractice, type Plan, type RoundMode, type TemplateId } from "@/lib/rules/game";
+import { DEFAULT_PLAN, GAME, TEMPLATES, hasPractice, withPractice, withoutPractice, type Plan, type RoundMode, type TemplateId } from "@/lib/rules/game";
+import { ROUND_KINDS, VISIBLE_KINDS, kindOf, usesHiddenModes, type Kind } from "@/lib/rules/visibleModes";
 import type { QuizItem } from "@/lib/rules/quiz";
 import { TEAMS, isTeamRound } from "@/lib/rules/teams";
 import { STARTER_PACKS, type StarterPack } from "@/lib/starter";
 
 import { IconFox, IconMinus, IconRelay, IconSpread } from "./icons";
-import { Disclosure, Help, Label, Note, SheetFooter, Switch, card, choice, field, iconBtn } from "./parts";
+import { Disclosure, Help, Label, Note, Switch, card, choice, field, iconBtn } from "./parts";
 
 const t = no.wizard;
 const p = t.playlist;
 
 const ROUND_MINUTES = [3, 4, 5, 6, 8, 10, 15];
-const ROUND_KINDS = ["posts", "convert", "swap", "fox", "hide", "free", "flag", "king", "relay", "scoreo"] as const;
-type Kind = (typeof ROUND_KINDS)[number];
 const TEAM_COUNTS = [2, 3, 4] as const;
 const BREATHERS = [0, 30, 60, 90, 120];
 const EVENT_EVERY = [0, 60, 90, 120] as const;
@@ -60,7 +60,6 @@ const KIND_ICON: Record<Kind, (props: { size?: number; className?: string }) => 
 };
 
 type Round = Plan["rounds"][number];
-const kindOf = (r: Round): Kind => (r.mode === "tag" ? (r.variant ?? "convert") : (r.mode as Kind));
 
 type Preset = { id: string; testId: string; name: string; plan: Plan; starter?: StarterPack };
 const PRESETS: Preset[] = [
@@ -82,11 +81,18 @@ export function RoundsStep(props: {
   missionPacks: { id: string; name: string; items: string[] }[];
   quizPacks: { id: string; name: string; items: QuizItem[] }[];
   onSave: (kind: "pack" | "quiz", name: string, items: unknown) => Promise<boolean>;
-  onBack: () => void;
-  onNext: () => void;
 }) {
   const { plan, onChange } = props;
-  const [openRounds, setOpenRounds] = useState(false);
+  // A plan that already uses a hidden mode/variant (library, /ny?plan=, copy, «Samme som sist»)
+  // opens Tilpass with «Flere moduser» on. State is raised during render, never forced back down.
+  const hidden = usesHiddenModes(plan);
+  const [openRounds, setOpenRounds] = useState(hidden);
+  const [moreModes, setMoreModes] = useState(hidden);
+  if (hidden && !(openRounds && moreModes)) {
+    setOpenRounds(true);
+    setMoreModes(true);
+  }
+  const shownKinds = moreModes ? ROUND_KINDS : ROUND_KINDS.filter((k) => VISIBLE_KINDS.includes(k));
   const [openRound, setOpenRound] = useState<number | null>(null);
   const [openMore, setOpenMore] = useState(false);
   const [openMissions, setOpenMissions] = useState(false);
@@ -137,42 +143,6 @@ export function RoundsStep(props: {
 
   return (
     <>
-      <h2 className="text-xl font-black">{p.presets}</h2>
-      <div className="m-stagger mt-5 grid grid-cols-2 gap-3">
-        {PRESETS.map((pr, i) => {
-          const sum = planSummary(pr.plan);
-          const on = selected === pr.id;
-          return (
-            <button
-              key={pr.id}
-              className={card(on)}
-              aria-pressed={on}
-              onClick={() => pick(pr)}
-              data-testid={pr.testId}
-              style={{ "--i": i } as React.CSSProperties}
-            >
-              <span className="font-extrabold leading-tight">{pr.name}</span>
-              <span className="mt-1.5 line-clamp-2 text-xs leading-snug text-txt-dim">{sum.modes}</span>
-              <span className="mt-auto inline-flex items-center gap-1 pt-2 text-xs font-bold text-gold-text tabular-nums">
-                <IconClock size={14} />
-                {p.minutesTotal(sum.minutes)}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="mt-5 rounded-2xl border border-line bg-ink px-3 py-1">
-        <Switch
-          label={p.practice}
-          icon={<IconClock size={18} />}
-          on={hasPractice(plan)}
-          onChange={(on) => onChange(on ? withPractice(plan) : withoutPractice(plan))}
-          testId="practice"
-        />
-        <Help>{p.practiceHint}</Help>
-      </div>
-
       <Disclosure
         title={p.customize}
         open={openRounds}
@@ -180,7 +150,49 @@ export function RoundsStep(props: {
         testId="customize"
         badge={selected ? null : <Chip tone="gold">{p.custom}</Chip>}
       >
-        <ol className="space-y-2">
+        <div className="rounded-2xl border border-line bg-ink px-3 py-1">
+          <Switch
+            label={p.practice}
+            icon={<IconClock size={18} />}
+            on={hasPractice(plan)}
+            onChange={(on) => onChange(on ? withPractice(plan) : withoutPractice(plan))}
+            testId="practice"
+          />
+          <Help>{p.practiceHint}</Help>
+        </div>
+
+        <div className="mt-3 rounded-2xl border border-line bg-ink px-3 py-1">
+          <Switch label={p.moreModes} on={moreModes} onChange={(on) => !hidden && setMoreModes(on)} testId="more-modes" />
+          <Help>{p.moreModesHint}</Help>
+        </div>
+
+        {moreModes && (
+          <div className="m-stagger mt-3 grid grid-cols-2 gap-3" data-testid="presets">
+            {PRESETS.map((pr, i) => {
+              const sum = planSummary(pr.plan);
+              const on = selected === pr.id;
+              return (
+                <button
+                  key={pr.id}
+                  className={card(on)}
+                  aria-pressed={on}
+                  onClick={() => pick(pr)}
+                  data-testid={pr.testId}
+                  style={{ "--i": i } as React.CSSProperties}
+                >
+                  <span className="font-extrabold leading-tight">{pr.name}</span>
+                  <span className="mt-1.5 line-clamp-2 text-xs leading-snug text-txt-dim">{sum.modes}</span>
+                  <span className="mt-auto inline-flex items-center gap-1 pt-2 text-xs font-bold text-gold-text tabular-nums">
+                    <IconClock size={14} />
+                    {p.minutesTotal(sum.minutes)}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        <ol className="mt-3 space-y-2">
           {plan.rounds.map((r, i) => {
             const k = kindOf(r);
             const KindIcon = KIND_ICON[k];
@@ -213,7 +225,7 @@ export function RoundsStep(props: {
                 {open && (
                   <div className="m-fade-in border-t border-line p-3">
                     <div className="grid grid-cols-2 gap-2">
-                      {ROUND_KINDS.map((kk) => {
+                      {shownKinds.map((kk) => {
                         const Icon = KIND_ICON[kk];
                         const on = k === kk;
                         return (
@@ -452,18 +464,6 @@ export function RoundsStep(props: {
         </Disclosure>
       </div>
 
-      <SheetFooter>
-        <Button variant="ghost" onClick={props.onBack}>
-          {t.back}
-        </Button>
-        <span className="inline-flex items-center gap-1.5 text-sm font-extrabold whitespace-nowrap text-gold-text tabular-nums" data-testid="total">
-          <IconClock size={18} />
-          {p.total(Math.round(planTotalS(plan) / 60))}
-        </span>
-        <Button size="lg" className="min-w-32" disabled={!normPlan(plan) || !props.quizValid} onClick={props.onNext}>
-          {t.next}
-        </Button>
-      </SheetFooter>
     </>
   );
 }

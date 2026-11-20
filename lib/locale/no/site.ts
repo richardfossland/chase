@@ -7,11 +7,13 @@ export const site = {
     lead: "Lærerstyrt jaktspill for skolegården, skogen og sentrum.",
     eyebrow: "Sunday Suite",
     tryMap: "Prøv kartet",
-    startSession: "Ny økt",
+    startSession: "Start",
     startHint: "For lærer",
     join: "Bli med",
     joinHint: "For elev",
     library: "Bibliotek",
+    // enkel start (B)
+    links: "Mer",
     stepsTitle: "Slik fungerer det",
     steps: [
       { title: "Tegn området", body: "Lærer velger sted og Møteplass." },

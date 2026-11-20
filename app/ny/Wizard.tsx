@@ -16,10 +16,12 @@ import {
   IconCheck,
   IconChevronDown,
   IconCircle,
+  IconClock,
+  IconEyeOff,
   IconFlag,
+  IconMapPin,
   IconLocate,
   IconPencil,
-  IconPlus,
   IconRepeat,
   IconUndo,
   IconX,
@@ -37,26 +39,27 @@ import {
   type LngLat,
 } from "@/lib/geo";
 import { no } from "@/lib/locale/no";
-import { DEFAULT_PLAN, planTotalS, withPractice, type Plan } from "@/lib/rules/game";
+import { TEMPLATES, normPlan, planTotalS, type Plan, type TemplateId } from "@/lib/rules/game";
 import { POSTS_MAX, fixedPostsOk, newPostCode, type FixedPost } from "@/lib/rules/library";
 import type { StarterPack } from "@/lib/starter";
 import { loadMapLibre } from "@/lib/map/maplibre";
 import { clampBots, DEMO_DEFAULT_BOTS, DEMO_MAX_BOTS, DEMO_MIN_BOTS, startDemoBots } from "@/lib/client/demoBots";
 import { DEFAULT_CENTER, kartverketStyle } from "@/lib/map/style";
 
-import { FLAG_SVG } from "./icons";
-import { Note, SheetFooter, card, field, segment } from "./parts";
+import { FLAG_SVG, IconSpread } from "./icons";
+import { Disclosure, Note, SheetFooter, card, field, segment } from "./parts";
 import { PostsEditor } from "./PostsEditor";
 import { RoundsStep } from "./RoundsStep";
 
 const t = no.wizard;
 
-type Step = "start" | "area" | "rounds" | "ready";
+type Step = "start" | "area" | "ready";
 type AreaMode = "circle" | "draw";
 type DrawTarget = "area" | "forbidden" | null;
 
-const STEPS: Step[] = ["area", "rounds", "ready"];
-const ORDER: Step[] = ["start", ...STEPS];
+// enkel start (B): Velg økt → Område → Klar (rounds are «Tilpass» on Klar).
+const STEPS: Step[] = ["start", "area", "ready"];
+const ORDER: Step[] = STEPS;
 const WARN_MAX_M2 = 500_000;
 const WARN_MIN_M2 = 3_000;
 const HARD_MIN_M2 = 500;
@@ -95,13 +98,19 @@ function errorText(code: string): string {
   return (t.errors as Record<string, string>)[code] ?? (no.demo.errors as Record<string, string>)[code] ?? t.errors.default;
 }
 
+const SESSION_CARDS: { id: Extract<TemplateId, "postjakt" | "smittejakt" | "gjemsel">; Icon: (p: { size?: number; className?: string }) => React.ReactNode }[] = [
+  { id: "postjakt", Icon: IconMapPin },
+  { id: "smittejakt", Icon: IconSpread },
+  { id: "gjemsel", Icon: IconEyeOff },
+];
+
 const hasContent = (lib: Library | null) => !!lib && (lib.areas.length > 0 || lib.plans.length > 0);
 
 /**
- * Teacher onboarding (PLAN §2.1) in three steps: Område (area, møteplass and
- * sperrede områder on the map) then Runder (opplegg + extras) then Klar (safety)
- * then create then lobby. A start screen («Samme som sist» / «Ny økt») comes first
- * only when the library has something. The drawing tool is our own: tap to add
+ * Teacher onboarding (PLAN §2.1, enkel start) in three steps: Velg økt (three ready
+ * sessions + «Samme som sist» when the library has something), Område (area, møteplass
+ * and sperrede områder on the map) and Klar (safety, with the rounds under «Tilpass»),
+ * then create then lobby. The drawing tool is our own: tap to add
  * a corner, drag a corner marker to move it (native MapLibre draggable markers).
  */
 export default function Wizard() {
@@ -121,7 +130,7 @@ export default function Wizard() {
 
   const [ready, setReady] = useState(false);
   const [booted, setBooted] = useState(false);
-  const [step, setStep] = useState<Step>("area");
+  const [step, setStep] = useState<Step>("start");
   const [teacherKey, setTeacherKey] = useState<string | null>(null);
 
   const [me, setMe] = useState<LngLat | null>(null);
@@ -160,7 +169,9 @@ export default function Wizard() {
     );
   }, []);
   const [phone, setPhone] = useState("");
-  const [plan, setPlan] = useState<Plan>(() => withPractice(DEFAULT_PLAN));
+  const [plan, setPlan] = useState<Plan>(() => structuredClone(TEMPLATES.postjakt));
+  const [openAdvanced, setOpenAdvanced] = useState(false);
+  const [openDemo, setOpenDemo] = useState(false);
   const [voice, setVoice] = useState(false);
   const [checks, setChecks] = useState<boolean[]>(t.ready.checks.map(() => false));
   // 0010: the teacher's library («Samme som sist», mission and quiz packs).
@@ -187,12 +198,14 @@ export default function Wizard() {
     if (fromLink) wanted.current = { area, plan };
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reading localStorage after mount
     setTeacherKey(key);
-    if (fromLink) setBooted(true);
+    if (fromLink) {
+      setStep("area");
+      setBooted(true);
+    }
     api.library
       .get(key)
       .then((lib) => {
         setLibrary(lib);
-        if (!fromLink && hasContent(lib)) setStep("start");
       })
       .catch(() => setLibrary(null))
       .finally(() => setBooted(true));
@@ -589,8 +602,8 @@ export default function Wizard() {
 
   // ── step navigation ──
   function goTo(next: Step) {
-    // The rounds step remounts its editors from the plan, which is always parseable.
-    if (step === "rounds") setQuizValid(true);
+    // The Tilpass editors remount from the plan, which is always parseable.
+    if (step === "ready") setQuizValid(true);
     setPlacing(false);
     setDir(ORDER.indexOf(next) < ORDER.indexOf(step) ? "back" : "next");
     setCollapsed(false);
@@ -609,6 +622,7 @@ export default function Wizard() {
     setForbidden((a.forbidden?.coordinates ?? []).map((poly) => poly[0].slice(0, -1).map((p) => [p[0], p[1]] as LngLat)));
     setAssembly([a.assembly.lng, a.assembly.lat]);
     setFixedPostsRaw(structuredClone(a.posts ?? []));
+    if (a.posts?.length) setOpenAdvanced(true);
     savedAreaId.current = a.id;
     if (a.kind === "saved") setPostsAreaName(a.name);
     map.current?.jumpTo({ center: [a.assembly.lng, a.assembly.lat] });
@@ -714,6 +728,7 @@ export default function Wizard() {
   const isCollapsed = onMap && collapsed && !drawTarget;
   const stepCls = dir === "back" ? "t-step-back" : "t-step-next";
   const allChecked = checks.every(Boolean);
+  const planOk = !!normPlan(plan) && quizValid;
   const idx = STEPS.indexOf(step);
   const areaNextBlocked = areaBlocked || !assembly || assemblyFar || assemblyForbidden || postsOutside > 0;
 
@@ -777,48 +792,64 @@ export default function Wizard() {
             <div key={step} className={cx("p-6", stepCls)} data-testid={step === "start" ? "start-step" : undefined}>
               {step === "start" && (
                 <>
-                  <h1 className="text-2xl font-black">{no.start.title}</h1>
-                  <div className="m-stagger mt-6 grid gap-3">
+                  <h1 className="text-2xl font-black">{no.start.pick}</h1>
+                  <p className="mt-1 text-sm text-txt-dim">{no.start.pickHint}</p>
+                  <div className="m-stagger mt-5 grid gap-3">
+                    {SESSION_CARDS.map(({ id, Icon }, i) => {
+                      const info = no.start.sessions[id];
+                      return (
+                        <button
+                          key={id}
+                          className={card(false, "min-h-28 justify-center")}
+                          onClick={() => {
+                            setPlan(structuredClone(TEMPLATES[id]));
+                            goTo("area");
+                          }}
+                          data-testid={`session-${id}`}
+                          style={{ "--i": i } as React.CSSProperties}
+                        >
+                          <span className="flex w-full items-center gap-3 text-lg font-black">
+                            <Icon className="text-gold-text" />
+                            <span className="min-w-0 flex-1">{info.name}</span>
+                            <span className="inline-flex flex-none items-center gap-1 text-sm font-bold text-gold-text tabular-nums">
+                              <IconClock size={16} />
+                              {t.playlist.total(planSummary(TEMPLATES[id]).minutes)}
+                            </span>
+                          </span>
+                          <span className="mt-1 block pl-9 text-sm text-txt-dim">{info.hint}</span>
+                        </button>
+                      );
+                    })}
                     {(lastArea || lastPlan) && (
                       <button
-                        className={card(true, "min-h-28 justify-center")}
+                        className={card(false, "min-h-16 justify-center py-3")}
                         onClick={() => {
                           if (lastArea) applyArea(lastArea);
                           if (lastPlan) applyPlan(lastPlan);
-                          goTo(lastArea && lastPlan ? "ready" : lastArea ? "rounds" : "area");
+                          goTo(lastArea && lastPlan ? "ready" : "area");
                         }}
                         data-testid="start-reuse"
-                        style={{ "--i": 0 } as React.CSSProperties}
+                        style={{ "--i": 3 } as React.CSSProperties}
                       >
-                        <span className="flex items-center gap-3 text-lg font-black">
-                          <IconRepeat className="text-gold-text" />
+                        <span className="flex items-center gap-3 font-extrabold">
+                          <IconRepeat size={20} className="text-gold-text" />
                           {no.start.reuse}
                         </span>
-                        <span className="mt-1 block w-full truncate pl-8 text-sm text-txt-dim">
+                        <span className="mt-0.5 block w-full truncate pl-8 text-sm text-txt-dim">
                           {no.start.reuseHint(lastArea?.name ?? "", lastPlan ? planSummary(lastPlan.plan).modes : "")}
                         </span>
                       </button>
                     )}
-                    <button
-                      className={card(false, "min-h-28 justify-center")}
-                      onClick={() => goTo("area")}
-                      data-testid="start-fresh"
-                      style={{ "--i": 1 } as React.CSSProperties}
-                    >
-                      <span className="flex items-center gap-3 text-lg font-black">
-                        <IconPlus className="text-gold-text" />
-                        {no.start.fresh}
-                      </span>
-                      <span className="mt-1 block pl-8 text-sm text-txt-dim">{no.start.freshHint}</span>
-                    </button>
                   </div>
-                  <Link
-                    href="/bibliotek"
-                    className="mt-4 inline-flex min-h-12 items-center gap-2 text-sm font-bold text-txt-dim hover:text-txt"
-                  >
-                    <IconBook size={18} />
-                    {no.start.library}
-                  </Link>
+                  {showStart && (
+                    <Link
+                      href="/bibliotek"
+                      className="mt-4 inline-flex min-h-12 items-center gap-2 text-sm font-bold text-txt-dim hover:text-txt"
+                    >
+                      <IconBook size={18} />
+                      {no.start.library}
+                    </Link>
+                  )}
                 </>
               )}
 
@@ -954,18 +985,35 @@ export default function Wizard() {
                         )}
 
                         {!drawTarget && areaRing && (
-                          <PostsEditor
-                            posts={fixedPosts}
-                            placing={placing}
-                            outside={postsOutside}
-                            canSave={!!teacherKey && !areaBlocked && !!assembly && !assemblyFar && postsOutside === 0}
-                            saveError={postsSaveError}
-                            name={postsAreaName}
-                            onName={setPostsAreaName}
-                            onPlacing={setPlacing}
-                            onChange={setFixedPosts}
-                            onSavePrint={savePostsAndPrint}
-                          />
+                          <Disclosure
+                            title={t.playlist.advanced}
+                            open={openAdvanced || postsOutside > 0}
+                            onToggle={() => {
+                              if (openAdvanced) setPlacing(false);
+                              setOpenAdvanced((o) => !o);
+                            }}
+                            testId="advanced"
+                            badge={
+                              postsOutside > 0 ? (
+                                <Chip tone="warn">{t.playlist.fix}</Chip>
+                              ) : fixedPosts.length > 0 ? (
+                                <Chip tone="gold">{t.fixedPosts.count(fixedPosts.length)}</Chip>
+                              ) : null
+                            }
+                          >
+                            <PostsEditor
+                              posts={fixedPosts}
+                              placing={placing}
+                              outside={postsOutside}
+                              canSave={!!teacherKey && !areaBlocked && !!assembly && !assemblyFar && postsOutside === 0}
+                              saveError={postsSaveError}
+                              name={postsAreaName}
+                              onName={setPostsAreaName}
+                              onPlacing={setPlacing}
+                              onChange={setFixedPosts}
+                              onSavePrint={savePostsAndPrint}
+                            />
+                          </Disclosure>
                         )}
                         {areaWarning && !drawTarget && <Note tone="warn">{areaWarning}</Note>}
                         {assemblyFar && !drawTarget && <Note tone="danger">{t.assembly.far}</Note>}
@@ -975,36 +1023,15 @@ export default function Wizard() {
                   )}
                   {!drawTarget && (
                     <SheetFooter plain={isCollapsed}>
-                      {showStart ? (
-                        <Button variant="ghost" onClick={() => goTo("start")}>
-                          {t.back}
-                        </Button>
-                      ) : (
-                        <span />
-                      )}
-                      <Button size="lg" className="min-w-32" disabled={areaNextBlocked} onClick={() => goTo("rounds")}>
+                      <Button variant="ghost" onClick={() => goTo("start")}>
+                        {t.back}
+                      </Button>
+                      <Button size="lg" className="min-w-32" disabled={areaNextBlocked} onClick={() => goTo("ready")}>
                         {t.next}
                       </Button>
                     </SheetFooter>
                   )}
                 </>
-              )}
-
-              {step === "rounds" && (
-                <RoundsStep
-                  plan={plan}
-                  onChange={setPlan}
-                  voice={voice}
-                  onVoice={setVoice}
-                  onStarter={applyStarter}
-                  quizValid={quizValid}
-                  onQuizValid={setQuizValid}
-                  missionPacks={library?.packs ?? []}
-                  quizPacks={library?.quizzes ?? []}
-                  onSave={savePack}
-                  onBack={() => goTo("area")}
-                  onNext={() => goTo("ready")}
-                />
               )}
 
               {step === "ready" && (
@@ -1024,6 +1051,19 @@ export default function Wizard() {
                     ))}
                   </dl>
                   {forbidden.length > 0 && <p className="mt-2 text-center text-xs font-bold text-txt-dim">{t.ready.blockedN(forbidden.length)}</p>}
+
+                  <RoundsStep
+                    plan={plan}
+                    onChange={setPlan}
+                    voice={voice}
+                    onVoice={setVoice}
+                    onStarter={applyStarter}
+                    quizValid={quizValid}
+                    onQuizValid={setQuizValid}
+                    missionPacks={library?.packs ?? []}
+                    quizPacks={library?.quizzes ?? []}
+                    onSave={savePack}
+                  />
 
                   <div className="mt-6 space-y-2" role="group" aria-label={t.ready.lead}>
                     {t.ready.checks.map((label, i) => (
@@ -1070,33 +1110,45 @@ export default function Wizard() {
                       {createError}
                     </Note>
                   )}
-                  <div className="mt-6 rounded-2xl border border-dashed border-line p-4" data-testid="demo-box">
-                    <p className="font-extrabold">{no.demo.try}</p>
-                    <p className="mt-1 text-xs leading-relaxed text-txt-dim">{no.demo.tryHint}</p>
-                    <div className="mt-3 flex flex-wrap items-center gap-3">
-                      <label className="flex items-center gap-2 text-sm font-bold">
-                        {no.demo.count}
-                        <input
-                          type="number"
-                          min={DEMO_MIN_BOTS}
-                          max={DEMO_MAX_BOTS}
-                          value={demoBots}
-                          onChange={(e) => setDemoBots(Number(e.target.value))}
-                          onBlur={() => setDemoBots(clampBots(demoBots))}
-                          className={cx(field, "w-20 text-center")}
-                        />
-                      </label>
-                      <Button variant="secondary" disabled={!allChecked || creating} onClick={() => void create(clampBots(demoBots))} data-testid="create-demo">
-                        {creating ? no.demo.starting : no.demo.try}
-                      </Button>
-                    </div>
-                    <p className="mt-2 text-xs text-txt-dim">{no.demo.note}</p>
+                  <div className="mt-5" data-testid="demo-box">
+                    <button
+                      type="button"
+                      className="ui-press inline-flex min-h-12 items-center gap-2 text-sm font-bold text-txt-dim underline underline-offset-4 hover:text-txt"
+                      aria-expanded={openDemo}
+                      onClick={() => setOpenDemo((o) => !o)}
+                      data-testid="demo-link"
+                    >
+                      {t.ready.tryDemo}
+                    </button>
+                    {openDemo && (
+                      <div className="m-fade-in mt-1 rounded-2xl border border-dashed border-line p-4">
+                        <p className="text-xs leading-relaxed text-txt-dim">{no.demo.tryHint}</p>
+                        <div className="mt-3 flex flex-wrap items-center gap-3">
+                          <label className="flex items-center gap-2 text-sm font-bold">
+                            {no.demo.count}
+                            <input
+                              type="number"
+                              min={DEMO_MIN_BOTS}
+                              max={DEMO_MAX_BOTS}
+                              value={demoBots}
+                              onChange={(e) => setDemoBots(Number(e.target.value))}
+                              onBlur={() => setDemoBots(clampBots(demoBots))}
+                              className={cx(field, "w-20 text-center")}
+                            />
+                          </label>
+                          <Button variant="secondary" disabled={!allChecked || creating || !planOk} onClick={() => void create(clampBots(demoBots))} data-testid="create-demo">
+                            {creating ? no.demo.starting : no.demo.try}
+                          </Button>
+                        </div>
+                        <p className="mt-2 text-xs text-txt-dim">{no.demo.note}</p>
+                      </div>
+                    )}
                   </div>
                   <SheetFooter>
-                    <Button variant="ghost" onClick={() => goTo("rounds")} disabled={creating}>
+                    <Button variant="ghost" onClick={() => goTo("area")} disabled={creating}>
                       {t.back}
                     </Button>
-                    <Button size="lg" className="min-w-0 flex-1 sm:flex-none" disabled={!allChecked || creating} onClick={() => void create()} data-testid="create">
+                    <Button size="lg" className="min-w-0 flex-1 sm:flex-none" disabled={!allChecked || creating || !planOk} onClick={() => void create()} data-testid="create">
                       {creating ? t.ready.creating : t.ready.create}
                     </Button>
                   </SheetFooter>

@@ -3,7 +3,7 @@
 export const wizard = {
   wizard: {
     title: "Ny økt",
-    steps: ["Område", "Runder", "Klar"],
+    steps: ["Økt", "Område", "Klar"],
     close: "Lukk",
     back: "Tilbake",
     next: "Neste",
@@ -99,7 +99,7 @@ export const wizard = {
       zone: "· krympende sone",
       presets: "Velg et opplegg",
       standard: "Standard",
-      template: { first: "Første gang", gym: "Full gymtime", teams: "Lagtime" } as Record<string, string>,
+      template: { first: "Første gang", gym: "Full gymtime", teams: "Lagtime", postjakt: "Postjakt", smittejakt: "Smittejakt", gjemsel: "Gjemsel" } as Record<string, string>,
       minutesTotal: (n: number) => `${n} min`,
       custom: "Tilpasset",
       customize: "Tilpass",
@@ -122,7 +122,7 @@ export const wizard = {
       zoneToggle: "Krympende sone",
       zoneHint: "Sonen krymper i tre steg. Utenfor koster poeng.",
       teamToggle: "Som lag",
-      moreOptions: "Flere valg",
+      moreOptions: "Ekstra",
       voice: "Talte varsler",
       voiceHint: "Mobilene sier for eksempel «Sonen krymper» høyt. Lyd og blink er som før.",
       breather: "Pustepause",
@@ -139,6 +139,10 @@ export const wizard = {
       missionsDefault: "Innebygde",
       quizNone: "Ingen",
       fix: "Må rettes",
+      // enkel start (B)
+      moreModes: "Flere moduser",
+      moreModesHint: "Fri løping, Sisten, Revejakt, Konge, Stafett, Poengorientering og ferdige opplegg.",
+      advanced: "Avansert",
     },
     ready: {
       lead: "Klar til å starte?",
@@ -156,6 +160,8 @@ export const wizard = {
       phone: "Mobilnummer (valgfritt)",
       phoneHint: "Gir elevene en «Ring lærer»-knapp. Slettes når økta slutter.",
       checkAll: "Kryss av alle tre for å fortsette.",
+      // enkel start (B)
+      tryDemo: "Prøv med boter først",
       create: "Opprett økt",
       creating: "Oppretter …",
     },
@@ -179,6 +185,14 @@ export const wizard = {
     fresh: "Ny økt",
     freshHint: "Velg område og runder",
     library: "Åpne biblioteket",
+    // enkel start (B)
+    pick: "Velg økt",
+    pickHint: "Tre runder i hver. Du kan tilpasse på slutten.",
+    sessions: {
+      postjakt: { name: "Postjakt", hint: "Løp til postene og samle poeng." },
+      smittejakt: { name: "Smittejakt", hint: "Den som blir tatt, blir jeger." },
+      gjemsel: { name: "Gjemsel", hint: "Gjemmerne får forsprang. Jegerne leter." },
+    },
   },
   missions: {
     title: "Egne øvelser",
