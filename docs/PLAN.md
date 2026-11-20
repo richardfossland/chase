@@ -65,6 +65,8 @@
 
 ### 2.1 Lærer: onboarding-veiviser (mål: under 2 minutter fra start til PIN)
 
+> **Enkel start (ADR-039, 2026-11-20):** Veiviseren har nå tre steg: **Velg økt → Område → Klar**. «Velg økt» har tre kort: Postjakt, Smittejakt og Gjemsel (3 runder hver, uten overraskelser, quiz eller prøverunde). «Samme som sist» er et lite kort. Rundeeditoren ligger i «Tilpass» på Klar-steget, og der vises bare Postjakt, Smittejakt, Gjemsel og Flaggjakt. Resten (Fri løping, Sisten, Revejakt, Konge, Stafett, Poengorientering og de ferdige oppleggene) ligger bak bryteren «Flere moduser». Overraskelser, quiz, egne øvelser og talte varsler ligger under «Ekstra», faste poster under «Avansert» i område-steget, og demo med boter er en liten lenke. Punktene under beskriver den opprinnelige veiviseren.
+
 1. **Start** – «Ny økt» eller «Gjenbruk forrige». Første gang vises en kort introduksjon og lærernøkkelen.
 2. **Område**
    - *Tegn polygon* på kartet (Kartverket topografisk / satellitt som valg), eller *Sirkel rundt meg* (glidebryter 50–400 m).
@@ -151,6 +153,8 @@ Se migrasjon 0023 for konstantene (`kv()`).
 Stillstand (§ 1 punkt 2): etter 90 s uten å flytte seg mer enn 10 m får jegerne en 100 m-sirkel rundt et forskjøvet punkt. Fangst som i Smittejakt (`convert`).
 
 ### 3.4 Senere moduser (fase 5+)
+
+> Siden ADR-039 er Konge, Stafett og Sporing skjult bak «Flere moduser» i veiviseren. Serveren støtter dem fortsatt, og lagrede og delte opplegg spilles som før.
 
 - **Lag mot lag / Flaggjakt** – 2–4 lag, erobre poster eller flagg, laget ser hverandre.
 - **Konge på haugen** – hold en sone lengst mulig som lag.

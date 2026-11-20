@@ -732,3 +732,17 @@ Runde med Sonnet-agenter (én per punkt, egen Sonnet-review for PR-ene med datab
 
 Tester: `test/live-urgent.test.ts` (terskler, eskalering, wire-format) og `test/live-core.test.ts` (hastefix skrives straks, takten flyttes ikke, vakt, koalesering, busy, `alert_host`).
 
+## ADR-039 — Enkel start: skjul, ikke slett (2026-11-20)
+
+**Kontekst:** Eier syntes Chase var forvirrende og gjorde for mye. I lobbyen falt Start-knappen under skjermkanten på PC: gridet i `HostPanel` hadde én implisitt `auto`-rad, så venstrekolonnen vokste til innholdshøyden, og den absolutte bunnlinja ble klippet. Eier valgte 2026-11-19/20: synlige moduser er Postjakt, Smittejakt, Gjemsel og Lag/Flaggjakt. Resten skal skjules bak «Flere moduser», ikke slettes. Oppstarten skal være «velg én ferdig økt». Hendelser, quiz, seremoni og bibliotek skal ut av standardvisningen. Slutten skal være et enkelt resultatkort, og elevskjermen skal vise én ting om gangen.
+
+**Beslutning (bare klient, ingen SQL, tvillingene er uendret):**
+- **Lobby:** `lg:grid-rows-[minmax(0,1fr)]` på roten og `min-h-0 overflow-hidden` på venstrekolonnen. Kompakt QR (180 px) og PIN, og spillerbrikkene vises bare under `lg`. «Overraskelse» står i bunnlinja bare når `event_every_s > 0`, ellers i «…». TeamsChip vises bare med lagrunder. Etter siste runde er hovedknappen «Vis resultater» (øktrapport med «Avslutt økt»). Premieutdelingen ligger under «…» → Mer.
+- **Veiviser:** Velg økt → Område → Klar. Nye maler `postjakt`, `smittejakt` og `gjemsel` i `TEMPLATES`, uten hendelser, quiz, oppdrag eller prøverunde. «Standard» (`DEFAULT_PLAN` med overraskelser hvert 90. s) er tatt ut av velgeren. `DEFAULT_PLAN` er uendret som API-fallback. `lib/client/visibleModes.ts` (`usesHiddenModes`): et opplegg med en skjult modus åpner «Tilpass» og «Flere moduser» av seg selv.
+- **Elevskjerm (`lib/client/playChrome.ts`):** meter og skritt vises bare i Postjakt. Snus/Termometer vises i alle tag-varianter unntatt `convert`. Lagstripe og hurtigmeldinger vises bare i lagrunder. Hendelsesstripe og power-ups vises bare når serveren har sendt noe. Etter siste runde viser `SessionCard` totalene for hele økta fra `TickView.stats` (distanse, aktive sekunder, poster) og eventuelt poengorienteringslinja. Sikkerhetstonene, SOS og footeren er uendret.
+
+**Ikke med:** fangster og «lengst gjemt» på resultatkortet (finnes ikke i tick-svaret, så det krever SQL). En kortere lærervisning enn hele øktrapporten. BigScreen er uendret (den viste allerede bare aktive hendelser og paller under seremonien).
+
+**Testet:** `npm run check` (431 tester, nye: `test/simpleStart.test.ts`, `test/play-chrome.test.ts`, `test/host-plan.test.ts`). I nettleser lokalt: Velg økt → Gjemsel → Område → Klar → demo med 20 boter. Start var synlig ved 1440×700, 1440×900, 2000×1150 og 375×812. Bunnlinja live uten «Overraskelse», SOS-alarm synlig, tre runder, deretter samling, «Vis resultater» og øktrapport.
+
+**Ikke gjort:** ekte iPhone og projektor (PILOT.md).
