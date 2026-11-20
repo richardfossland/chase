@@ -67,7 +67,12 @@ export const host = {
     endSession: "Avslutt økt",
     close: "Lukk",
     info: "Mer info",
-    moreGroups: { round: "Runde", players: "Elever", show: "Vis og skriv ut", session: "Økt" },
+    moreGroups: { round: "Runde", players: "Elever", show: "Vis og skriv ut", session: "Økt", more: "Mer" },
+    // enkel start (A)
+    simple: {
+      showResults: "Vis resultater",
+      optionalPrize: "Premieutdeling (valgfritt)",
+    },
     alarms: {
       sos: "SOS",
       forbidden: "Sperret område",

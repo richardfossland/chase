@@ -104,8 +104,9 @@
 - Trenger du mer tid, bruker du **+1 min**. **Neste** hopper over resten av runden. **⏸** pauser alle klokker.
 
 ## Slutt (8–10 min)
-1. Etter siste runde går alle mobilene til **samling**. Oppropet hakes av automatisk når eleven er ved samlingspunktet. Hak av manuelt for dem som står ved siden av.
-2. Trykk **🏆 Start seremoni**. Pallene avsløres én og én med trommevirvel når du trykker **Neste**, og elevenes mobiler følger med.
+1. Etter siste runde går alle mobilene til **samling**, og hver elev ser resultatkortet «Din økt» (distanse, aktiv tid, poster). Oppropet hakes av automatisk når eleven er ved samlingspunktet. Hak av manuelt for dem som står ved siden av.
+   - **Enkel start (ADR-039):** hovedknappen er **Vis resultater**, som åpner øktrapporten med «Avslutt økt». Seremonien er valgfri under «…» → Mer → «Premieutdeling (valgfritt)». Sjekk på ekte iPhone at resultatkortet ikke dekker samlingsbeskjeden, og på projektor at Start-knappen i lobbyen er synlig.
+2. *(Valgfritt)* Trykk **🏆 Start seremoni**. Pallene avsløres én og én med trommevirvel når du trykker **Neste**, og elevenes mobiler følger med.
    - Spredningsregelen er på: ingen kan stå på mer enn 2 paller.
    - Del gjerne ut **🏅 Beste dommer** fra spillerkortet før seremonien.
    - Med lag kommer **🤝 Lagspiller** rett før «Flest poeng», og **👥 Lagpall** med alle lagene til slutt.

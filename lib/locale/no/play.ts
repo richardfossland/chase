@@ -243,4 +243,13 @@ export const play = {
     label: "Skritt",
     on: "Skritteller på",
   },
+  // enkel start (C)
+  totals: {
+    title: "Din økt",
+    thanks: "Takk for i dag",
+    thanksBody: "Bra jobba! Gå til møteplassen.",
+    distance: "Løpt",
+    active: "Aktiv",
+    posts: "Poster",
+  },
 } as const;

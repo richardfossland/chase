@@ -33,6 +33,7 @@ import { HotColdBar } from "./HotColdBar";
 import { TeamMsgBar, TeamStrip } from "./TeamCard";
 import { QuizCard } from "./QuizCard";
 import { useTurn } from "./useTurn";
+import { hasEventsOn, playChrome, sessionTotals, type SessionTotals } from "@/lib/client/playChrome";
 import { requestMotion, useStepCounter } from "@/lib/client/steps";
 import { TEAMS, type TeamMsgKind } from "@/lib/rules/teams";
 import { CeremonyScreen } from "@/lib/client/Ceremony";
@@ -661,6 +662,8 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
   const zoneOut = status === "live" && !!zn && view?.zone?.inside === false;
   const evView = view?.event ?? null;
   const team = view?.team ?? null;
+  // Enkel start (C): one main thing at a time. Safety tones below are never touched by this.
+  const chrome = playChrome({ mode, variant: round?.variant ?? tag?.variant ?? null, teamRound: !!round?.team, hasEvents: hasEventsOn(evView, view?.power) });
   const teamLive = (status === "live" || status === "paused") && !!round?.team;
   const teamMap = team && teamLive
     ? JSON.stringify({
@@ -837,7 +840,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
                 <dd className="text-5xl font-black leading-none tabular-nums" data-testid="clock">{formatClock(soLeft ?? left)}</dd>
               </div>
             )}
-            <div className="ml-auto space-y-1 text-right text-sm font-bold opacity-85">
+            {chrome.headerStats && <div className="ml-auto space-y-1 text-right text-sm font-bold opacity-85">
               <p className="flex items-center justify-end gap-1.5">
                 <IconMove size={16} />
                 {t.meters(view.stats.distance_m)}
@@ -849,7 +852,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
                   <span className="sr-only">{no.steps.label}</span>
                 </p>
               )}
-            </div>
+            </div>}
           </dl>
         )}
       </header>
@@ -881,12 +884,12 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
         </div>
       )}
 
-      {team && status !== "ceremony" && (
+      {team && chrome.teamStrip && status !== "ceremony" && (
         <TeamStrip team={team} round={round} fix={gps.fix} offsetMs={offsetMs} now={now} live={teamLive} relay={view?.relay ?? null} />
       )}
-      {team && teamLive && status === "live" && <TeamMsgBar busy={msgBusy} onSend={(k) => void sendTeamMsg(k)} />}
+      {team && chrome.teamMsgBar && teamLive && status === "live" && <TeamMsgBar busy={msgBusy} onSend={(k) => void sendTeamMsg(k)} />}
 
-      {evView && (status === "live" || status === "paused") && (
+      {evView && chrome.eventStrip && (status === "live" || status === "paused") && (
         <EventStrip
           key={evView.no}
           ev={evView}
@@ -902,10 +905,10 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
           }}
         />
       )}
-      {status === "live" && (
+      {status === "live" && chrome.hotCold && (
         <HotColdBar sessionId={sessionId} playerId={me.playerId} token={me.token} mode={round?.mode} variant={round?.variant ?? tag?.variant ?? null} releaseAt={round?.hide?.release_at ?? tag?.hide?.release_at ?? null} offsetMs={offsetMs} role={role} now={now} safetyActive={!!sosOpen || sosAcked || gpsLost || zoneOut || !!view?.safety.forbidden || (view?.safety.geofence ?? 0) >= 2} />
       )}
-      {view?.power && (status === "live" || status === "paused") && (
+      {view?.power && chrome.powerBar && (status === "live" || status === "paused") && (
         <PowerBar power={view.power} round={round} role={role} offsetMs={offsetMs} now={now} busy={puBusy} onUse={(k) => void firePowerup(k)} />
       )}
 
@@ -942,7 +945,9 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
             </p>
           </div>
         )}
-        {summary && (status === "breather" || status === "gathering") && (
+        {playlistDone && view ? (
+          <SessionCard totals={sessionTotals(view.stats)} scoreoLine={view?.scoreo?.done ? no.scoreo.done(view.scoreo.got ?? 0, view.scoreo.total ?? 0, view.scoreo.penalty ?? 0) : null} />
+        ) : summary && (status === "breather" || status === "gathering") && (
           <SummaryCard summary={summary} next={status === "breather" ? (round?.next ?? null) : null} practice={practice} scoreoLine={view?.scoreo?.done ? no.scoreo.done(view.scoreo.got ?? 0, view.scoreo.total ?? 0, view.scoreo.penalty ?? 0) : null} />
         )}
       </div>
@@ -1527,6 +1532,48 @@ function Compass({ m, deg, label }: { m: number; deg: number; label: string }) {
         <span className="block text-xs font-black uppercase tracking-wide opacity-80">{t.nearestShort}</span>
         <span className="block text-5xl font-black leading-none tabular-nums">{t.meters(m)}</span>
       </span>
+    </div>
+  );
+}
+
+/** After the last round: the whole session in my own numbers, no place or ranking. Shown before «Avslutt», which deletes the data. */
+function SessionCard({ totals, scoreoLine }: { totals: SessionTotals; scoreoLine: string | null }) {
+  const cell = "rounded-2xl bg-ink-3 px-3 py-3";
+  const s = no.totals;
+  return (
+    <div
+      className="m-rise-in absolute inset-x-3 bottom-3 z-10 rounded-[var(--radius-card)] border border-line bg-ink-2/95 p-5 text-txt shadow-[var(--shadow-float)] backdrop-blur"
+      data-testid="session-card"
+    >
+      <p className="text-sm font-black uppercase tracking-wider text-gold-text">{s.title}</p>
+      <p className="mt-1 text-4xl font-black leading-tight">{s.thanks}</p>
+      <p className="mt-1 text-sm font-bold text-txt-dim">{s.thanksBody}</p>
+      {scoreoLine && <p className="mt-1 text-sm font-bold text-txt-dim">{scoreoLine}</p>}
+      <dl className={cx("m-stagger mt-4 grid gap-2", totals.posts > 0 ? "grid-cols-3" : "grid-cols-2")}>
+        <div className={cell} style={{ "--i": 1 } as CSSProperties}>
+          <dt className="flex items-center gap-1 text-xs font-bold uppercase text-txt-dim">
+            <IconMove size={14} />
+            {s.distance}
+          </dt>
+          <dd className="mt-1 text-2xl font-black tabular-nums">{t.meters(totals.distance_m)}</dd>
+        </div>
+        <div className={cell} style={{ "--i": 2 } as CSSProperties}>
+          <dt className="flex items-center gap-1 text-xs font-bold uppercase text-txt-dim">
+            <IconClock size={14} />
+            {s.active}
+          </dt>
+          <dd className="mt-1 text-2xl font-black tabular-nums">{t.minutes(totals.active_s)}</dd>
+        </div>
+        {totals.posts > 0 && (
+          <div className={cell} style={{ "--i": 3 } as CSSProperties}>
+            <dt className="flex items-center gap-1 text-xs font-bold uppercase text-txt-dim">
+              <IconMapPin size={14} />
+              {s.posts}
+            </dt>
+            <dd className="mt-1 text-2xl font-black tabular-nums">{totals.posts}</dd>
+          </div>
+        )}
+      </dl>
     </div>
   );
 }

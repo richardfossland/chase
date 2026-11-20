@@ -17,7 +17,18 @@ const r = no.report;
 const nf = new Intl.NumberFormat("nb-NO", { maximumFractionDigits: 1 });
 const fmt = (n: number) => nf.format(n);
 
-export function HostReport({ load, alarms, onClose }: { load: () => Promise<ReportData | null>; alarms: HostAlarm[]; onClose: () => void }) {
+export function HostReport({
+  load,
+  alarms,
+  onClose,
+  onEnd,
+}: {
+  load: () => Promise<ReportData | null>;
+  alarms: HostAlarm[];
+  onClose: () => void;
+  /** «Avslutt økt» next to the report (results view after the last round). */
+  onEnd?: () => void;
+}) {
   const rootRef = useRef<HTMLDivElement>(null);
   // Regel 4: rapporten dekker skjermen, så aktive varsler vises øverst, og en ny SOS lukker den.
   const open = alarms.filter((a) => !a.resolved && !a.acked);
@@ -94,6 +105,11 @@ export function HostReport({ load, alarms, onClose }: { load: () => Promise<Repo
           <button className={buttonClass("secondary", "md")} onClick={onClose}>
             {r.close}
           </button>
+          {onEnd && (
+            <button className={buttonClass("danger", "md", "ml-auto")} onClick={onEnd} data-testid="report-end">
+              {no.host.endSession}
+            </button>
+          )}
         </div>
 
         {failed ? (

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { HostAlarm, HostPlayer, Snapshot } from "@/lib/client/api";
 import { ConfirmDialog } from "@/lib/client/ConfirmDialog";
+import { planHasEvents, planHasTeamRound } from "@/lib/client/hostPlan";
 import { identity } from "@/lib/client/identity";
 import { QRCode } from "@/lib/client/QRCode";
 import { audioReady, unlockAudio } from "@/lib/client/sound";
@@ -162,6 +163,8 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
   const playlistDone = snap.playlist_done;
   const qrCount = snap.plan?.qr_posts ?? 0;
   const roundBar = !!snap.round && !lobby && !ceremony;
+  const hasEvents = planHasEvents(snap.plan);
+  const hasTeams = planHasTeamRound(snap.plan);
   const roundControls = !!snap.round && !playlistDone && (live || between);
 
   function focusAlarm(a: HostAlarm) {
@@ -214,7 +217,7 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
 
   return (
     <div
-      className="host-panel relative h-dvh w-full overflow-hidden bg-ink lg:grid lg:grid-cols-[1fr_23rem]"
+      className="host-panel relative h-dvh w-full overflow-hidden bg-ink lg:grid lg:grid-cols-[1fr_23rem] lg:grid-rows-[minmax(0,1fr)]"
       onPointerDown={() => {
         if (!sound) {
           unlockAudio();
@@ -222,7 +225,7 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
         }
       }}
     >
-      <div className="relative h-full">
+      <div className="relative h-full min-h-0 overflow-hidden">
         {lobby ? (
           <LobbyBoard
             pin={snap.pin}
@@ -282,7 +285,7 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
           <DemoBadge sessionId={hs.sessionId} />
           {/* Under the alarms: safety beats game (CLAUDE.md rule 4). */}
           {!ceremony && <EventChip snap={snap} onOpen={() => setSheet({ kind: "events" })} />}
-          <TeamsChip snap={snap} onOpen={() => setSheet({ kind: "teams" })} />
+          {hasTeams && <TeamsChip snap={snap} onOpen={() => setSheet({ kind: "teams" })} />}
           {hs.error === "network" || hs.error === "timeout" ? (
             <p className="m-drop-in pointer-events-auto rounded-2xl bg-warn px-4 py-3 text-sm font-bold text-on-accent shadow-[var(--shadow-float)]">
               {h.errors.network}
@@ -314,11 +317,11 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
         {/* bottom action bar */}
         {!ceremony && (
           <nav className="absolute inset-x-0 bottom-0 z-10 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:mx-auto lg:max-w-2xl">
-            <div className={cx("host-float grid gap-1 rounded-[1.5rem] p-1.5", lobby || (gathering && playlistDone) ? "grid-cols-4" : "grid-cols-5")}>
+            <div className={cx("host-float grid gap-1 rounded-[1.5rem] p-1.5", lobby || (gathering && playlistDone) || !hasEvents ? "grid-cols-4" : "grid-cols-5")}>
               {gathering && playlistDone ? (
                 <>
-                  {/* All rounds are done: the prize-giving is the next step, so it is the main button. */}
-                  <BarButton icon={<IconTrophy size={22} />} label={h.prize.start} tone="gold" wide onClick={() => setSheet({ kind: "ceremony" })} />
+                  {/* All rounds are done (gathering started by itself): results is the main button; prize-giving lives in «…». */}
+                  <BarButton icon={<IconTrophy size={22} />} label={h.simple.showResults} tone="gold" wide onClick={() => setReportOpen(true)} />
                   <BarButton icon={<IconMegaphone size={22} />} label={h.message} onClick={() => setSheet({ kind: "message", to: null })} />
                   <BarButton icon={<IconMore size={22} />} label={h.more} onClick={() => setSheet({ kind: "more" })} />
                 </>
@@ -352,12 +355,14 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
                     tone={gathering ? "ok" : undefined}
                     onClick={() => void hs.act(gathering ? "end_gather" : "gather")}
                   />
-                  <BarButton
-                    icon={<IconZap size={22} />}
-                    label={h.surprise}
-                    tone={snap.event && !snap.event.done ? "gold" : undefined}
-                    onClick={() => setSheet({ kind: "events" })}
-                  />
+                  {hasEvents && (
+                    <BarButton
+                      icon={<IconZap size={22} />}
+                      label={h.surprise}
+                      tone={snap.event && !snap.event.done ? "gold" : undefined}
+                      onClick={() => setSheet({ kind: "events" })}
+                    />
+                  )}
                   <BarButton icon={<IconMore size={22} />} label={h.more} onClick={() => setSheet({ kind: "more" })} />
                 </>
               )}
@@ -451,16 +456,18 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
             {sheet.kind === "teams" && <TeamsSheet snap={snap} hs={hs} onSelect={select} />}
             {sheet.kind === "more" && (
               <div className="space-y-6 pb-2">
-                {gathering && (
-                  <SheetButton tone="gold" icon={<IconTrophy />} onClick={() => setSheet({ kind: "ceremony" })}>
-                    {h.prize.start}
-                  </SheetButton>
-                )}
-                {roundControls && (
+                {(roundControls || (!hasEvents && (live || paused || between))) && (
                   <MoreGroup title={h.moreGroups.round}>
-                    <SheetButton icon={<IconSkip />} onClick={nextRound}>
-                      {between ? h.round.startNow : h.round.next}
-                    </SheetButton>
+                    {roundControls && (
+                      <SheetButton icon={<IconSkip />} onClick={nextRound}>
+                        {between ? h.round.startNow : h.round.next}
+                      </SheetButton>
+                    )}
+                    {!hasEvents && (
+                      <SheetButton icon={<IconZap />} onClick={() => setSheet({ kind: "events" })}>
+                        {h.surprise}
+                      </SheetButton>
+                    )}
                   </MoreGroup>
                 )}
                 <MoreGroup title={h.moreGroups.players}>
@@ -472,7 +479,7 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
                   <SheetButton icon={<IconList />} onClick={() => setSheet({ kind: "players" })}>
                     {h.playersList} <span className="ml-auto text-txt-dim tabular-nums">{snap.players.length}</span>
                   </SheetButton>
-                  {(snap.plan?.teams ?? 0) >= 2 && (
+                  {hasTeams && (snap.plan?.teams ?? 0) >= 2 && (
                     <SheetButton icon={<IconUsers />} onClick={() => setSheet({ kind: "teams" })}>
                       {no.teams.host.title}
                     </SheetButton>
@@ -483,7 +490,12 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
                     </SheetButton>
                   )}
                 </MoreGroup>
-                <MoreGroup title={h.moreGroups.session}>
+                <MoreGroup title={h.moreGroups.more}>
+                  {gathering && (
+                    <SheetButton icon={<IconTrophy />} onClick={() => setSheet({ kind: "ceremony" })}>
+                      {playlistDone ? h.simple.optionalPrize : h.prize.start}
+                    </SheetButton>
+                  )}
                   <button
                     type="button"
                     role="switch"
@@ -497,8 +509,6 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
                     <span className="ml-auto font-bold text-txt-dim">{snap.voice === true ? h.voice.on : h.voice.off}</span>
                   </button>
                   <p className="px-1 text-xs text-txt-dim">{h.voice.hint}</p>
-                </MoreGroup>
-                <MoreGroup title={h.moreGroups.show}>
                   <a href={`/host/${hs.sessionId}/tavle`} target="_blank" rel="noopener" className={sheetBtn()} data-testid="open-screen">
                     <IconScreen className="shrink-0 text-txt-dim" />
                     {no.screen.open}
@@ -509,11 +519,11 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
                       {h.printQr(qrCount)}
                     </Link>
                   )}
-                </MoreGroup>
-                <div className="grid gap-2 border-t border-line pt-6">
                   <SheetButton icon={<IconTrophy />} onClick={() => { setSheet(null); setReportOpen(true); }}>
                     {no.report.button}
                   </SheetButton>
+                </MoreGroup>
+                <div className="grid gap-2 border-t border-line pt-6">
                   <SheetButton tone="danger" icon={<IconStop />} onClick={endFlow}>
                     {h.endSession}
                   </SheetButton>
@@ -524,7 +534,19 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
         )}
       </Sheet>
 
-      {reportOpen && <HostReport load={hs.loadReport} alarms={snap.alarms} onClose={() => setReportOpen(false)} />}
+      {reportOpen && <HostReport
+          load={hs.loadReport}
+          alarms={snap.alarms}
+          onClose={() => setReportOpen(false)}
+          onEnd={
+            gathering
+              ? () => {
+                  setReportOpen(false);
+                  endFlow();
+                }
+              : undefined
+          }
+        />}
 
       {confirm && !reportOpen && (
         <ConfirmDialog
@@ -696,17 +718,17 @@ function LobbyBoard({
   const count = useCountUp(players.length);
   const host = joinUrl.replace(/^https?:\/\//, "").replace(/\/\d+$/, "");
   return (
-    <div className="h-full overflow-y-auto px-5 pt-20 pb-36 lg:px-10">
+    <div className="h-full overflow-y-auto px-5 pt-20 pb-36 lg:px-10 lg:pt-16">
       <div className="m-rise-in mx-auto flex max-w-3xl flex-col items-center text-center">
         <h1 className="text-sm font-bold uppercase tracking-[0.25em] text-txt-dim">{h.lobbyTitle}</h1>
 
-        <div className="mt-6 flex flex-col items-center gap-8 sm:flex-row sm:gap-14">
+        <div className="mt-4 flex flex-col items-center gap-6 sm:flex-row sm:gap-12">
           <div className="rounded-[2rem] bg-white p-4 shadow-[var(--shadow-card)]">
-            {joinUrl ? <QRCode value={joinUrl} size={232} /> : <div className="size-[232px] rounded-xl bg-ink-3" />}
+            {joinUrl ? <QRCode value={joinUrl} size={180} /> : <div className="size-[180px] rounded-xl bg-ink-3" />}
           </div>
           <div className="sm:text-left">
             <p className="text-xs font-bold uppercase tracking-[0.2em] text-txt-dim">{h.pin}</p>
-            <p className="font-mono text-7xl font-black leading-none tracking-[0.12em] text-txt" data-testid="pin">
+            <p className="font-mono text-6xl font-black leading-none tracking-[0.12em] text-txt" data-testid="pin">
               {pin}
             </p>
             <span className="mt-4 block h-1.5 w-16 rounded-full bg-gold max-sm:mx-auto" aria-hidden />
@@ -716,7 +738,7 @@ function LobbyBoard({
           </div>
         </div>
 
-        <div className="mt-14" aria-live="polite">
+        <div className="mt-8" aria-live="polite">
           {players.length ? (
             <p>
               <span className="block text-7xl font-black leading-none tabular-nums">{count}</span>
@@ -743,7 +765,7 @@ function LobbyBoard({
         )}
 
         {!crowd && players.length > 0 && (
-          <ul className="mt-8 flex max-w-2xl flex-wrap justify-center gap-2">
+          <ul className="mt-6 flex max-w-2xl flex-wrap justify-center gap-2 lg:hidden">
             {players.map((p) => (
               <li key={p.id} className={fresh.has(p.id) ? "host-join" : undefined}>
                 <button
@@ -762,7 +784,7 @@ function LobbyBoard({
 
         {plan?.rounds?.length ? (
           <button
-            className="ui-press mt-10 inline-flex min-h-12 items-center gap-2 rounded-full px-4 text-sm font-bold text-txt-dim hover:bg-ink-2 hover:text-txt"
+            className="ui-press mt-6 inline-flex min-h-12 items-center gap-2 rounded-full px-4 text-sm font-bold text-txt-dim hover:bg-ink-2 hover:text-txt"
             onClick={onRounds}
           >
             <IconList size={18} />
