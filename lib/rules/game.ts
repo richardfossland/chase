@@ -131,6 +131,37 @@ export const TEMPLATES = {
     event_every_s: 90,
     teams: 4,
   },
+  // enkel start (B): the three «Velg økt» cards. Pustepause as before, no events (event_every_s absent), no quiz/missions, no prøverunde.
+  postjakt: {
+    rounds: [
+      { mode: "posts", duration_s: 360 },
+      { mode: "posts", duration_s: 360 },
+      { mode: "posts", duration_s: 360 },
+    ],
+    countdown_s: GAME.countdown_s,
+    breather_s: GAME.breather_s,
+    qr_posts: 0,
+  },
+  smittejakt: {
+    rounds: [
+      { mode: "tag", duration_s: 300, variant: "convert" },
+      { mode: "tag", duration_s: 300, variant: "convert" },
+      { mode: "tag", duration_s: 300, variant: "convert" },
+    ],
+    countdown_s: GAME.countdown_s,
+    breather_s: GAME.breather_s,
+    qr_posts: 0,
+  },
+  gjemsel: {
+    rounds: [
+      { mode: "tag", duration_s: 300, variant: "hide", head_start_s: HIDE.head_default_s },
+      { mode: "tag", duration_s: 300, variant: "hide", head_start_s: HIDE.head_default_s },
+      { mode: "tag", duration_s: 300, variant: "hide", head_start_s: HIDE.head_default_s },
+    ],
+    countdown_s: GAME.countdown_s,
+    breather_s: GAME.breather_s,
+    qr_posts: 0,
+  },
 } satisfies Record<string, Plan>;
 export type TemplateId = keyof typeof TEMPLATES;
 

@@ -3,7 +3,7 @@
 // Client: uses buttonClass() from lib/client/ui (a client module).
 import Link from "next/link";
 
-import { IconArrowRight, IconBook, IconMapPin, IconPlay, IconQr, IconRadar, IconUsers } from "@/lib/client/ui/icons";
+import { IconBook, IconMapPin, IconPlay, IconQr, IconRadar, IconUsers } from "@/lib/client/ui/icons";
 import { buttonClass } from "@/lib/client/ui";
 import { no } from "@/lib/locale/no";
 
@@ -55,15 +55,6 @@ export default function Home() {
               </Link>
             </div>
 
-            <Link
-              href="/bibliotek"
-              className="ui-press mt-4 inline-flex min-h-12 items-center gap-2 rounded-[var(--radius-ctl)] px-3 font-bold text-txt-dim hover:bg-ink-3 hover:text-txt"
-              style={{ "--i": 3 } as React.CSSProperties}
-            >
-              <IconBook size={20} />
-              {l.library}
-              <IconArrowRight size={16} />
-            </Link>
           </div>
 
           <div className="m-fade-in order-1 lg:order-2">
@@ -93,9 +84,15 @@ export default function Home() {
 
         <footer className="mt-16 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-txt-dim">
           <span>{l.footer}</span>
-          <Link href="/personvern" className="inline-flex min-h-12 items-center underline underline-offset-4 hover:text-txt">
-            {no.legal.title}
-          </Link>
+          <nav className="flex flex-wrap items-center gap-x-4" aria-label={l.links}>
+            <Link href="/bibliotek" className="inline-flex min-h-12 items-center gap-1.5 underline underline-offset-4 hover:text-txt" data-testid="landing-library">
+              <IconBook size={16} />
+              {l.library}
+            </Link>
+            <Link href="/personvern" className="inline-flex min-h-12 items-center underline underline-offset-4 hover:text-txt">
+              {no.legal.title}
+            </Link>
+          </nav>
         </footer>
       </div>
     </main>
