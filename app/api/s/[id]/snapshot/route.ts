@@ -18,7 +18,7 @@ export const POST = guarded(async (req, ctx) => {
   if (rl) return rl;
   const body = await parseBody(req, snapshotBody);
   if (body instanceof Response) return body;
-  const r = await rpc("host_snapshot", {
+  const r = await rpc("host_snapshot_away", {
     p_session: id,
     p_host_token_hash: await sha256Hex(body.hostToken),
     p_include_geo: body.geo === true,
