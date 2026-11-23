@@ -15,6 +15,7 @@ import { EVENTS } from "@/lib/rules/events";
 import { SAFETY } from "@/lib/rules/safety";
 import { zoneAt, type ZoneState } from "@/lib/rules/zone";
 import { prefersReducedMotion } from "@/lib/client/ui";
+import { isAway } from "@/lib/client/liveRing";
 import { no } from "@/lib/locale/no";
 
 /** Name tags only from this zoom (≈ 1 px per metre at our latitudes), plus the
@@ -189,9 +190,10 @@ const HostMap = forwardRef<
       dot.classList.toggle("animate-ping-slow", s.pulse);
       const still = p.still_s !== null && p.still_s > SAFETY.still_alert_s && status === "live";
       const alarm = sosPlayers.has(p.id) || p.forbidden || p.geofence >= 2 || p.signal === "lost" || p.signal === "none";
-      const named = !anonymous && (close || p.id === selectedId || alarm || still);
+      const away = isAway(p) && status === "live";
+      const named = !anonymous && (close || p.id === selectedId || alarm || still || away);
       const name = entry.el.querySelector<HTMLElement>("[data-name]")!;
-      name.textContent = anonymous ? "" : still ? `${p.nickname} · ${no.host.stillTag}` : p.nickname;
+      name.textContent = anonymous ? "" : still ? `${p.nickname} · ${no.host.stillTag}` : away ? `${p.nickname} · ${no.host.away}` : p.nickname;
       name.style.display = named ? "" : "none";
       const tc = teams?.find((t) => t.n === teamOf?.[p.id])?.color;
       name.style.background = tc ?? "";

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { HostAlarm, HostPlayer, Snapshot } from "@/lib/client/api";
+import { awayIds, isAway } from "@/lib/client/liveRing";
 import { ConfirmDialog } from "@/lib/client/ConfirmDialog";
 import { planHasEvents, planHasTeamRound } from "@/lib/client/hostPlan";
 import { identity } from "@/lib/client/identity";
@@ -40,6 +41,7 @@ import {
   IconVolumeOff,
   IconX,
   IconZap,
+  IconLock,
 } from "@/lib/client/ui/icons";
 import { no } from "@/lib/locale/no";
 import { formatClock, phaseLeftS, planTotalS } from "@/lib/rules/game";
@@ -281,7 +283,7 @@ function Panel({ hs }: { hs: HostSession & { snap: Snapshot; geo: NonNullable<Ho
             </span>
           )}
           {roundBar && <RoundBar snap={snap} act={hs.act} />}
-          <AlarmStrip alarms={snap.alarms} onAck={(ids) => ids.forEach((id) => void hs.ack(id))} onFocus={focusAlarm} />
+          <AlarmStrip alarms={snap.alarms} away={awayIds(snap.players)} onAck={(ids) => ids.forEach((id) => void hs.ack(id))} onFocus={focusAlarm} />
           <DemoBadge sessionId={hs.sessionId} />
           {/* Under the alarms: safety beats game (CLAUDE.md rule 4). */}
           {!ceremony && <EventChip snap={snap} onOpen={() => setSheet({ kind: "events" })} />}
@@ -597,7 +599,7 @@ export function groupAlarms(alarms: HostAlarm[]) {
   return [...groups.values()];
 }
 
-function AlarmStrip({ alarms, onAck, onFocus }: { alarms: HostAlarm[]; onAck: (ids: string[]) => void; onFocus: (a: HostAlarm) => void }) {
+function AlarmStrip({ alarms, away, onAck, onFocus }: { alarms: HostAlarm[]; away: Set<string>; onAck: (ids: string[]) => void; onFocus: (a: HostAlarm) => void }) {
   const [expanded, setExpanded] = useState(false);
   if (!alarms.length) return null;
   // Server order (unacked first, then sos, forbidden, outside, signal, speed) is kept.
@@ -634,6 +636,8 @@ function AlarmStrip({ alarms, onAck, onFocus }: { alarms: HostAlarm[]; onAck: (i
                 <span className="block truncate font-black leading-tight">
                   {h.alarms[a.kind] ?? a.kind}
                   {a.level >= 2 && a.kind === "outside" ? <span className="font-bold"> · {h.alarmHigh}</span> : null}
+                  {/* 0024: only a label beside the text; the alarm itself is shown as before (rule 4). */}
+                  {a.kind === "signal" && a.player_id && away.has(a.player_id) ? <span className="font-bold"> {h.awayNote}</span> : null}
                 </span>
                 <span className={cx("block truncate text-sm font-bold", urgent ? "text-white/90" : "text-txt-dim")}>
                   {a.nickname ?? "?"}
@@ -899,6 +903,12 @@ function PlayerList({
               <button className="flex min-h-12 min-w-0 flex-1 items-center gap-2 text-left" onClick={() => onSelect(p.id)}>
                 <span className="truncate font-bold">{p.nickname}</span>
                 {p.signal !== "ok" && <span className="shrink-0 text-xs font-semibold text-warn-text">{h.card.signal[p.signal]}</span>}
+                {isAway(p) && (
+                  <span className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-txt-dim" data-testid="away-badge">
+                    <IconLock size={14} />
+                    {h.away}
+                  </span>
+                )}
               </button>
               {gathering &&
                 (p.checked_in ? (
@@ -964,6 +974,12 @@ function PlayerCard({
           {p.forbidden ? h.alarms.forbidden : h.card.geofence[p.geofence]}
           {p.geofence >= 2 ? ` · ${Math.round(p.outside_m)} m` : ""}
         </Chip>
+        {isAway(p) && (
+          <Chip tone="neutral">
+            <IconLock size={14} className="mr-1 inline" />
+            {h.away}
+          </Chip>
+        )}
         {p.still_s !== null && p.still_s > SAFETY.still_alert_s && status === "live" && <Chip tone="warn">{h.still(p.still_s)}</Chip>}
       </div>
       <dl className="mt-5 grid grid-cols-3 gap-2 text-center">
