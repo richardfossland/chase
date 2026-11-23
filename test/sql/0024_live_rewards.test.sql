@@ -84,6 +84,7 @@ begin
   t := pg_temp.tick('lv', v_h);
   assert t -> 'live' ->> 'mult' = '1' and (t -> 'live' ->> 'streak_s')::int = 0, 'gap 30 s breaks the streak: ' || (t -> 'live')::text;
   assert (select best_streak_s from chase.player_stats where player_id = pg_temp.pid('lv', v_h)) = 241, 'best streak kept';
+  assert (t -> 'live' ->> 'best_streak_s')::int = 241, 'live.best_streak_s in the answer: ' || (t -> 'live')::text;
   -- Exactly the gap limit keeps it.
   update chase.player_live set lv_acc_s = 50, lv_at = now() - interval '20 seconds' where player_id = pg_temp.pid('lv', v_h);
   t := pg_temp.tick('lv', v_h);
@@ -157,12 +158,16 @@ begin
   t := pg_temp.tick('lv', v_h);
   assert not (t -> 'live' ->> 'on')::boolean and (t -> 'live' ->> 'frozen')::boolean and (t -> 'live' ->> 'streak_s')::int = 100, 'paused: frozen, streak kept: ' || (t -> 'live')::text;
   assert t -> 'tag' -> 'revealed' = '[]'::jsonb, 'no reveal while paused';
-  update chase.player_live set lv_at = now() - interval '500 seconds' where player_id = pg_temp.pid('lv', v_h);
+  -- The pause lasted 40 s: stored times move with it (lv_at + 40 s, never past now). The silent B (300 s before) stays silent.
+  update chase.sessions set frozen_at = now() - interval '40 seconds' where id = s;
+  update chase.player_live set lv_at = now() - interval '40 seconds' where player_id = pg_temp.pid('lv', v_h);
+  update chase.player_live set lv_at = now() - interval '340 seconds' where player_id = pg_temp.pid('lv', v_b);
   perform pg_temp.act(s, 'lv', 'resume');
-  assert (select lv_at from chase.player_live where player_id = pg_temp.pid('lv', v_h)) = now(), 'resume: distance counts from now';
+  assert (select lv_at from chase.player_live where player_id = pg_temp.pid('lv', v_h)) = now(), 'resume: lv_at moved with the pause';
+  assert (select lv_at from chase.player_live where player_id = pg_temp.pid('lv', v_b)) = now() - interval '300 seconds', 'silent before the pause = still silent after it';
   t := pg_temp.tick('lv', v_h);
   assert (t -> 'live' ->> 'on')::boolean and (t -> 'live' ->> 'streak_s')::int = 100, 'streak survives the pause: ' || (t -> 'live')::text;
-  assert t -> 'tag' -> 'revealed' = '[]'::jsonb, 'nobody revealed right after the resume';
+  assert exists (select 1 from jsonb_array_elements(t -> 'tag' -> 'revealed') e where (e ->> 'age_s')::int = 300), 'the one silent before the pause is revealed at once: ' || (t -> 'tag' -> 'revealed')::text;
   -- Breather (set by hand): frozen, no reveal.
   update chase.player_live set lv_at = now() - interval '300 seconds' where player_id = pg_temp.pid('lv', v_b);
   update chase.sessions set status = 'breather' where id = s;
@@ -384,4 +389,123 @@ begin
   assert (v_snap ->> 'alert_host')::boolean, 'alert_host';
   assert exists (select 1 from jsonb_array_elements(v_snap -> 'players') p where p ->> 'id' = pg_temp.pid('aw', 2)::text and (p ->> 'away')::boolean and p ->> 'signal' = 'lost'), 'lost + away on the same player';
   raise notice '0024 away + signal: ok';
+end $$;
+
+-- ───────────────────────── backfill: a deploy in the middle of a round ─────────────────────────
+do $$
+declare
+  s uuid; i int; t jsonb; v_t1 uuid; v_h int;
+begin
+  s := pg_temp.mk('bf', '{"rounds":[{"mode":"flag","duration_s":600}],"teams":2,"countdown_s":0}', 4);
+  perform pg_temp.act(s, 'bf', 'start');
+  perform chase._advance(s);
+  for i in 1 .. 4 loop perform pg_temp.tick('bf', i); end loop;
+  select id into v_t1 from chase.teams where session_id = s and n = 1;
+  -- State as before 0024: points with base 0.
+  update chase.teams set points = 60, lv_base = 0, lv_frac = 0 where id = v_t1;
+  update chase.player_stats set points = 80, round_points = 80, lv_base = 0 where player_id = pg_temp.pid('bf', 1);
+  perform chase._live_backfill();
+  assert (select lv_base from chase.teams where id = v_t1) = 60 and (select lv_base from chase.player_stats where player_id = pg_temp.pid('bf', 1)) = 80, 'backfill';
+  perform chase._advance(s);
+  assert (select points from chase.teams where id = v_t1) = 60, 'no team bonus on the old points';
+  update chase.player_live set lv_acc_s = 300, lv_at = now() - interval '5 seconds' where player_id = pg_temp.pid('bf', 1);
+  perform pg_temp.tick('bf', 1);
+  assert (select points from chase.player_stats where player_id = pg_temp.pid('bf', 1)) = 80, 'no multiplier on the old points (x1.5 streak)';
+  perform chase._live_backfill();
+  assert (select points from chase.teams where id = v_t1) = 60, 'backfill is idempotent';
+  raise notice '0024 backfill: ok';
+end $$;
+
+-- ───────────────────────── survivor bonus with a storm at the whistle; finish twice ─────────────────────────
+do $$
+declare
+  s uuid; i int; v_a int; v_b int; v_pa int; v_pb int; v_r jsonb; v_h int;
+begin
+  s := pg_temp.mk('st', '{"rounds":[{"mode":"tag","variant":"convert","duration_s":600}],"countdown_s":0}', 8);
+  perform pg_temp.act(s, 'st', 'start');
+  perform chase._advance(s);
+  for i in 1 .. 8 loop perform pg_temp.tick('st', i); end loop;
+  v_a := pg_temp.first_role('st', 8, 'prey');
+  v_b := pg_temp.first_role('st', 8, 'prey', v_a);
+  v_h := pg_temp.first_role('st', 8, 'hunter');
+  v_r := pg_temp.act(s, 'st', 'event_start', '{"kind":"storm"}');
+  assert (v_r ->> 'ok')::boolean, 'storm started: ' || v_r::text;
+  assert (select role from chase.players where id = pg_temp.pid('st', v_a)) = 'hunter', 'storm swapped the roles';
+  select points into v_pa from chase.player_stats where player_id = pg_temp.pid('st', v_a);
+  select points into v_pb from chase.player_stats where player_id = pg_temp.pid('st', v_b);
+  update chase.player_live set lv_at = now() - interval '60 seconds' where player_id = pg_temp.pid('st', v_b);   -- locked
+  update chase.sessions set phase_ends_at = now() - interval '1 second' where id = s;
+  perform chase._advance(s);
+  assert (select status from chase.sessions where id = s) = 'gathering', 'round over';
+  assert (select points from chase.player_stats where player_id = pg_temp.pid('st', v_a)) = v_pa + 25, 'storm at the whistle: live survivor +25';
+  assert (select points from chase.player_stats where player_id = pg_temp.pid('st', v_b)) = v_pb, 'storm at the whistle: locked survivor gets nothing';
+  -- Finish run a second time (roles are neutral): nothing moves.
+  perform chase._mode_finish(s, now());
+  assert (select points from chase.player_stats where player_id = pg_temp.pid('st', v_a)) = v_pa + 25
+     and (select points from chase.player_stats where player_id = pg_temp.pid('st', v_b)) = v_pb, 'second finish: no change';
+  raise notice '0024 storm + double finish: ok';
+end $$;
+
+-- ───────────────────────── pause: a silent prey stays silent, and is not paid for the time before ─────────────────────────
+do $$
+declare
+  s uuid; i int; t jsonb; v_h int; v_a int; v_pts int;
+begin
+  s := pg_temp.mk('pz', '{"rounds":[{"mode":"tag","variant":"convert","duration_s":600}],"countdown_s":0}', 8);
+  perform pg_temp.act(s, 'pz', 'start');
+  perform chase._advance(s);
+  for i in 1 .. 8 loop perform pg_temp.tick('pz', i); end loop;
+  v_h := pg_temp.first_role('pz', 8, 'hunter');
+  v_a := pg_temp.first_role('pz', 8, 'prey');
+  -- A was silent for 25 s when the 40 s pause began.
+  update chase.player_live set lv_at = now() - interval '65 seconds' where player_id = pg_temp.pid('pz', v_a);
+  perform pg_temp.act(s, 'pz', 'pause');
+  update chase.sessions set frozen_at = now() - interval '40 seconds' where id = s;
+  perform pg_temp.act(s, 'pz', 'resume');
+  t := pg_temp.tick('pz', v_h);
+  assert exists (select 1 from jsonb_array_elements(t -> 'tag' -> 'revealed') e where (e ->> 'age_s')::int = 25), 'silent before the pause: revealed after the resume: ' || (t -> 'tag' -> 'revealed')::text;
+  raise notice '0024 pause shift: ok';
+end $$;
+
+-- ───────────────────────── lightning posts and fixed posts; practice ─────────────────────────
+do $$
+declare
+  s uuid; i int; t jsonb; v_h int; v_a int;
+begin
+  -- Fixed posts chosen by the teacher: no lightning posts.
+  s := pg_temp.mk('x24a', '{"rounds":[{"mode":"posts","duration_s":900}],"countdown_s":0}', 4);
+  perform pg_temp.act(s, 'x24a', 'start');
+  perform chase._advance(s);
+  for i in 1 .. 4 loop perform pg_temp.tick('x24a', i); end loop;
+  update chase.sessions set settings = settings || '{"fixed_posts":[]}'::jsonb where id = s;
+  update chase.rounds set state = jsonb_set(state, '{flash_at}', to_jsonb(now() - interval '1 second')) where session_id = s and idx = 0;
+  perform chase._advance(s);
+  assert not exists (select 1 from chase.posts where session_id = s and kind = 'flash'), 'fixed_posts: no lightning post';
+  update chase.sessions set settings = settings - 'fixed_posts' where id = s;
+  perform chase._advance(s);
+  assert exists (select 1 from chase.posts where session_id = s and kind = 'flash'), 'without fixed_posts the lightning post comes';
+
+  -- Practice Postjakt: no lightning post, no flash_at.
+  s := pg_temp.mk('x24b', '{"rounds":[{"mode":"posts","duration_s":900,"practice":true}],"countdown_s":0}', 4);
+  perform pg_temp.act(s, 'x24b', 'start');
+  perform chase._advance(s);
+  for i in 1 .. 4 loop perform pg_temp.tick('x24b', i); end loop;
+  update chase.rounds set state = state || jsonb_build_object('flash_at', now() - interval '1 second') where session_id = s and idx = 0;
+  perform chase._advance(s);
+  assert not exists (select 1 from chase.posts where session_id = s and kind = 'flash'), 'practice: no lightning post';
+
+  -- Practice Smittejakt: no streak, no bonus, no reveal; the ring is off.
+  s := pg_temp.mk('x24c', '{"rounds":[{"mode":"tag","variant":"convert","duration_s":600,"practice":true}],"countdown_s":0}', 8);
+  perform pg_temp.act(s, 'x24c', 'start');
+  perform chase._advance(s);
+  for i in 1 .. 8 loop perform pg_temp.tick('x24c', i); end loop;
+  v_h := pg_temp.first_role('x24c', 8, 'hunter');
+  v_a := pg_temp.first_role('x24c', 8, 'prey');
+  update chase.player_live set lv_acc_s = 300, lv_at = now() - interval '5 seconds' where player_id = pg_temp.pid('x24c', v_h);
+  update chase.player_live set lv_at = now() - interval '60 seconds' where player_id = pg_temp.pid('x24c', v_a);
+  t := pg_temp.tick('x24c', v_h);
+  assert not (t -> 'live' ->> 'on')::boolean and t -> 'live' ->> 'mult' = '1.5' and (t -> 'live' ->> 'streak_s')::int = 300, 'practice: not on, streak untouched (frozen): ' || (t -> 'live')::text;
+  assert (select lv_acc_s from chase.player_live where player_id = pg_temp.pid('x24c', v_h)) = 300, 'practice: no streak counted';
+  assert t -> 'tag' -> 'revealed' = '[]'::jsonb, 'practice: nobody revealed';
+  raise notice '0024 fixed posts + practice: ok';
 end $$;

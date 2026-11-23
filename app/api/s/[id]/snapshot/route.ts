@@ -18,11 +18,14 @@ export const POST = guarded(async (req, ctx) => {
   if (rl) return rl;
   const body = await parseBody(req, snapshotBody);
   if (body instanceof Response) return body;
-  const r = await rpc("host_snapshot_away", {
+  const args = {
     p_session: id,
     p_host_token_hash: await sha256Hex(body.hostToken),
     p_include_geo: body.geo === true,
-  });
+  };
+  // 0024 adds the lock label. If it is missing (deploy order, rollback), fall back to the plain
+  // snapshot: the alarm strip must never depend on a nice-to-have (CLAUDE.md rule 4).
+  const r = await rpc("host_snapshot_away", args).catch(() => rpc("host_snapshot", args));
   // A new signal-loss alarm: wake any other host device too.
   if (r.ok && r.alert_host) defer(() => broadcast(channels.host(id), events.alarm), "snapshot-alarm");
   if (r.ok && r.alert_host) defer(() => liveNotify(id, "alarm"), "snapshot-alarm-live");

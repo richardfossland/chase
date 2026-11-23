@@ -14,7 +14,7 @@ export const POST = guarded(async (req, ctx) => {
   if (body instanceof Response) return body;
   const tokenHash = await sha256Hex(body.token);
   // Per token, not per IP: a whole class often shares one school IP.
-  const rl = limited(`away:${tokenHash.slice(0, 16)}`, 12);
+  const rl = limited(`away:${tokenHash.slice(0, 16)}`, 12) ?? limited(`away-session:${id}`, 600);
   if (rl) return rl;
   const r = await rpc("mark_away", { p_session: id, p_token_hash: tokenHash });
   if (!r.ok) return fail(400, "bad_request");

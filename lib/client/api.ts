@@ -353,6 +353,8 @@ export interface LiveView {
   streak_s: number;
   next_s: number | null;
   frozen: boolean;
+  /** Lengste live-rekke i økta (0024). */
+  best_streak_s?: number;
 }
 
 export interface TickView {

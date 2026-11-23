@@ -695,6 +695,21 @@ Valgt av eier 2026-11-19 etter en gjennomgang av SCRAM (Moveera, iOS/Android, ve
 
 **Ferdig når:** alle fem punktene er levert eller avsluttet med begrunnelse i DECISIONS, prod-sim er grønn (inkludert alarmtidene fra ADR-038), og iPhone-punktene står i PILOT.md («Fase 11»).
 
+
+### Fase 12 – Live-belønning: det skal lønne seg å ha skjermen åpen
+
+Valgt av eier 2026-11-20 (ADR-040). Nettleseren stopper GPS når en iPhone låses. Før denne fasen ble tidspoeng betalt etter veggklokka, og en låst telefon ble *usynlig* etter 20 s. Nå er det motsatt. Migrasjon 0024, bare wrappere: flat `tick` og `host_snapshot` er urørt.
+
+1. **Live-rekke:** ×1 → ×1,25 etter 2 min → ×1,5 etter 4 min sammenhengende live. Rekka ryker etter 20 s uten tick og fryses i pause, pustepause og samling. Multiplikatoren gjelder alle poeng opptjent i aktiv runde, unntatt lærerens justering.
+2. **Bare live-tid teller:** stille tid flytter overlevelses- og gjemmeklokka fram. Overlevelsesbonusen ved rundeslutt går bare til bytter som er live.
+3. **Låst = avslørt:** bytter og gjemmere uten tick i 20 s under en runde vises for jegerne med siste posisjon (`tag.revealed`).
+4. **Gulrøtter:** jegervarsel (`hunter_close` ≤ 30 m) for bytter og gjemmere; lynposter i Postjakt (ca. hvert 90. s, 30 s, 25 p, ikke med faste poster); lagbonus +25 % i Flaggjakt og Konge når hele laget er live.
+5. **Lås-merke hos læreren:** telefonen sier fra når siden skjules (`sendBeacon` → `mark_away`). Signaltapalarmen kommer som før etter 60 s og får bare merket «(låst skjerm)».
+6. **Elevskjerm:** live-ring ved poengene, forvarsel etter 10 s uten GPS, lengste live-rekke på resultatkortet.
+7. **Simulator:** bot `locker`/`locker70` og `--live-rewards`-sjekker.
+
+**Ferdig når:** DB-tester og sim med `--live-rewards` er grønne lokalt og i prod, tick p95 er innenfor ca. 20 % av ADR-030, og iPhone-punktene står i PILOT.md («Fase 12»).
+
 ---
 
 ## 14. Risikoer og tiltak

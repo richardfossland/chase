@@ -77,6 +77,7 @@
 5. Trykk **Start**. **Fløyta di** er startsignalet. Rundene går av seg selv, med nedtelling og pustepause.
 
 ## Underveis
+- **Live-belønning (fase 12, ADR-040), sjekk på ekte iPhone:** lås skjermen i 25 s som bytte i Smittejakt og se at jegeren får avslørt-punktet; at læreren ser lås-merket; at live-ringen fylles og ryker; at forvarselet kommer etter ca. 10 s uten GPS; at lynposter i Postjakt varsles med lyd. Spør elevene om det føles rettferdig, og om noen stirrer mer på skjermen enn før (trafikk).
 - Varselstripa øverst er sortert etter alvor: 🆘 > forbudt sone > utenfor > signaltap > stillstand > høy fart. **Kvitter** for å vise eleven at du har sett varselet.
 - **Spillerkortet** (trykk på en prikk):
   - sitter over (skade eller pause, uten poengtap),

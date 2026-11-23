@@ -19,7 +19,7 @@
 --     ticket på ≥ reveal_s (20 s) i en aktiv runde (Gjemsel: bare etter slipp). Eksakt siste posisjon erstatter
 --     plinget for den spilleren. id = samme saltede hash som plinget.
 --   * hunter_close: bytter/gjemmere får `tag.hunter_close` = jeger ≤ close_m (30 m), i tillegg til hunter_near (60 m).
---   * OVERLEVELSESBONUS BARE TIL LIVE (valg): convert +25 og Gjemsel survivor_pts gis av de indre lagene til alle
+--   * OVERLEVELSESBONUS BARE TIL LIVE (valg; kjører etter _ev_end, så stormroller er byttet tilbake; ikke Revejakt): convert +25 og Gjemsel survivor_pts gis av de indre lagene til alle
 --     overlevende; _mode_finish-wrapperen leser før det hvilke bytter som IKKE er live ved rundeslutt
 --     (lv_at < p_at − gap_s) og trekker bonusen (og 'survivor'-merket) fra dem igjen. Valgt framfor å gi selv, fordi
 --     de indre funksjonene (0004, 0023) da ikke trenger å røres.
@@ -56,6 +56,18 @@ alter table chase.player_stats add column if not exists lv_frac         numeric 
 alter table chase.player_stats add column if not exists best_streak_s   int not null default 0;
 alter table chase.teams        add column if not exists lv_base         int not null default 0;
 alter table chase.teams        add column if not exists lv_frac         numeric not null default 0;
+
+-- Backfill (a deploy in the middle of a round): the base is the points already earned, so neither the multiplier nor the
+-- team bonus is paid on old points. Only rows with base 0 and points <> 0 (= never seen by the live accounting).
+create or replace function chase._live_backfill()
+returns void
+language sql
+set search_path = chase, extensions, public
+as $$
+  update chase.player_stats set lv_base = points where lv_base = 0 and points <> 0;
+  update chase.teams set lv_base = points where lv_base = 0 and points <> 0;
+$$;
+select chase._live_backfill();
 
 -- posts.kind gets 'flash'. The constraint is anonymous (0001), so find it by definition.
 do $$
@@ -195,9 +207,25 @@ as $$
 declare
   v_snap jsonb := '{}'::jsonb;
   v_pts  int := chase.kt('survivor_pts')::int;
+  v_var  text;
 begin
-  -- Hiders/prey that are NOT live at the end: remember what they have, so the survivor bonus can be taken back.
-  if chase._round_mode(p_session) ->> 'mode' = 'tag' then
+  -- Lock order (ADR-025): _advance already holds the session lock and every player row when a phase change is due;
+  -- ceremony_start (0006) closes a round from host_action without that, so take them here (a no-op when already held).
+  perform 1 from chase.players where session_id = p_session order by id for update;
+
+  -- A running storm swaps the roles back in _ev_end (0007), which _mode_finish_lv runs first. Do it here, before the
+  -- snapshot: it is idempotent (the event is marked done), so the inner call becomes a no-op and the roles are final.
+  perform chase._ev_end(p_session, 'round_end');
+
+  -- Survivor points are given for Smittejakt «convert» and Gjemsel («hide»). Not for swap (nobody survives) and NOT for
+  -- Revejakt (fox): its end bonus goes to the fox by a different rule (fox_end_pts), left as it is.
+  select s.plan -> 'rounds' -> s.round_idx ->> 'variant' into v_var
+    from chase.sessions s
+   where s.id = p_session and s.round_idx >= 0 and s.plan -> 'rounds' -> s.round_idx ->> 'mode' = 'tag';
+  if v_var in ('convert', 'hide') then
+    -- The survivors the inner layers will pay (role prey, active; Gjemsel: has a hide clock) that are NOT live at the end:
+    -- remember what they have, so exactly the survivor amount can be taken back. The points delta decides (a player who
+    -- did not get the points is left alone), and a finish run a second time finds no prey (roles are reset).
     select coalesce(jsonb_object_agg(st.player_id::text, jsonb_build_object(
              'p', st.points, 'rp', st.round_points, 'sv', 'survivor' = any(st.badges), 'rsv', 'survivor' = any(st.round_badges))), '{}'::jsonb)
       into v_snap
@@ -205,6 +233,7 @@ begin
       join chase.player_stats st on st.player_id = p.id
       left join chase.player_live l on l.player_id = p.id
      where p.session_id = p_session and p.role = 'prey' and p.status = 'active'
+       and (v_var = 'convert' or st.hs_since is not null)
        and (l.lv_at is null or l.lv_at < p_at - make_interval(secs => chase.klv('gap_s')));
   end if;
 
@@ -232,7 +261,7 @@ begin
 end;
 $$;
 
--- ───────────────────────── pause: the streak and the distance are frozen ─────────────────────────
+-- ───────────────────────── pause: the streak and the distance are frozen (lv_at moves with the pause) ─────────────────────────
 
 create or replace function chase._unfreeze(p_session uuid)
 returns void
@@ -243,9 +272,13 @@ declare
   v_f timestamptz;
 begin
   select s.frozen_at into v_f from chase.sessions s where s.id = p_session;
+  -- Lock order (ADR-025): player rows (by id) before the bulk updates below; the host_action callers do not hold them.
+  perform 1 from chase.players where session_id = p_session order by id for update;
   perform chase._unfreeze_lv(p_session);
   if v_f is not null then
-    update chase.player_live set lv_at = now() where session_id = p_session;
+    -- The pause is not silence: the last tick moves forward with the pause, like every other stored time. A prey that was
+    -- already silent before the pause stays silent (revealed, unpaid) and the streak distance is not reset.
+    update chase.player_live set lv_at = least(now(), lv_at + (now() - v_f)) where session_id = p_session and lv_at is not null;
     update chase.rounds r
        set state = jsonb_set(r.state, '{flash_at}', to_jsonb((r.state ->> 'flash_at')::timestamptz + (now() - v_f)))
       from chase.sessions s
@@ -311,6 +344,7 @@ declare
   v_base    int;
   v_frac    numeric;
   v_pts     int;
+  v_best    int;
   v_active  boolean;
   v_gap     double precision;
   v_mult    numeric;
@@ -321,8 +355,9 @@ declare
 begin
   select p.role, s.status, s.frozen_at, s.round_idx, s.host_token_hash,
          coalesce((s.plan -> 'rounds' -> greatest(s.round_idx, 0) ->> 'practice') = 'true', false),
-         l.lv_at, coalesce(l.lv_acc_s, 0), coalesce(st.lv_base, 0), coalesce(st.lv_frac, 0), coalesce(st.points, 0)
-    into v_role, v_status, v_frozen, v_idx, v_salt, v_prac, v_lv_at, v_acc, v_base, v_frac, v_pts
+         l.lv_at, coalesce(l.lv_acc_s, 0), coalesce(st.lv_base, 0), coalesce(st.lv_frac, 0), coalesce(st.points, 0),
+         coalesce(st.best_streak_s, 0)
+    into v_role, v_status, v_frozen, v_idx, v_salt, v_prac, v_lv_at, v_acc, v_base, v_frac, v_pts, v_best
     from chase.players p
     join chase.sessions s on s.id = p.session_id
     left join chase.player_live l on l.player_id = p.id
@@ -346,6 +381,7 @@ begin
                best_streak_s = greatest(best_streak_s, floor(v_acc)::int)
          where player_id = p_player;
       end if;
+      v_best := greatest(v_best, floor(v_acc)::int);
       v_acc := 0;
     else
       v_acc := v_acc + v_gap;
@@ -375,6 +411,7 @@ begin
     'mult', v_mult,
     'streak_s', floor(v_acc)::int,
     'next_s', chase._live_next_s(v_acc),
+    'best_streak_s', greatest(v_best, floor(v_acc)::int),
     'frozen', v_status in ('paused', 'breather', 'gathering') or (v_status = 'live' and v_frozen is not null)));
 
   if jsonb_typeof(v_out -> 'tag') is distinct from 'object' then
@@ -494,6 +531,7 @@ begin
     from chase.sessions s join chase.rounds r on r.session_id = s.id and r.idx = s.round_idx
    where s.id = p_session and s.status = 'live' and s.frozen_at is null and s.round_idx >= 0
      and r.mode = 'posts' and r.ended_at is null
+     and jsonb_typeof(s.settings -> 'fixed_posts') is distinct from 'array'   -- the teacher chose safe posts: no random ones
      and coalesce((s.plan -> 'rounds' -> s.round_idx ->> 'practice') = 'true', false) = false;
   if v_idx is null then
     return v_hint;

@@ -845,7 +845,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
   const safetyTone = tone === "danger" || tone === "edge";
   const closeAlert = hunterAlert(tag, !!immuneLeft);
   const flashSoon = status === "live" ? soonestFlash(posts, now, offsetMs) : null;
-  const bestStreak = bestStreakS(view?.stats);
+  const bestStreak = bestStreakS(view?.live ?? view?.stats);
   const showCompass = status === "live" && (mode === "posts" || (mode === "scoreo" && !soPast)) && !!nearest && !view?.claim && !safetyTone;
 
   return (

@@ -105,7 +105,7 @@ export function awayUrl(sessionId: string): string {
 export function sendAway(sessionId: string, token: string): boolean {
   try {
     if (typeof navigator === "undefined" || typeof navigator.sendBeacon !== "function") return false;
-    return navigator.sendBeacon(awayUrl(sessionId), new Blob([awayBody(token)], { type: "application/json" }));
+    return navigator.sendBeacon(awayUrl(sessionId), new Blob([awayBody(token)], { type: "text/plain;charset=UTF-8" }));
   } catch {
     return false;
   }
