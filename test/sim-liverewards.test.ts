@@ -136,7 +136,7 @@ describe("streak and multiplier", () => {
   it("observeView counts bad multipliers and flash posts", () => {
     const ls = newLiveStats();
     observeView(ls, { live: { on: true, mult: 1, streak_s: 50 } });
-    observeView(ls, { live: { on: true, mult: 1.25, streak_s: 150 }, posts: [{ id: "a", flash: true }, { id: "b" }] });
+    observeView(ls, { live: { on: true, mult: 1.25, streak_s: 150 }, posts: [{ id: "a", kind: "flash" }, { id: "b" }] });
     expect(ls.multBad).toBe(0);
     expect([ls.mult125Seen, ls.maxStreakS, ls.flashSeen.size]).toEqual([1, 150, 1]);
     observeView(ls, { live: { on: true, mult: 1, streak_s: 150 } });
@@ -154,7 +154,7 @@ describe("liveRewardsProblems", () => {
   it("passes a healthy run and flags missing flash, signal alarm and locker returns", () => {
     const ls = newLiveStats();
     observeView(ls, { live: { on: true, mult: 1, streak_s: 50 } });
-    observeView(ls, { live: { on: true, mult: 1.25, streak_s: 150 }, posts: [{ id: "f", flash: true }] });
+    observeView(ls, { live: { on: true, mult: 1.25, streak_s: 150 }, posts: [{ id: "f", kind: "flash" }] });
     ls.flashClaimed = 1;
     expect(liveRewardsProblems(ls, ctx)).toEqual([]);
     ls.flashClaimed = 0;

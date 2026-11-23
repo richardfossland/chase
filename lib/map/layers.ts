@@ -110,7 +110,7 @@ export function setPosts(
     type: "FeatureCollection",
     features: posts.map((p) => ({
       type: "Feature",
-      properties: { id: p.id, value: p.value, kind: p.kind, active: p.id === activeId, claimed: !!p.claimed_by, flash: p.flash === true },
+      properties: { id: p.id, value: p.value, kind: p.kind, active: p.id === activeId, claimed: !!p.claimed_by, flash: p.kind === "flash" || p.flash === true },
       geometry: { type: "Point", coordinates: [p.pos.lng, p.pos.lat] },
     })),
   });

@@ -246,7 +246,7 @@ export interface PostView {
   id: string;
   pos: LatLng;
   value: number;
-  kind: "normal" | "golden";
+  kind: "normal" | "golden" | "flash";
   radius_m?: number;
   expires_at: string | null;
   claimed_by?: string | null;
@@ -369,7 +369,7 @@ export interface TickView {
   quiz?: { no: number; q: string; a: string[]; until: string; right: number };
   posts: PostView[] | null;
   claim: { post_id: string; hits: number; need: number } | null;
-  claimed: { post_id: string; value: number; kind: "normal" | "golden" } | null;
+  claimed: { post_id: string; value: number; kind: "normal" | "golden" | "flash" } | null;
   lost: boolean;
   new_badges: Badge[];
   summary: RoundSummary | null;

@@ -50,7 +50,7 @@ export interface LiveView {
   stats?: { points?: number; round_points?: number };
   live?: { on?: boolean; mult?: number; streak_s?: number; next_s?: number | null; frozen?: boolean } | null;
   tag?: { variant?: string; revealed?: { id: string; pos: LL; age_s?: number }[]; hide?: { released?: boolean } } | null;
-  posts?: { id?: string; flash?: boolean }[] | null;
+  posts?: { id?: string; kind?: string; flash?: boolean }[] | null;
   claimed?: unknown;
   scoreo?: { claimed?: unknown } | null;
 }
@@ -193,7 +193,7 @@ export function observeView(ls: LiveStats, v: LiveView): void {
       }
     }
   }
-  for (const p of v.posts ?? []) if (p.flash && p.id) ls.flashSeen.add(p.id);
+  for (const p of v.posts ?? []) if ((p.kind === "flash" || p.flash) && p.id) ls.flashSeen.add(p.id);
 }
 
 export function noteClaim(ls: LiveStats, postId: string | undefined): void {
@@ -241,7 +241,7 @@ export function liveRewardsProblems(ls: LiveStats, ctx: LiveCheckCtx): string[] 
   }
   const postsPlan = /posts/.test(ctx.plan) && secs.some((s) => s >= 180);
   if (postsPlan && ctx.bots >= 10) {
-    if (ls.flashSeen.size === 0) p.push("ingen lynpost (flash: true) dukket opp i Postjakt");
+    if (ls.flashSeen.size === 0) p.push("ingen lynpost (kind: flash) dukket opp i Postjakt");
     else if (ls.flashClaimed === 0) p.push(`${ls.flashSeen.size} lynposter, ingen ble tatt`);
   }
   return p;

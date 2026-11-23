@@ -113,8 +113,8 @@ export function sendAway(sessionId: string, token: string): boolean {
 
 // ── Lynpost ───────────────────────────────────────────────────────────────
 
-export function isFlash(p: Pick<PostView, "flash">): boolean {
-  return p.flash === true;
+export function isFlash(p: Pick<PostView, "flash" | "kind">): boolean {
+  return p.kind === "flash" || p.flash === true;
 }
 
 /** Sekunder til en lynpost utløper (serverklokke via offsetMs), eller null uten frist. Aldri negativ. */

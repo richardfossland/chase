@@ -86,7 +86,7 @@ describe("away beacon", () => {
 
 describe("flash posts", () => {
   it("finds new unclaimed flash posts only", () => {
-    const posts = [post({ id: "a" }), post({ id: "b", flash: true }), post({ id: "c", flash: true, claimed_by: "x" }), post({ id: "d", flash: true })];
+    const posts = [post({ id: "a" }), post({ id: "b", kind: "flash" }), post({ id: "c", kind: "flash", claimed_by: "x" }), post({ id: "d", kind: "flash" })];
     expect(newFlashPosts(posts, new Set(["d"])).map((p) => p.id)).toEqual(["b"]);
     expect(newFlashPosts(null, new Set())).toEqual([]);
   });
@@ -98,9 +98,9 @@ describe("flash posts", () => {
     expect(flashLeftS(null, 0, 0)).toBeNull();
   });
   it("picks the soonest live flash", () => {
-    const a = post({ id: "a", flash: true, expires_at: new Date(130_000).toISOString() });
-    const b = post({ id: "b", flash: true, expires_at: new Date(110_000).toISOString() });
-    const gone = post({ id: "c", flash: true, expires_at: new Date(90_000).toISOString() });
+    const a = post({ id: "a", kind: "flash", expires_at: new Date(130_000).toISOString() });
+    const b = post({ id: "b", kind: "flash", expires_at: new Date(110_000).toISOString() });
+    const gone = post({ id: "c", kind: "flash", expires_at: new Date(90_000).toISOString() });
     expect(soonestFlash([a, b, gone], 100_000, 0)?.post.id).toBe("b");
     expect(soonestFlash([post({})], 100_000, 0)).toBeNull();
   });
