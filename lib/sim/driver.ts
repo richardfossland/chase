@@ -642,7 +642,8 @@ export function startSwarm(opts: SwarmOptions) {
       for (const c of stats.alarms) {
         if (c.kind !== "signal" || c.seenAt !== null) continue;
         if (st === "live") c.expectedAt = Math.max(c.expectedAt, now + SIGNAL_ALARM_S * 1000);
-        else if (prevSt === "live" && c.expectedAt > now) c.expectedAt = Infinity;
+        // Due inside the last host-push/latency budget before the round ended: the server may not have raised it yet.
+        else if (prevSt === "live" && c.expectedAt > now - 5000) c.expectedAt = Infinity;
       }
       stats.alarms = stats.alarms.filter((c) => c.expectedAt !== Infinity);
     }

@@ -151,12 +151,19 @@ describe("liveRewardsProblems", () => {
   it("demands the new fields", () => {
     expect(liveRewardsProblems(newLiveStats(), ctx)[0]).toMatch(/mangler 0024/);
   });
-  it("passes a healthy run and flags missing flash, signal alarm and locker returns", () => {
+  it("passes a healthy run and flags missing flash and locker returns", () => {
     const ls = newLiveStats();
     observeView(ls, { live: { on: true, mult: 1, streak_s: 50 } });
     observeView(ls, { live: { on: true, mult: 1.25, streak_s: 150 }, posts: [{ id: "f", kind: "flash" }] });
     ls.flashClaimed = 1;
     expect(liveRewardsProblems(ls, ctx)).toEqual([]);
+    // A round that never lasted 125 s live is not asked for a 120 s streak; a long one is.
+    const short = newLiveStats();
+    observeView(short, { status: "live", server_now: "2026-01-01T00:01:50Z", round_started_at: "2026-01-01T00:00:00Z", live: { on: true, mult: 1, streak_s: 100 }, posts: [{ id: "f", kind: "flash" }] });
+    short.flashClaimed = 1;
+    expect(liveRewardsProblems(short, ctx)).toEqual([]);
+    observeView(short, { status: "live", server_now: "2026-01-01T00:02:20Z", round_started_at: "2026-01-01T00:00:00Z", live: { on: true, mult: 1, streak_s: 100 } });
+    expect(liveRewardsProblems(short, ctx).join()).toMatch(/120 s live-rekke/);
     ls.flashClaimed = 0;
     expect(liveRewardsProblems(ls, ctx).join()).toMatch(/ingen ble tatt/);
     ls.flashClaimed = 1;
@@ -164,8 +171,8 @@ describe("liveRewardsProblems", () => {
     w.kind = "locker70";
     w.returnedAt = 1000 + 72_000;
     ls.windows.push(w);
-    expect(liveRewardsProblems(ls, { ...ctx, lockers: 1 }).join()).toMatch(/signaltap/);
-    expect(liveRewardsProblems(ls, { ...ctx, lockers: 1, alarms: [{ player: "p1", kind: "signal", seenAt: 5 }] })).toEqual([]);
+    // Signal-loss alarms are judged by the driver (round-end rule), not here.
+    expect(liveRewardsProblems(ls, { ...ctx, lockers: 1 })).toEqual([]);
   });
   it("judgeWindow aggregates", () => {
     const w = mk();

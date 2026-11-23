@@ -47,6 +47,8 @@ export interface LiveView {
   status?: string;
   role?: string;
   round_idx?: number;
+  server_now?: string;
+  round_started_at?: string | null;
   stats?: { points?: number; round_points?: number };
   live?: { on?: boolean; mult?: number; streak_s?: number; next_s?: number | null; frozen?: boolean } | null;
   tag?: { variant?: string; revealed?: { id: string; pos: LL; age_s?: number }[]; hide?: { released?: boolean } } | null;
@@ -77,6 +79,10 @@ export interface LockerWindow {
   hunterViewsDue: number;
   revealSeenAt: number | null;
   idLeak: boolean;
+  /** Only a prey/hider is revealed: a locker that was a hunter when it went silent is not judged. */
+  preyAtStart: boolean;
+  /** Gjemsel: when hunters were first seen released (reveal counts from max(last fix, release)). */
+  releasedAt: number | null;
 }
 
 export function newWindow(o: { playerId: string; kind: string; lastSentAt: number; lastPos: LL; now: number; before: LiveView | null }): LockerWindow {
@@ -95,6 +101,8 @@ export function newWindow(o: { playerId: string; kind: string; lastSentAt: numbe
     hunterViewsDue: 0,
     revealSeenAt: null,
     idLeak: false,
+    preyAtStart: v?.role === "prey",
+    releasedAt: v?.tag?.variant === "hide" ? (v.tag.hide?.released ? o.lastSentAt : null) : o.lastSentAt,
   };
 }
 
@@ -110,11 +118,12 @@ export function recordHunterView(w: LockerWindow, v: LiveView, now: number, play
   if (w.returnedAt !== null || v.role !== "hunter" || v.status !== "live") return;
   if (v.tag?.variant === "hide" && !v.tag.hide?.released) return;
   if (!v.tag) return;
+  w.releasedAt ??= now;
   const list = v.tag.revealed;
   if (list?.some((r) => playerIds.has(r.id))) w.idLeak = true;
   if (revealMatches(list, w.lastPos) && w.revealSeenAt === null) w.revealSeenAt = now;
   // Only a view that arrives after reveal_s + slack can say «too late».
-  if (now - w.lastSentAt >= revealDeadlineMs()) w.hunterViewsDue++;
+  if (w.preyAtStart && now - revealBase(w) >= revealDeadlineMs()) w.hunterViewsDue++;
 }
 
 /** locker gets no time points for the silent window (Smittejakt ≈ live seconds / 5, Gjemsel/other: none). */
@@ -140,11 +149,14 @@ export function streakProblem(w: LockerWindow, after: LiveView): string | null {
   return l.streak_s >= LIVE_CHECK.streakResetS ? `${w.kind}: live.streak_s ${l.streak_s} etter ${Math.round(((w.returnedAt ?? w.startedAt) - w.lastSentAt) / 1000)} s stille (skulle være < ${LIVE_CHECK.streakResetS})` : null;
 }
 
+/** The reveal clock starts at the last fix, or at the release in Gjemsel if that came later. */
+export const revealBase = (w: LockerWindow): number => Math.max(w.lastSentAt, w.releasedAt ?? w.lastSentAt);
+
 export function revealProblem(w: LockerWindow): string | null {
   if (w.idLeak) return `${w.kind}: tag.revealed.id er spiller-id i klartekst (skal være saltet)`;
-  if (w.hunterViewsDue === 0) return null; // no hunter looked after the deadline: nothing to judge
+  if (!w.preyAtStart || w.hunterViewsDue === 0) return null; // a hunter, or no hunter looked after the deadline
   if (w.revealSeenAt === null) return `${w.kind}: jegerne så aldri lockeren i tag.revealed (${LIVE_CHECK.revealS + LIVE_CHECK.revealSlackS} s etter siste tick)`;
-  const lateMs = w.revealSeenAt - w.lastSentAt;
+  const lateMs = w.revealSeenAt - revealBase(w);
   return lateMs > revealDeadlineMs() ? `${w.kind}: reveal etter ${(lateMs / 1000).toFixed(1)} s (maks ${LIVE_CHECK.revealS + LIVE_CHECK.revealSlackS} s)` : null;
 }
 
@@ -161,6 +173,8 @@ export interface LiveStats {
   viewsWithLive: number;
   viewsWithoutLive: number;
   maxStreakS: number;
+  /** The longest stretch a round was seen live (server clock): the 120 s streak check needs room for it. */
+  longestLiveS: number;
   mult125Seen: number;
   mult15Seen: number;
   multBad: number;
@@ -172,11 +186,15 @@ export interface LiveStats {
 }
 
 export function newLiveStats(): LiveStats {
-  return { viewsWithLive: 0, viewsWithoutLive: 0, maxStreakS: 0, mult125Seen: 0, mult15Seen: 0, multBad: 0, multBadExample: null, windows: [], problems: [], flashSeen: new Set(), flashClaimed: 0 };
+  return { viewsWithLive: 0, viewsWithoutLive: 0, maxStreakS: 0, longestLiveS: 0, mult125Seen: 0, mult15Seen: 0, multBad: 0, multBadExample: null, windows: [], problems: [], flashSeen: new Set(), flashClaimed: 0 };
 }
 
 /** Per-view bookkeeping for ordinary bots (lockers are judged on their return instead). */
 export function observeView(ls: LiveStats, v: LiveView): void {
+  if (v.status === "live" && v.server_now && v.round_started_at) {
+    const s = (Date.parse(v.server_now) - Date.parse(v.round_started_at)) / 1000;
+    if (Number.isFinite(s)) ls.longestLiveS = Math.max(ls.longestLiveS, s);
+  }
   if (!v.live) {
     ls.viewsWithoutLive++;
   } else {
@@ -227,17 +245,12 @@ export function liveRewardsProblems(ls: LiveStats, ctx: LiveCheckCtx): string[] 
   const secs = String(ctx.plan).split(",").map((x) => Number(x.split(":")[1]) || 0);
   const longRound = ctx.plan ? secs.some((s) => s >= 180) : ctx.minutes >= 3;
   if (ls.multBad > 0) p.push(`live.mult stemmer ikke med streak_s i ${ls.multBad} tick (${ls.multBadExample})`);
-  if (longRound && ctx.bots >= 5 && ls.maxStreakS < LIVE_CHECK.t1S + LIVE_CHECK.tolS) p.push(`ingen bot nådde ${LIVE_CHECK.t1S} s live-rekke i en lang runde (maks ${ls.maxStreakS} s)`);
+  if (longRound && ctx.bots >= 5 && ls.longestLiveS >= LIVE_CHECK.t1S + LIVE_CHECK.tolS + 5 && ls.maxStreakS < LIVE_CHECK.t1S + LIVE_CHECK.tolS) p.push(`ingen bot nådde ${LIVE_CHECK.t1S} s live-rekke i en lang runde (maks ${ls.maxStreakS} s)`);
   else if (ls.maxStreakS >= LIVE_CHECK.t1S + LIVE_CHECK.tolS && ls.mult125Seen === 0) p.push("ingen bot fikk ×1,25 etter 120 s live");
   if (ctx.lockers > 0) {
     const judged = ls.windows.filter((w) => w.returnedAt !== null);
     if (judged.length === 0) p.push("lockeren ble aldri stille og tilbake i løpet av kjøringen (kjør lenger, ≥ 3 min live)");
-    if (ctx.hasHost) {
-      for (const w of judged) {
-        if ((w.returnedAt! - w.lastSentAt) / 1000 < 62) continue;
-        if (!ctx.alarms.some((a) => a.player === w.playerId && a.kind === "signal" && a.seenAt !== null)) p.push(`${w.kind}: ingen signaltap-alarm til læreren etter ${Math.round((w.returnedAt! - w.lastSentAt) / 1000)} s stille`);
-      }
-    }
+    // Signal-loss alarms are judged by the driver (rebased at round start, dropped when the round ends first).
   }
   const postsPlan = /posts/.test(ctx.plan) && secs.some((s) => s >= 180);
   if (postsPlan && ctx.bots >= 10) {
