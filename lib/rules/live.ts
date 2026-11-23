@@ -41,4 +41,4 @@ export function liveBonus(delta: number, mult: number, frac: number): [number, n
 }
 
 /** The `live` object of the tick answer. */
-export type LiveView = { on: boolean; mult: 1 | 1.25 | 1.5; streak_s: number; next_s: number | null; frozen: boolean };
+export type LiveView = { on: boolean; mult: 1 | 1.25 | 1.5; streak_s: number; next_s: number | null; frozen: boolean; best_streak_s?: number };
