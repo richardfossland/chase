@@ -19,6 +19,7 @@ import { rng } from "./rng";
 import { WsLink, type ServerLike, type WsCtor } from "./ws";
 import { createBot, type Behaviour, type Bot, type BotFix, type SimGeo } from "./behaviours";
 import { signedDistanceToRing, type LngLat } from "@/lib/geo";
+import { judgeWindow, newLiveStats, newWindow, noteClaim, observeView, recordHunterView, type LiveStats, type LiveView, type LockerWindow } from "./liverewards";
 import { escalates, fixSafety, type FixSafety } from "@/lib/live/urgent";
 
 export type AlarmKind = "sos" | "forbidden" | "outside" | "signal";
@@ -53,6 +54,9 @@ export interface SimPlayer {
   deferredFix?: ReturnType<typeof setTimeout> | null;
   /** Same jump rejection + smoothing as useDeviceGps. */
   gps?: GpsFilter;
+  /** live-rewards: the last fix actually sent (what the server stored) and the locker's open silence window. */
+  lastSent?: { lat: number; lng: number; at: number } | null;
+  silentWin?: LockerWindow | null;
   /** Terminal close (ended/kicked/...): the bot is finished. */
   done?: boolean;
   /** 4003 (kill switch): HTTP only from now on. */
@@ -110,6 +114,8 @@ export interface SimStats {
   latencies: number[];
   alarms: AlarmCheck[];
   ws?: WsStats;
+  /** `--live-rewards` bookkeeping (undefined when the option is off). */
+  live?: LiveStats;
   /** Phase 2 game accounting. */
   game: {
     claims: number;
@@ -185,6 +191,9 @@ export interface SwarmOptions {
   ws?: { base: string; impl?: WsCtor; iphoneFraction?: number };
   /** false: never flag fixes urgent (the pre-ADR-038 phone), for before/after runs. */
   urgent?: boolean;
+  /** Check the live-rewards contract (0024): lockers stay silent without calls, views are judged. */
+  liveRewards?: boolean;
+  lockAfterLiveS?: number;
   onUpdate?: (players: SimPlayer[], stats: SimStats) => void;
   onLog?: (line: string) => void;
 }
@@ -206,6 +215,8 @@ const KIND_NO: Record<Behaviour, string> = {
   sos: "sos",
   cheater: "juks",
   jitter: "jitter",
+  locker: "locker",
+  locker70: "locker70",
 };
 
 /** Start a swarm. Returns a stop() and a promise of the session id once joined. */
@@ -222,6 +233,7 @@ export function startSwarm(opts: SwarmOptions) {
       events: {}, eventKeys: new Set(), sprintMax: 0, prizes: 0, powerupsGot: 0, powerupsUsed: 0, powerupFails: {}, hotcoldUsed: {}, hotcoldFails: {}, missionsDone: 0, missionsConfirmed: 0,
       teamSizes: null, teamPoints: {}, flagCaptures: 0, hillHolds: 0, relayLegs: 0, relayBatonMax: 0, relayBatonCap: 0, relayLegsByRound: new Map(), capKeys: new Set(), scoreoKeys: new Set(), scoreoDup: 0, scoreoLate: new Set(), scoreoIn: new Set(), hidePlings: new Set(), hideLeaks: 0, msgsSent: 0, msgsSeen: 0, msgKeys: new Set(), quizAnswered: 0, quizRight: 0, steps: 0 },
   };
+  if (opts.liveRewards) stats.live = newLiveStats();
   const wsOn = !!opts.ws;
   if (wsOn) {
     stats.ws = { fixView: [], fixViewBy: { interval: [], hint: [], deferred: [], urgent: [] }, sampleView: [], superseded: 0, deferred: 0, reconnects: 0, iphoneDrops: 0, httpFallbackTicks: 0, hints: 0, wsErrors: {}, closes: {}, terminal: {},
@@ -271,6 +283,20 @@ export function startSwarm(opts: SwarmOptions) {
     }
     for (const k of s.expect) if (!p.prevExpect.has(k)) expect(p.playerId, k, now);
     p.prevExpect = new Set(s.expect);
+    if (s.silent && stats.live) {
+      // A locked phone: no call at all. Mark the window; a signal-loss alarm is expected only past 60 s.
+      if (!p.silentWin && p.lastSent && p.view) {
+        if (p.deferredFix) {
+          clearTimeout(p.deferredFix);
+          p.deferredFix = null;
+        }
+        p.silentWin = newWindow({ playerId: p.playerId, kind: p.kind, lastSentAt: p.lastSent.at, lastPos: p.lastSent, now, before: p.view as LiveView });
+        stats.live.windows.push(p.silentWin);
+        if (s.silent.forS >= SIGNAL_ALARM_S + 2 && p.lastTickAt) expect(p.playerId, "signal", p.lastTickAt + SIGNAL_ALARM_S * 1000);
+      }
+      if (p.silentWin) return;
+    }
+    if (p.silentWin && !s.silent && p.silentWin.returnedAt === null) p.silentWin.returnedAt = now;
     if (!s.fix) {
       if (p.lastTickAt) expect(p.playerId, "signal", p.lastTickAt + SIGNAL_ALARM_S * 1000);
       p.lastFix = null;
@@ -298,6 +324,7 @@ export function startSwarm(opts: SwarmOptions) {
     const uc = urgentCheck(p, fx);
     p.lastSafety = uc.safety;
     const oa = openOutside(p);
+    p.lastSent = { lat: fx.lat, lng: fx.lng, at: t0 };
     if (oa?.stages?.serverOut && !oa.stages.sent) oa.stages.sent = t0;
     const r = opts.transport.tick
       ? await opts.transport.tick(sessionId, p, fx)
@@ -326,7 +353,7 @@ export function startSwarm(opts: SwarmOptions) {
    * moment, with the then newest position.
    */
   function wsTick(p: SimPlayer, kind: FixKind) {
-    if (!p.lastFix || p.done) return;
+    if (!p.lastFix || p.done || (p.silentWin && p.silentWin.returnedAt === null)) return;
     const uc = urgentCheck(p, p.lastFix);
     const wait = uc.urgent ? 0 : fixDelayMs(Date.now(), p.lastFixSentAt ?? null);
     if (wait > 0) {
@@ -365,6 +392,7 @@ export function startSwarm(opts: SwarmOptions) {
     p.pendingFix ??= [];
     p.pendingFix.push({ at: now, kind, sampledAt: p.lastFixSampledAt ?? now });
     p.lastFixSentAt = now;
+    p.lastSent = { lat: fix.lat, lng: fix.lng, at: now };
     return true;
   }
 
@@ -394,6 +422,7 @@ export function startSwarm(opts: SwarmOptions) {
       void applyView(p, m.v, p.lastFix);
     } else if (m.t === "hint") {
       w.hints++;
+      if (p.silentWin && p.silentWin.returnedAt === null) return; // locked phone: the hint does not wake it
       wsTick(p, "hint"); // like useLiveTick: a hint is a tick, subject to the same 1.9 s throttle
     } else if (m.t === "err") {
       const k = `ws_err_${String(m.error ?? "")}`;
@@ -419,6 +448,21 @@ export function startSwarm(opts: SwarmOptions) {
     }
     const prevView = p.view;
     p.view = data;
+    if (stats.live) {
+      const lv = data as LiveView;
+      const now = Date.now();
+      if (lv.role === "hunter") {
+        const ids = new Set(players.map((q) => q.playerId));
+        for (const q of players) if (q.silentWin && q.silentWin.returnedAt === null) recordHunterView(q.silentWin, lv, now, ids);
+      }
+      const w = p.silentWin;
+      if (w && w.returnedAt !== null) {
+        for (const pr of judgeWindow(w, lv, tickMs / 1000)) if (!stats.live.problems.includes(pr)) stats.live.problems.push(pr);
+        p.silentWin = null;
+      } else if (!w) observeView(stats.live, lv);
+      const cl = (data.claimed as { post_id?: string } | null | undefined)?.post_id;
+      if (cl) noteClaim(stats.live, cl);
+    }
     const cer = (data as { ceremony?: { best: unknown; voted: boolean | null } }).ceremony;
     if (cer?.best && !voted.has(p.playerId)) {
       voted.add(p.playerId);

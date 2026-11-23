@@ -4,3 +4,4 @@ export { rng } from "./rng";
 export * from "./cli";
 export * from "./dbdiff";
 export * from "./ws";
+export * from "./liverewards";
