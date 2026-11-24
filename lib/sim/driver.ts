@@ -263,6 +263,9 @@ export function startSwarm(opts: SwarmOptions) {
   };
   const expect = (player: string, kind: AlarmKind, at: number) => {
     if (!opts.hostToken) return;
+    // Signal loss is judged only in a live round (see ingestSnapshot); a phone that goes
+    // quiet in gathering/breather/lobby raises nothing, so expect nothing then.
+    if (kind === "signal" && stats.game.statuses[stats.game.statuses.length - 1] !== "live") return;
     if (stats.alarms.some((a) => a.player === player && a.kind === kind && (a.seenAt === null || a.expectedAt === at))) return;
     // The server judges the reported position with GPS slack (forbidden: within min(acc, 15 m)),
     // so it often raises the alarm before the bot's TRUE position gets there. Then the teacher
