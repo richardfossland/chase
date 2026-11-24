@@ -81,6 +81,10 @@ export const host = {
       speed: "Høy fart",
     } as Record<string, string>,
     alarmHigh: "langt utenfor",
+    // live-belønning (B): bare en merkelapp ved siden av. Alarmen vises som før.
+    away: "Låst skjerm",
+    awayNote: "(låst skjerm)",
+    awayAria: (name: string) => `${name}: låst skjerm`,
     alarmMore: (n: number, open: number) => `${n} ${n === 1 ? "alarm" : "alarmer"} til${open ? `, ${open} ikke kvittert` : ""}. Vis alle`,
     alarmLess: "Vis færre alarmer",
     ack: "Kvitter",

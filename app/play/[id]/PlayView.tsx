@@ -7,7 +7,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
-import { ApiError, api, type PlayerBootstrap, type PostView, type RoundSummary, type TagView, type TickView } from "@/lib/client/api";
+import { ApiError, api, type LiveView, type PlayerBootstrap, type PostView, type RoundSummary, type TagView, type TickView } from "@/lib/client/api";
 import { cue } from "@/lib/client/feedback";
 import { QRCode } from "@/lib/client/QRCode";
 import { QrScanner } from "@/lib/client/QrScanner";
@@ -18,7 +18,7 @@ import { speakKey, speakLines, unlockVoice, voiceLinesFor } from "@/lib/client/v
 import { useLiveTick } from "./useLiveTick";
 import { no } from "@/lib/locale/no";
 import { bearing, haversine } from "@/lib/geo";
-import { addEventLayer, addMeLayer, addPlingLayer, addPostsLayer, addRadarLayer, addSessionLayers, addTeamLayer, addZoneLayer, boundsOf, setEvent, setMe, setPlings, setPosts, setRadar, setTeam, setZone } from "@/lib/map/layers";
+import { addEventLayer, addMeLayer, addPlingLayer, addPostsLayer, addRadarLayer, addRevealedLayer, addSessionLayers, addTeamLayer, addZoneLayer, boundsOf, setEvent, setMe, setPlings, setPosts, setRadar, setRevealed, setTeam, setZone } from "@/lib/map/layers";
 import { loadMapLibre } from "@/lib/map/maplibre";
 import { registerTileCache } from "@/lib/map/tile-cache";
 import { kartverketStyle } from "@/lib/map/style";
@@ -34,6 +34,10 @@ import { TeamMsgBar, TeamStrip } from "./TeamCard";
 import { QuizCard } from "./QuizCard";
 import { useTurn } from "./useTurn";
 import { hasEventsOn, playChrome, sessionTotals, type SessionTotals } from "@/lib/client/playChrome";
+import {
+  bestStreakS, hunterAlert, liveWarning, multLabel, newFlashPosts, revealedForMap, ringFraction, ringTone,
+  sendAway, shouldSendAway, showLiveRing, soonestFlash, warnLeftS, type RingTone,
+} from "@/lib/client/liveRing";
 import { requestMotion, useStepCounter } from "@/lib/client/steps";
 import { TEAMS, type TeamMsgKind } from "@/lib/rules/teams";
 import { CeremonyScreen } from "@/lib/client/Ceremony";
@@ -50,6 +54,7 @@ import {
   IconEye,
   IconFlag,
   IconLocate,
+  IconLock,
   IconMapPin,
   IconMove,
   IconPause,
@@ -60,6 +65,7 @@ import {
   IconCrown,
   IconTarget,
   IconUsers,
+  IconZap,
 } from "@/lib/client/ui/icons";
 import { BADGE_ICONS, IconBaton, IconDrop, IconFox, IconMedal, IconSteps, type Icon } from "./icons";
 
@@ -160,6 +166,8 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
   const danger = useRef(false);
   const prev = useRef<TickView | null>(null);
   const seenGolden = useRef<Set<string>>(new Set());
+  const seenFlash = useRef<Set<string>>(new Set());
+  const awaySentAt = useRef<number | null>(null);
   const seenTeamMsg = useRef<Set<string>>(new Set());
   const beeped = useRef<string>("");
   // Badge toasts: at most one per 30 s (ADR-024); the rest wait here.
@@ -212,6 +220,12 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
       if (!claimed) cue("golden");
       setToast({ id: Date.now(), text: t.golden });
     }
+    // 0024 lynpost: a new short-lived post gets the golden post's treatment (sound + toast).
+    for (const post of newFlashPosts(view.posts, seenFlash.current)) {
+      seenFlash.current.add(post.id);
+      if (!claimed) cue("golden");
+      setToast({ id: Date.now(), text: no.live.flashToast(post.value), label: no.live.flashTitle });
+    }
     // Every badge the server stored since the last tick — also those from the
     // teacher's mission confirmation or another request (0007).
     if (!p) view.stats.badges.forEach((b) => badgeSeen.current.add(b));
@@ -239,7 +253,11 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
       cue("caught");
       setFlash({ id: Date.now(), text: t.caughtYou, sub: t.nowHunter, tone: "dim" });
     }
-    if (view.tag?.hunter_near && !p?.tag?.hunter_near) cue("danger");
+    if (view.tag?.hunter_close && !p?.tag?.hunter_close) {
+      // 0024: a hunter within 30 m: the danger cue twice (iOS has no vibration, so it must be audible).
+      cue("danger");
+      setTimeout(() => cue("danger"), 260);
+    } else if (view.tag?.hunter_near && !p?.tag?.hunter_near) cue("danger");
     // 0013 Revejakt: I caught the fox → I am the fox now.
     if (!storm && view.tag?.fox && p && p.status === "live" && view.status === "live" && p.role === "hunter" && view.role === "prey") {
       cue("golden");
@@ -370,6 +388,44 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
     document.addEventListener("visibilitychange", onVis);
     return () => document.removeEventListener("visibilitychange", onVis);
   }, [ready, tickNow]);
+
+  // 0024: tell the server the page was hidden (locked screen), so the teacher can see a lock label.
+  // sendBeacon survives the page going to the background; the token travels in the body only.
+  useEffect(() => {
+    const send = () => {
+      const nowMs = Date.now();
+      if (!shouldSendAway({ ready, ended, kicked, status, lastSentAt: awaySentAt.current, nowMs })) return;
+      awaySentAt.current = nowMs;
+      sendAway(sessionId, me.token);
+    };
+    const onVis = () => {
+      if (document.visibilityState === "hidden") send();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("pagehide", send);
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("pagehide", send);
+    };
+  }, [ready, ended, kicked, status, sessionId, me.token]);
+
+  // 0024 forvarsel: from 10 s without GPS, a streak/«you become visible» strip. Sound only when no
+  // safety tone or SOS is on: the strip sits under the banner and never replaces it (rule 4).
+  const warnFixAgeS = gps.fix ? (now - gps.fix.at) / 1000 : Infinity;
+  const warnKind = liveWarning({
+    fixAgeS: warnFixAgeS,
+    status,
+    live: view?.live,
+    tag: view?.tag ?? null,
+    role: view?.role,
+    hidePending: view?.tag?.variant === "hide" && view.tag.hide?.released === false,
+  });
+  const warned = useRef<string | null>(null);
+  const warnQuiet = sosLocal || (!!view?.sos && !view.sos.acked) || !!view?.safety.forbidden || (view?.safety.geofence ?? 0) >= 2;
+  useEffect(() => {
+    if (warnKind && warned.current !== warnKind && !warnQuiet) cue("beep");
+    warned.current = warnKind;
+  }, [warnKind, warnQuiet]);
 
   // Feedback: buzzer + vibration when entering danger; ding for new messages.
   useEffect(() => {
@@ -708,7 +764,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
     tone = "live";
     TitleIcon = IconMove;
     title = no.hide.hideTitle;
-    body = hideWait ? no.hide.hideHead(hideWait) : tag?.hunter_near ? t.hunterNear : no.hide.hideHint;
+    body = hideWait ? no.hide.hideHead(hideWait) : tag?.hunter_close ? no.live.hunterClose : tag?.hunter_near ? t.hunterNear : no.hide.hideHint;
   } else if (status === "live" && isHunter && tag?.fox) {
     // 0013 Revejakt: everybody hunts the one fox.
     tone = "hunter";
@@ -729,7 +785,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
     tone = "live";
     title = t.prey;
     TitleIcon = IconMove;
-    body = immuneLeft ? t.immune(immuneLeft) : tag.hunter_near ? t.hunterNear : t.preyHint;
+    body = immuneLeft ? t.immune(immuneLeft) : tag.hunter_close ? no.live.hunterClose : tag.hunter_near ? t.hunterNear : t.preyHint;
   } else if (status === "live" && mode === "scoreo" && so && soPast) {
     // Time limit passed: everybody back to the assembly point; each started 10 s costs points.
     tone = so.arrived ? "ok" : "warn";
@@ -787,6 +843,9 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
 
   // Safety tones (danger, near the edge) switch instantly: no colour fade, no entrance animation.
   const safetyTone = tone === "danger" || tone === "edge";
+  const closeAlert = hunterAlert(tag, !!immuneLeft);
+  const flashSoon = status === "live" ? soonestFlash(posts, now, offsetMs) : null;
+  const bestStreak = bestStreakS(view?.live ?? view?.stats);
   const showCompass = status === "live" && (mode === "posts" || (mode === "scoreo" && !soPast)) && !!nearest && !view?.claim && !safetyTone;
 
   return (
@@ -803,6 +862,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
           </h1>
         </div>
         {body && <p className="mt-2 text-xl font-bold leading-snug opacity-90">{body}</p>}
+        {status === "breather" && view?.live && <p className="mt-2 text-base font-bold leading-snug opacity-80" data-testid="live-breather">{no.live.breatherLine}</p>}
         {gpsLost && (
           <p className="mt-3 flex items-center gap-2 rounded-xl bg-black/40 px-4 py-3 text-lg font-black" role="alert">
             <IconAlert size={24} className="flex-none" />
@@ -812,6 +872,12 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
         {practice && (status === "live" || status === "paused" || status === "countdown") && (
           <p className="mt-3 inline-block rounded-full bg-black/40 px-4 py-1.5 text-base font-black" data-testid="practice-badge">
             {no.practice.badge}
+          </p>
+        )}
+        {flashSoon && !safetyTone && (
+          <p className="m-rise-in mt-3 inline-flex items-center gap-2 rounded-full bg-[#8e3ff0] px-4 py-1.5 text-base font-black tabular-nums text-white" data-testid="flash-post">
+            <IconZap size={18} className="flex-none" />
+            {no.live.flashLeft(flashSoon.leftS)}
           </p>
         )}
         {showCompass && nearest && (
@@ -825,7 +891,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
           </p>
         )}
         {view && status !== "countdown" && (
-          <dl className="mt-4 flex items-end gap-6">
+          <dl className="mt-4 flex flex-wrap items-end gap-x-6 gap-y-3">
             <div>
               <dt className="text-xs font-black uppercase tracking-wider opacity-75">{t.points}</dt>
               <dd className="text-5xl font-black leading-none tabular-nums" data-testid="points">
@@ -840,6 +906,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
                 <dd className="text-5xl font-black leading-none tabular-nums" data-testid="clock">{formatClock(soLeft ?? left)}</dd>
               </div>
             )}
+            {showLiveRing(view.live, status) && <LiveRing live={view.live} tone={ringTone(view.live, status)} />}
             {chrome.headerStats && <div className="ml-auto space-y-1 text-right text-sm font-bold opacity-85">
               <p className="flex items-center justify-end gap-1.5">
                 <IconMove size={16} />
@@ -884,6 +951,13 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
         </div>
       )}
 
+      {warnKind && (
+        <div className="mx-4 mb-2 flex items-center gap-3 rounded-xl bg-warn px-4 py-3 text-lg font-black text-on-accent" role="status" data-testid="live-warning">
+          <IconLock size={24} className="flex-none" />
+          <span className="flex-1">{warnKind === "reveal" ? no.live.warnReveal(warnLeftS(warnFixAgeS)) : no.live.warnStreak(warnLeftS(warnFixAgeS))}</span>
+        </div>
+      )}
+
       {team && chrome.teamStrip && status !== "ceremony" && (
         <TeamStrip team={team} round={round} fix={gps.fix} offsetMs={offsetMs} now={now} live={teamLive} relay={view?.relay ?? null} />
       )}
@@ -915,7 +989,8 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
       <div
         className={`relative min-h-0 flex-1 ${
           zoneOut ? "ring-[10px] ring-inset ring-danger animate-pulse"
-          : tag?.hunter_near && !immuneLeft ? "ring-[10px] ring-inset ring-hunter animate-pulse" : ""
+          : closeAlert === "close" ? "ring-[22px] ring-inset ring-hunter animate-pulse"
+          : closeAlert === "near" ? "ring-[10px] ring-inset ring-hunter animate-pulse" : ""
         }`}
       >
         <PlayerMap
@@ -925,6 +1000,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
           activeId={view?.claim?.post_id ?? null}
           radar={isHunter ? (tag?.radar ?? []) : []}
           plings={isHunter && isHide ? (tag?.hide?.still ?? NO_PLINGS) : NO_PLINGS}
+          revealed={isHunter ? revealedForMap(tag?.revealed).map((r) => ({ pos: r.pos, label: no.live.revealed(r.age_s) })) : NO_REVEALED}
           zoneLat={zoneState?.c.lat ?? null}
           zoneLng={zoneState?.c.lng ?? null}
           zoneR={zn?.r ?? null}
@@ -946,7 +1022,7 @@ function Game({ me, boot, gps, sim }: { me: StoredPlayer; boot: PlayerBootstrap;
           </div>
         )}
         {playlistDone && view ? (
-          <SessionCard totals={sessionTotals(view.stats)} scoreoLine={view?.scoreo?.done ? no.scoreo.done(view.scoreo.got ?? 0, view.scoreo.total ?? 0, view.scoreo.penalty ?? 0) : null} />
+          <SessionCard totals={sessionTotals(view.stats)} bestStreak={bestStreak} scoreoLine={view?.scoreo?.done ? no.scoreo.done(view.scoreo.got ?? 0, view.scoreo.total ?? 0, view.scoreo.penalty ?? 0) : null} />
         ) : summary && (status === "breather" || status === "gathering") && (
           <SummaryCard summary={summary} next={status === "breather" ? (round?.next ?? null) : null} practice={practice} scoreoLine={view?.scoreo?.done ? no.scoreo.done(view.scoreo.got ?? 0, view.scoreo.total ?? 0, view.scoreo.penalty ?? 0) : null} />
         )}
@@ -1151,6 +1227,7 @@ function PlayerMap({
   activeId,
   radar,
   plings,
+  revealed,
   zoneLat,
   zoneLng,
   zoneR,
@@ -1170,6 +1247,8 @@ function PlayerMap({
   radar: NonNullable<TagView["radar"]>;
   /** 0023 Gjemsel: circles around shifted points of hiders who stand still (hunters only). */
   plings: { pos: { lat: number; lng: number }; r_m: number }[];
+  /** 0024: hunters only. Exact last position of prey/hiders with a locked screen, with an age label. */
+  revealed: { pos: { lat: number; lng: number }; label: string }[];
   /** Primitives, so the map redraws only when the circle changes (the 1 s clock re-renders). */
   zoneLat: number | null;
   zoneLng: number | null;
@@ -1213,6 +1292,7 @@ function PlayerMap({
         addPostsLayer(m);
         addRadarLayer(m);
         addPlingLayer(m);
+        addRevealedLayer(m);
         addEventLayer(m);
         addTeamLayer(m);
         addMeLayer(m);
@@ -1291,6 +1371,11 @@ function PlayerMap({
     if (ready && map.current) setPlings(map.current, JSON.parse(plingKey) as typeof plings);
   }, [ready, plingKey]);
 
+  const revealedKey = JSON.stringify(revealed);
+  useEffect(() => {
+    if (ready && map.current) setRevealed(map.current, JSON.parse(revealedKey) as typeof revealed);
+  }, [ready, revealedKey]);
+
   useEffect(() => {
     if (!ready || !map.current) return;
     setZone(map.current, zoneLat !== null && zoneLng !== null && zoneR !== null
@@ -1323,6 +1408,7 @@ function PlayerMap({
 }
 
 const NO_LIVE: { lat: number; lng: number }[] = [];
+const NO_REVEALED: { pos: { lat: number; lng: number }; label: string }[] = [];
 const NO_PLINGS: { pos: { lat: number; lng: number }; r_m: number }[] = [];
 
 function SosButton({ onFire, disabled }: { onFire: () => void; disabled: boolean }) {
@@ -1390,6 +1476,10 @@ function ReadyScreen({ name, onReady, error }: { name: string; onReady: () => vo
             );
           })}
         </ul>
+        <p className="mt-6 flex items-center gap-3 text-base font-bold leading-snug text-txt-dim" style={{ "--i": 3 } as CSSProperties}>
+          <IconLock size={20} className="flex-none text-gold-text" />
+          {no.live.ruleLine}
+        </p>
         {error === "unsupported" && (
           <p className="mt-6 rounded-[var(--radius-ctl)] bg-danger/15 px-4 py-3 font-bold text-danger-text" style={{ "--i": 3 } as CSSProperties}>
             {no.map.noGps}
@@ -1508,6 +1598,43 @@ function SimPad({ sim }: { sim: SimControls }) {
   );
 }
 
+/** 0024: the live streak as a ring that fills toward the next step. Grey when frozen. Display only. */
+function LiveRing({ live, tone }: { live: LiveView; tone: RingTone }) {
+  const r = 20;
+  const c = 2 * Math.PI * r;
+  const frac = ringFraction(live);
+  const mult = multLabel(live.mult);
+  const next = live.next_s === null ? null : no.live.clock(live.next_s);
+  return (
+    <div
+      className={cx("relative size-14 flex-none", tone === "on" ? "text-white" : "text-white/45")}
+      role="img"
+      aria-label={no.live.ringAria(no.live.clock(live.streak_s), mult, next)}
+      data-testid="live-ring"
+      data-tone={tone}
+      data-mult={live.mult}
+    >
+      <svg viewBox="0 0 48 48" className="size-full -rotate-90" aria-hidden>
+        <circle cx="24" cy="24" r={r} fill="none" stroke="currentColor" strokeOpacity={0.25} strokeWidth={5} />
+        <circle
+          cx="24"
+          cy="24"
+          r={r}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={5}
+          strokeLinecap="round"
+          strokeDasharray={`${c * frac} ${c}`}
+          className="transition-[stroke-dasharray] duration-700"
+        />
+      </svg>
+      <span className="absolute inset-0 grid place-items-center text-sm font-black leading-none tabular-nums">
+        {mult ?? (tone === "frozen" ? <IconPause size={18} /> : <IconZap size={18} />)}
+      </span>
+    </div>
+  );
+}
+
 function nearestPost(fix: Fix | null, posts: PostView[]): { m: number; deg: number; lat: number; lng: number } | null {
   if (!fix || !posts.length) return null;
   let best: { m: number; deg: number; lat: number; lng: number } | null = null;
@@ -1537,7 +1664,7 @@ function Compass({ m, deg, label }: { m: number; deg: number; label: string }) {
 }
 
 /** After the last round: the whole session in my own numbers, no place or ranking. Shown before «Avslutt», which deletes the data. */
-function SessionCard({ totals, scoreoLine }: { totals: SessionTotals; scoreoLine: string | null }) {
+function SessionCard({ totals, bestStreak, scoreoLine }: { totals: SessionTotals; bestStreak: number | null; scoreoLine: string | null }) {
   const cell = "rounded-2xl bg-ink-3 px-3 py-3";
   const s = no.totals;
   return (
@@ -1549,7 +1676,7 @@ function SessionCard({ totals, scoreoLine }: { totals: SessionTotals; scoreoLine
       <p className="mt-1 text-4xl font-black leading-tight">{s.thanks}</p>
       <p className="mt-1 text-sm font-bold text-txt-dim">{s.thanksBody}</p>
       {scoreoLine && <p className="mt-1 text-sm font-bold text-txt-dim">{scoreoLine}</p>}
-      <dl className={cx("m-stagger mt-4 grid gap-2", totals.posts > 0 ? "grid-cols-3" : "grid-cols-2")}>
+      <dl className={cx("m-stagger mt-4 grid gap-2", totals.posts > 0 && !bestStreak ? "grid-cols-3" : "grid-cols-2")}>
         <div className={cell} style={{ "--i": 1 } as CSSProperties}>
           <dt className="flex items-center gap-1 text-xs font-bold uppercase text-txt-dim">
             <IconMove size={14} />
@@ -1571,6 +1698,15 @@ function SessionCard({ totals, scoreoLine }: { totals: SessionTotals; scoreoLine
               {s.posts}
             </dt>
             <dd className="mt-1 text-2xl font-black tabular-nums">{totals.posts}</dd>
+          </div>
+        )}
+        {bestStreak !== null && (
+          <div className={cx(cell, totals.posts > 0 && "col-span-2")} style={{ "--i": 4 } as CSSProperties} data-testid="best-streak">
+            <dt className="flex items-center gap-1 text-xs font-bold uppercase text-txt-dim">
+              <IconZap size={14} />
+              {no.live.bestStreak}
+            </dt>
+            <dd className="mt-1 text-2xl font-black tabular-nums">{no.live.clock(bestStreak)}</dd>
           </div>
         )}
       </dl>

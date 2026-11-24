@@ -67,8 +67,14 @@ export function addPostsLayer(m: MlMap, beforeId?: string) {
       id: "posts-halo",
       type: "circle",
       source: "posts",
-      filter: ["==", ["get", "kind"], "golden"],
-      paint: { "circle-radius": 22, "circle-color": "#ffd23f", "circle-opacity": 0.35, "circle-blur": 0.4 },
+      filter: ["any", ["==", ["get", "kind"], "golden"], ["to-boolean", ["get", "flash"]]],
+      paint: {
+        "circle-radius": 22,
+        // 0024: a lynpost glows violet, the golden post gold.
+        "circle-color": ["case", ["to-boolean", ["get", "flash"]], "#b45cff", "#ffd23f"],
+        "circle-opacity": 0.35,
+        "circle-blur": 0.4,
+      },
     },
     beforeId,
   );
@@ -78,10 +84,11 @@ export function addPostsLayer(m: MlMap, beforeId?: string) {
       type: "circle",
       source: "posts",
       paint: {
-        "circle-radius": ["case", ["==", ["get", "kind"], "golden"], 13, [">=", ["get", "value"], 20], 11, 9],
+        "circle-radius": ["case", ["==", ["get", "kind"], "golden"], 13, ["to-boolean", ["get", "flash"]], 12, [">=", ["get", "value"], 20], 11, 9],
         "circle-color": [
           "case",
           ["==", ["get", "kind"], "golden"], "#ffd23f",
+          ["to-boolean", ["get", "flash"]], "#b45cff",
           ["to-boolean", ["get", "claimed"]], "#6b7280",
           [">=", ["get", "value"], 20], "#ff8a3d",
           "#ebb84b",
@@ -96,14 +103,14 @@ export function addPostsLayer(m: MlMap, beforeId?: string) {
 
 export function setPosts(
   m: MlMap,
-  posts: { id: string; pos: { lat: number; lng: number }; value: number; kind: string; claimed_by?: string | null }[],
+  posts: { id: string; pos: { lat: number; lng: number }; value: number; kind: string; claimed_by?: string | null; flash?: boolean }[],
   activeId?: string | null,
 ) {
   m.getSource<GeoJSONSource>("posts")?.setData({
     type: "FeatureCollection",
     features: posts.map((p) => ({
       type: "Feature",
-      properties: { id: p.id, value: p.value, kind: p.kind, active: p.id === activeId, claimed: !!p.claimed_by },
+      properties: { id: p.id, value: p.value, kind: p.kind, active: p.id === activeId, claimed: !!p.claimed_by, flash: p.kind === "flash" || p.flash === true },
       geometry: { type: "Point", coordinates: [p.pos.lng, p.pos.lat] },
     })),
   });
@@ -162,6 +169,44 @@ export function setPlings(m: MlMap, plings: { pos: { lat: number; lng: number };
       type: "Feature",
       properties: {},
       geometry: { type: "Polygon", coordinates: [circleRing(p.pos, p.r_m)] },
+    })),
+  });
+}
+
+/**
+ * 0024: prey/hiders whose phone went silent (locked screen): the exact last position, for hunters only.
+ * Solid dots with a white ring and an age label, unlike the dashed pling circles (a shifted, vague area).
+ */
+export function addRevealedLayer(m: MlMap) {
+  m.addSource("revealed", { type: "geojson", data: EMPTY });
+  m.addLayer({
+    id: "revealed-halo",
+    type: "circle",
+    source: "revealed",
+    paint: { "circle-radius": 20, "circle-color": "#ff3b30", "circle-opacity": 0.25 },
+  });
+  m.addLayer({
+    id: "revealed-dot",
+    type: "circle",
+    source: "revealed",
+    paint: { "circle-radius": 9, "circle-color": "#ff3b30", "circle-stroke-color": "#ffffff", "circle-stroke-width": 3 },
+  });
+  m.addLayer({
+    id: "revealed-label",
+    type: "symbol",
+    source: "revealed",
+    layout: { "text-field": ["get", "label"], "text-size": 13, "text-offset": [0, 1.9], "text-allow-overlap": true },
+    paint: { "text-color": "#ffffff", "text-halo-color": "#111827", "text-halo-width": 2 },
+  });
+}
+
+export function setRevealed(m: MlMap, items: { pos: { lat: number; lng: number }; label: string }[]) {
+  m.getSource<GeoJSONSource>("revealed")?.setData({
+    type: "FeatureCollection",
+    features: items.map((r) => ({
+      type: "Feature",
+      properties: { label: r.label },
+      geometry: { type: "Point", coordinates: [r.pos.lng, r.pos.lat] },
     })),
   });
 }

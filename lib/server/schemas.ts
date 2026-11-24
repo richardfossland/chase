@@ -87,6 +87,9 @@ export const eventBody = z.discriminatedUnion("action", [
   playerAuth.extend({ action: z.literal("hotcold"), kind: z.enum(["sniff", "thermo"]) }),
 ]);
 
+/** 0024: «skjermen er låst»-beacon. The token only ever travels in the body (sendBeacon), never in a URL. */
+export const awayBody = z.object({ token });
+
 export const sosBody = playerAuth.extend({ lat: lat.optional(), lng: lng.optional() });
 
 export const hostAuth = z.object({ hostToken: token });

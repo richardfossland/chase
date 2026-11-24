@@ -142,6 +142,12 @@ export const IconUsers = icon(
 export const IconTrophy = icon(<path d="M8 4h8v6a4 4 0 01-8 0V4zM8 6H4v1a4 4 0 004 4M16 6h4v1a4 4 0 01-4 4M12 14v4M8 21h8M10 18h4" />);
 export const IconCrown = icon(<path d="M3 8l4 4 5-7 5 7 4-4-2 11H5L3 8z" />);
 export const IconStar = icon(<path d="M12 3l2.7 5.6 6.1.8-4.5 4.3 1.1 6.1L12 16.9 6.6 19.8l1.1-6.1L3.2 9.4l6.1-.8L12 3z" />);
+export const IconLock = icon(
+  <>
+    <rect x="5" y="11" width="14" height="9" rx="2" />
+    <path d="M8 11V8a4 4 0 018 0v3" />
+  </>,
+);
 export const IconZap = icon(<path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z" />);
 export const IconShield = icon(<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z" />);
 export const IconTarget = icon(

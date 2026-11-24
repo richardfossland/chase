@@ -124,6 +124,9 @@ export interface HostPlayer {
   immune: boolean;
   distance_m: number;
   active_s: number;
+  /** 0024: the phone said the page was hidden after the last fix (locked screen). */
+  away?: boolean;
+  away_s?: number;
 }
 
 /** Round clock as chase._round_view() returns it (server times). */
@@ -243,10 +246,12 @@ export interface PostView {
   id: string;
   pos: LatLng;
   value: number;
-  kind: "normal" | "golden";
+  kind: "normal" | "golden" | "flash";
   radius_m?: number;
   expires_at: string | null;
   claimed_by?: string | null;
+  /** 0024 live-belønning: a lynpost (short-lived, `expires_at` is the deadline). Missing against an old DB. */
+  flash?: boolean;
 }
 
 export interface RoundSummary {
@@ -341,6 +346,17 @@ export interface PowerView {
   decoy_until: string | null;
 }
 
+/** 0024: the live streak. `on` = counting now; `frozen` = pause, breather or gathering. */
+export interface LiveView {
+  on: boolean;
+  mult: 1 | 1.25 | 1.5;
+  streak_s: number;
+  next_s: number | null;
+  frozen: boolean;
+  /** Lengste live-rekke i økta (0024). */
+  best_streak_s?: number;
+}
+
 export interface TickView {
   server_now: string;
   status: SessionStatus;
@@ -348,12 +364,14 @@ export interface TickView {
   round_started_at: string | null;
   round: RoundView | null;
   role: string;
-  stats: { points: number; distance_m: number; active_s: number; posts: number; round_points: number; badges: Badge[]; steps?: number };
+  stats: { points: number; distance_m: number; active_s: number; posts: number; round_points: number; badges: Badge[]; steps?: number; best_streak_s?: number };
+  /** 0024 live-belønning: the live streak (missing against an old DB = no ring). */
+  live?: LiveView;
   /** 0012: an open question after a post (never the right answer). */
   quiz?: { no: number; q: string; a: string[]; until: string; right: number };
   posts: PostView[] | null;
   claim: { post_id: string; hits: number; need: number } | null;
-  claimed: { post_id: string; value: number; kind: "normal" | "golden" } | null;
+  claimed: { post_id: string; value: number; kind: "normal" | "golden" | "flash" } | null;
   lost: boolean;
   new_badges: Badge[];
   summary: RoundSummary | null;
@@ -423,6 +441,10 @@ export interface TagView {
   prey_near?: number;
   radar?: { pos: LatLng; age_s: number; stealth: boolean }[];
   hunter_near?: boolean;
+  /** 0024: hunters only. Prey/hiders whose phone has been silent for ≥ reveal_s: their exact last position. */
+  revealed?: { id: string; pos: LatLng; age_s: number }[];
+  /** 0024: prey/hiders only. A hunter is within 30 m (stronger than `hunter_near`, 60 m). */
+  hunter_close?: boolean;
   /** 0007: Mørkelegging — no radar right now. */
   blackout?: boolean;
   /** 0007: radar power-up — every opponent for a few seconds. */

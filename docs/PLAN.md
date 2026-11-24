@@ -297,6 +297,7 @@ Fysiske oppdrag gjøres der eleven er, aldri som en betingelse for å slippe str
 | Stafettløype (base og poster: punkter i området, ikke elevposisjoner) og etapper per lag | `rounds.state` | Som økta |
 | Prøverunde og poengorientering (0020): om statistikken er frosset (`practice`), ankomsttid til møteplassen (`so_home_since`, `so_arrived_at`: tider uten posisjon), forsinkelse og poengtrekk, klaimfremdrift og sum score-O-poeng | `player_stats.practice`, `so_*` | 24 t etter slutt. Ankomsttidene nullstilles ved rundeslutt og i `_end_session`. Ingen posisjoner. |
 | Gjemsel (0023): når gjemmeren begynte å gjemme seg, poeng så langt i stinten og lengste tid uoppdaget (tider og tall uten posisjon). Plingene beregnes ved visning fra `player_live` og lagres ikke. | `player_stats.hs_since`, `hs_pts`, `hide_best_s` | 24 t etter slutt. `hs_since` nullstilles ved fangst og rundeslutt. Ingen posisjoner. |
+| Live-belønning (0024): når telefonen sist tikket, sammenhengende live-sekunder, når den sist meldte skjult side (🔒), basis og brøkrest for bonusen, lengste live-rekke, og lagets basis/brøkrest (tider og tall uten posisjon). «Avslørt»-posisjoner leses fra `player_live.pos` ved visning for jegere og lagres ikke. | `player_live.lv_at`, `lv_acc_s`, `away_at` (UNLOGGED); `player_stats.lv_base`, `lv_frac`, `best_streak_s`; `teams.lv_base`, `lv_frac` | `player_live`: **slettes ved øktslutt**. Resten: 24 t etter slutt. Ingen posisjoner. Lynposter (`posts.kind = 'flash'`) er vanlige poster og slettes ved øktslutt. |
 | Lagvisnings-cache (lagkameratenes posisjoner og lagbeskjeder, bygges hvert sekund) | `team_clock`, `session_clock.team_cache` (UNLOGGED) | **Slettes ved øktslutt** (fra 0013; før det fulgte den økta i 24 t) |
 | **Lærerbibliotek** (lagrede og sist brukte områder, opplegg, oppdragspakker), knyttet til en anonym lærernøkkel (bare hash lagres). Ingen elevdata. | `teachers`, `areas`, `plans`, `challenge_packs` | Til læreren sletter det, eller **13 måneder uten bruk** (`purge_expired`). Bare de 5 siste «sist brukt» per type beholdes. |
 | Delelenker (kopi av et opplegg og ev. et område, ingen info om læreren) | `shares` | Til læreren trekker lenken tilbake (raden slettes), eller med biblioteket |
@@ -693,6 +694,21 @@ Valgt av eier 2026-11-19 etter en gjennomgang av SCRAM (Moveera, iOS/Android, ve
 **Begrensning:** SCRAM deler posisjon når skjermen er låst. Det kan ikke nettleseren. En gjemmer som står stille, vil gjerne låse skjermen, og det kan gi mange signaltapvarsler og blinde plinger. Prøves i den felles utetesten (ADR-019). Hvis det skjer, avgjør vi i en egen ADR om Gjemsel skal tåle signaltap mildere, uten å skjule varselet for læreren.
 
 **Ferdig når:** alle fem punktene er levert eller avsluttet med begrunnelse i DECISIONS, prod-sim er grønn (inkludert alarmtidene fra ADR-038), og iPhone-punktene står i PILOT.md («Fase 11»).
+
+
+### Fase 12 – Live-belønning: det skal lønne seg å ha skjermen åpen
+
+Valgt av eier 2026-11-20 (ADR-040). Nettleseren stopper GPS når en iPhone låses. Før denne fasen ble tidspoeng betalt etter veggklokka, og en låst telefon ble *usynlig* etter 20 s. Nå er det motsatt. Migrasjon 0024, bare wrappere: flat `tick` og `host_snapshot` er urørt.
+
+1. **Live-rekke:** ×1 → ×1,25 etter 2 min → ×1,5 etter 4 min sammenhengende live. Rekka ryker etter 20 s uten tick og fryses i pause, pustepause og samling. Multiplikatoren gjelder alle poeng opptjent i aktiv runde, unntatt lærerens justering.
+2. **Bare live-tid teller:** stille tid flytter overlevelses- og gjemmeklokka fram. Overlevelsesbonusen ved rundeslutt går bare til bytter som er live.
+3. **Låst = avslørt:** bytter og gjemmere uten tick i 20 s under en runde vises for jegerne med siste posisjon (`tag.revealed`).
+4. **Gulrøtter:** jegervarsel (`hunter_close` ≤ 30 m) for bytter og gjemmere; lynposter i Postjakt (ca. hvert 90. s, 30 s, 25 p, ikke med faste poster); lagbonus +25 % i Flaggjakt og Konge når hele laget er live.
+5. **Lås-merke hos læreren:** telefonen sier fra når siden skjules (`sendBeacon` → `mark_away`). Signaltapalarmen kommer som før etter 60 s og får bare merket «(låst skjerm)».
+6. **Elevskjerm:** live-ring ved poengene, forvarsel etter 10 s uten GPS, lengste live-rekke på resultatkortet.
+7. **Simulator:** bot `locker`/`locker70` og `--live-rewards`-sjekker.
+
+**Ferdig når:** DB-tester og sim med `--live-rewards` er grønne lokalt og i prod, tick p95 er innenfor ca. 20 % av ADR-030, og iPhone-punktene står i PILOT.md («Fase 12»).
 
 ---
 

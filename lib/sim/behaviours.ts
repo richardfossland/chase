@@ -11,7 +11,7 @@ import { zoneAt, type ZoneState } from "@/lib/rules/zone";
 
 import { gauss, rng } from "./rng";
 
-export const BEHAVIOURS = ["runner", "hider", "wanderer", "forbidden", "dropout", "sos", "cheater", "jitter"] as const;
+export const BEHAVIOURS = ["runner", "hider", "wanderer", "forbidden", "dropout", "sos", "cheater", "jitter", "locker", "locker70"] as const;
 export type Behaviour = (typeof BEHAVIOURS)[number];
 
 export interface SimGeo {
@@ -32,6 +32,22 @@ export interface BotStep {
   sos: boolean; // press the SOS button this step
   /** What a teacher should be alerted about from now on (for latency checks). */
   expect: Array<"forbidden" | "outside">;
+  /**
+   * `locker`: the phone is locked. The bot makes NO call at all (not even `fix: null` ticks) for
+   * `forS` seconds, then comes back. `fix` is null while silent; the driver must not tick.
+   */
+  silent?: { forS: number };
+}
+
+/** locker = 40 s of silence (live-rewards, no tick reward), locker70 = 70 s (also past the 60 s signal-loss alarm). */
+export const LOCKER_SILENT_S = { locker: 40, locker70: 70 } as const;
+
+/**
+ * Pure timeline of a locker: it starts being silent once it has seen `lockAfterLiveS` seconds of an active
+ * round, and stays silent `forS` seconds of wall time (counted from that moment), then plays normally again.
+ */
+export function lockerSilent(t: number, startedAt: number | null, forS: number): boolean {
+  return startedAt !== null && t >= startedAt && t < startedAt + forS;
 }
 
 /** What a bot learns from its last tick response (phase 2): posts to run to, game phase. */
@@ -65,6 +81,8 @@ export interface BotOptions {
   sosAfterS?: number; // `sos` bot
   dropoutAfterS?: number; // `dropout` bot
   dropoutForS?: number;
+  lockAfterLiveS?: number; // `locker`/`locker70`: live seconds of play before the phone is locked
+  lockForS?: number; // override the silent window (default 40 / 70 s)
 }
 
 type XY = [number, number];
@@ -90,15 +108,20 @@ export function createBot(kind: Behaviour, geo: SimGeo, opts: BotOptions) {
     }
   }
 
+  const isLocker = kind === "locker" || kind === "locker70";
   let heading = r() * Math.PI * 2;
   let view: BotView = {};
   let t = 0;
   let sosSent = false;
-  const baseSpeed = kind === "cheater" ? 7 + r() : kind === "runner" || kind === "dropout" || kind === "sos" ? 2 + r() * 2 : 1.3;
+  const baseSpeed = kind === "cheater" ? 7 + r() : kind === "runner" || kind === "dropout" || kind === "sos" || isLocker ? 2 + r() * 2 : 1.3;
   const baseAcc = kind === "jitter" ? 30 + r() * 30 : 4 + r() * 6;
   const sosAt = opts.sosAfterS ?? 30 + r() * 60;
   const dropAt = opts.dropoutAfterS ?? 20 + r() * 20;
   const dropFor = opts.dropoutForS ?? 90;
+  const lockAfter = opts.lockAfterLiveS ?? 30 + r() * 20;
+  const lockFor = opts.lockForS ?? (kind === "locker70" ? LOCKER_SILENT_S.locker70 : LOCKER_SILENT_S.locker);
+  let liveT = 0; // seconds spent in an active round
+  let lockStart: number | null = null;
 
   // Targets for goal-seeking behaviours.
   const hideSpot: XY = (() => {
@@ -221,11 +244,19 @@ export function createBot(kind: Behaviour, geo: SimGeo, opts: BotOptions) {
     const before: XY = [pos[0], pos[1]];
     let sos = false;
     let signal = true;
+    let silent = false;
+    if (isLocker) {
+      if (view.status === "live") liveT += dt;
+      if (lockStart === null && liveT >= lockAfter) lockStart = t;
+      silent = lockerSilent(t, lockStart, lockFor);
+    }
     const special = kind === "wanderer" || kind === "forbidden" || kind === "cheater" || kind === "sos";
 
     // Shared phase behaviour for ordinary bots: walk to the assembly point when
     // gathering, stroll in the breather, chase posts in a Postjakt round.
-    if (!special && view.status === "gathering") {
+    if (silent) {
+      wander(dt, 0.4, true); // phone in the pocket, sitting or strolling: no big jump when it comes back
+    } else if (!special && view.status === "gathering") {
       if (!view.gather?.checked_in) seek(a as XY, dt, 1.4);
     } else if (!special && view.status === "breather") {
       wander(dt, 0.5, true);
@@ -251,6 +282,8 @@ export function createBot(kind: Behaviour, geo: SimGeo, opts: BotOptions) {
       seek(nearestPostXY()!, dt, kind === "hider" ? 1.5 : baseSpeed);
     } else switch (kind) {
       case "runner":
+      case "locker":
+      case "locker70":
       case "cheater":
         wander(dt, baseSpeed, true);
         break;
@@ -294,7 +327,8 @@ export function createBot(kind: Behaviour, geo: SimGeo, opts: BotOptions) {
     if (signedDistanceToRing(proj.toLngLat(pos[0], pos[1]), ring) > 40) expect.push("outside");
 
     return {
-      fix: signal ? { lat: ll[1], lng: ll[0], acc: Math.round(acc * 10) / 10, speed: Math.round(speed * 100) / 100 } : null,
+      silent: silent ? { forS: lockFor } : undefined,
+      fix: signal && !silent ? { lat: ll[1], lng: ll[0], acc: Math.round(acc * 10) / 10, speed: Math.round(speed * 100) / 100 } : null,
       sos,
       expect,
     };
@@ -317,11 +351,12 @@ export function createBot(kind: Behaviour, geo: SimGeo, opts: BotOptions) {
 export type Bot = ReturnType<typeof createBot>;
 
 /** Default mix for N bots: one of each special behaviour, the rest runners/hiders/jitter. */
-export function defaultMix(n: number): Behaviour[] {
+export function defaultMix(n: number, liveRewards = false): Behaviour[] {
   const specials: Behaviour[] = ["wanderer", "forbidden", "dropout", "sos", "cheater"];
+  if (liveRewards) specials.push("locker", "locker70"); // only with --live-rewards (the server must have 0024)
   const out: Behaviour[] = [];
   for (let i = 0; i < n; i++) {
-    if (i < specials.length && n >= 8) out.push(specials[i]);
+    if (i < specials.length && n >= (liveRewards ? 12 : 8)) out.push(specials[i]);
     else out.push(i % 10 === 7 ? "hider" : i % 10 === 9 ? "jitter" : "runner");
   }
   return out;

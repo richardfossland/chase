@@ -9,10 +9,10 @@
 import type { SessionStatus } from "@/lib/client/api";
 import { no } from "@/lib/locale/no";
 
-export type VoiceKey = "forbidden" | "outside" | "zoneOut" | "zoneShrink" | "caught" | "foxNow" | "hunterNear" | "go" | "gather";
+export type VoiceKey = "forbidden" | "outside" | "zoneOut" | "zoneShrink" | "caught" | "foxNow" | "hunterClose" | "hunterNear" | "go" | "gather";
 
 /** Viktigste først. Bare den første sies når flere utløses i samme tick. */
-const PRIORITY: VoiceKey[] = ["forbidden", "outside", "zoneOut", "zoneShrink", "caught", "foxNow", "hunterNear", "go", "gather"];
+const PRIORITY: VoiceKey[] = ["forbidden", "outside", "zoneOut", "zoneShrink", "caught", "foxNow", "hunterClose", "hunterNear", "go", "gather"];
 
 /** Utvalget av en elevvisning som setningsvalget trenger. */
 export interface VoiceView {
@@ -20,7 +20,7 @@ export interface VoiceView {
   role: string;
   voice?: boolean;
   safety: { geofence: number; forbidden: boolean };
-  tag?: { hunter_near?: boolean; fox?: boolean } | null;
+  tag?: { hunter_near?: boolean; hunter_close?: boolean; fox?: boolean } | null;
   zone?: { inside: boolean } | null;
 }
 
@@ -43,7 +43,9 @@ export function voiceLinesFor(prev: VoiceView | null, next: VoiceView, opts: { s
     if (prev.role === "prey" && next.role === "hunter") out.add("caught");
     else if (prev.role === "hunter" && next.role === "prey" && next.tag?.fox) out.add("foxNow");
   }
-  if (next.tag?.hunter_near && !prev.tag?.hunter_near) out.add("hunterNear");
+  // 0024: «veldig nær» (≤ 30 m) går foran «nær» (≤ 60 m).
+  if (next.tag?.hunter_close && !prev.tag?.hunter_close) out.add("hunterClose");
+  else if (next.tag?.hunter_near && !prev.tag?.hunter_near) out.add("hunterNear");
 
   if (next.status === "live" && (prev.status === "countdown" || prev.status === "breather")) out.add("go");
   if (next.status === "gathering" && prev.status !== "gathering") out.add("gather");

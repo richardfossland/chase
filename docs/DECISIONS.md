@@ -746,3 +746,22 @@ Tester: `test/live-urgent.test.ts` (terskler, eskalering, wire-format) og `test/
 **Testet:** `npm run check` (431 tester, nye: `test/simpleStart.test.ts`, `test/play-chrome.test.ts`, `test/host-plan.test.ts`). I nettleser lokalt: Velg økt → Gjemsel → Område → Klar → demo med 20 boter. Start var synlig ved 1440×700, 1440×900, 2000×1150 og 375×812. Bunnlinja live uten «Overraskelse», SOS-alarm synlig, tre runder, deretter samling, «Vis resultater» og øktrapport.
 
 **Ikke gjort:** ekte iPhone og projektor (PILOT.md).
+
+## ADR-040 — Live-belønning: åpen skjerm lønner seg (2026-11-20)
+
+**Kontekst:** En låst iPhone sender ingen posisjon. I Smittejakt (+1 per 5 s, 0004) og Gjemsel (10 per min, 0023) ble tidspoeng regnet fra veggklokka og betalt i ettertid ved neste tick, så den stille tiden ble betalt fullt ut. En låst telefon ble dessuten usynlig etter 20 s (pling, radar og «Bytte i nærheten» krever `fix_fresh_s`), og overlevelsesbonusen gikk også til låste. Det lønte seg altså å låse skjermen. Eier valgte å gi gulrøtter i stedet for å fjerne moduser.
+
+**Beslutning (migrasjon 0024, bare guardede wrappere; flat `tick`/`host_snapshot` urørt, så likhetstesten for 0018 holder):**
+- **Tunables `klv()` / tvilling `lib/rules/live.ts`:** gap 20 s, trinn 120/240 s, ×1,25/×1,5, avslørt etter 20 s, jegervarsel 30 m, lynpost hvert 90 ± 20 s i 30 s for 25 p (30–90 m fra en tilfeldig live spiller), lagbonus 0,25.
+- **Live-regnskap i ytterste `_mode_tick`:** `player_live.lv_at`/`lv_acc_s`. Ved gap > 20 s i aktiv runde nullstilles rekka, og `current_survival_start`/`hs_since` flyttes fram med den stille tiden (samme grep som pause), så den indre regelen bare betaler live-tid.
+- **Multiplikator:** `delta = points − lv_base`, med brøkrest i `lv_frac`. Den gjelder alle poeng som kommer inn i aktiv runde (bevegelse, poster, fangster, oppdrag, premier); prinsippet er «det du tjener mens du er live, gir bonus». `adjust_points` flytter `lv_base` og ganges ikke. Poeng utenfor aktiv runde tas opp i basen. Ved deploy blir `lv_base` fylt inn med dagens poeng, så en deploy midt i en runde ikke gir bonus på gamle poeng.
+- **Pauser:** `_mode_begin`/`_unfreeze` flytter `lv_at` med pauselengden. Rekka er frosset, og stille tid før en pause betales ikke.
+- **Rundeslutt:** overlevelsesbonusen (convert +25 / Gjemsel `survivor_pts`) trekkes tilbake fra spillere som ikke var live ved fløyta, også når en storm byttet rollene. Revejakt er unntatt.
+- **Avslørt:** `tag.revealed` (bare for jegere, i Gjemsel først etter slipp): siste posisjon fra `player_live` og samme saltede id som pling, som erstatter pling for den spilleren. Den lagres ikke.
+- **Lås-merke:** `/api/s/[id]/away` (`sendBeacon`, token i body, `text/plain`) → `mark_away` setter `player_live.away_at`. `host_snapshot_away`/`host_snapshot_svc` fletter inn `away`/`away_s`. HTTP-ruten faller tilbake til `host_snapshot` hvis 0024 mangler. Signaltapalarmen er uendret (60 s, regel 4).
+- **Lynposter:** `posts.kind = 'flash'`, `expires_at`, `hint_all` som gullposten. Ikke i prøverunder, de siste 30 s eller med faste poster.
+- **Lagbonus:** wrapper på `_mode_upkeep_team` (flagg/konge), bare når alle aktive lagmedlemmer har fix ≤ 20 s.
+
+**Kjent begrensning:** «live» betyr at det kommer tick, ikke at skjermen er på. Klienten sender siste fix i opptil 15 s, så en telefon med skjermen på men uten GPS (inne, tett skog) blir avslørt og mister rekka etter ca. 35 s. Det står i regelkortet. Utetesten avgjør om terskelen må opp.
+
+**Testet:** se PR-en (DB-tester, vitest, lokal sim med `--live-rewards`, prod-sim).

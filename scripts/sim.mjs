@@ -52,6 +52,16 @@
 //   --no-urgent       bots never flag a fix urgent (the phone before ADR-038), for before/after runs
 //   --live-stats URL  fetch <URL>/live/s/<id>/stats per session at the end (internal,
 //                     local wrangler port only: http://127.0.0.1:8787)
+//   --live-rewards    check the live-rewards contract (migration 0024, needs a server that has it; plain
+//                     prod/older servers must run WITHOUT this flag). Adds the bots `locker` (40 s without
+//                     any call, like a locked iPhone) and `locker70` (70 s, past the 60 s signal-loss alarm)
+//                     to the default mix (--bots ≥ 12; or name them in --mix "runner:30,locker:2,locker70:1").
+//                     With --assert it demands: no time points for the silent window (Smittejakt ≤ live s/5 +
+//                     slack, Gjemsel none), hunters see the locker in tag.revealed within 20+2 s of its last
+//                     fix (matched on position ≤ 5 m, id never a player id), live.streak_s < 10 when it is
+//                     back, live.mult ×1 → ×1,25 after 120 s (×1,5 after 240 s), signal-loss alarm for the
+//                     70 s locker, and in a Postjakt ≥ 3 min with ≥ 10 bots a flash post that gets taken.
+//                     Needs a long enough run: e.g. --plan "posts:240" or "convert:240" --minutes 5 --bots 20.
 //   --assert (ws)     adds: 0 5xx, alarm max < 5 s and p95 < 3 s, fix→view p95 < 2 s and
 //                     p99 < 3 s, recovery after --kill-at within 10 s
 //
@@ -180,7 +190,7 @@ async function runSession(k) {
   }
   if (!pin) fail("Bruk --pin PIN eller --create");
 
-  const kinds = args.mix ? sim.parseMix(args.mix) : sim.defaultMix(bots);
+  const kinds = args.mix ? sim.parseMix(args.mix) : sim.defaultMix(bots, !!args["live-rewards"]);
   const transport = args.rpc ? rpcTransport(http) : http;
   const swarm = sim.startSwarm({
     transport,
@@ -189,6 +199,7 @@ async function runSession(k) {
     seed: seedK,
       ws: cfg.transport === "ws" ? { base: wsBase } : undefined,
     urgent: !args["no-urgent"],
+    liveRewards: !!args["live-rewards"],
     hostToken,
     sosAfterS: 45,
     dropoutAfterS: 30,
@@ -240,6 +251,7 @@ async function runSession(k) {
   await new Promise((r) => setTimeout(r, 1500));
 
   const summary = { bots: kinds.length, mix: count(kinds), rpc: !!args.rpc, ...sim.summarize(swarm.stats) };
+  if (swarm.stats.live) summary.live = sim.summarizeLive(swarm.stats.live);
   if (ceremonyResult) summary.ceremony = ceremonyResult;
   if (args.create && args.end) {
     // Teacher presses «Avslutt»: roll call guard first (PLAN §6), force only if needed.
@@ -258,6 +270,10 @@ async function runSession(k) {
       if (summary.alarms.maxDelayS !== null && summary.alarms.maxDelayS > 5) problems.push(`alarm brukte ${summary.alarms.maxDelayS} s (> 5 s)`);
       const overdue = swarm.stats.alarms.filter((a) => a.seenAt === null && Date.now() - a.expectedAt > 5000);
       if (overdue.length) problems.push(`${overdue.length} alarm(er) kom aldri fram: ${overdue.map((a) => a.kind).join(", ")}`);
+    }
+    if (swarm.stats.live) {
+      const lockers = kinds.filter((x) => x === "locker" || x === "locker70").length;
+      for (const pr of sim.liveRewardsProblems(swarm.stats.live, { hasHost: !!hostToken, plan: String(args.plan ?? ""), bots: kinds.length, minutes, alarms: swarm.stats.alarms, lockers })) problems.push(pr);
     }
     if (args.plan && hostToken) {
       const want = String(args.plan).split(",").length;

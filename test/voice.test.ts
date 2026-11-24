@@ -45,6 +45,8 @@ describe("voiceLinesFor", () => {
 
   it("jeger nær sies når den slår inn", () => {
     expect(voiceLinesFor(base(), base({ tag: { hunter_near: true } }))).toEqual(["hunterNear"]);
+    expect(voiceLinesFor(base(), base({ tag: { hunter_near: true, hunter_close: true } }))).toEqual(["hunterClose"]);
+    expect(voiceLinesFor(base({ tag: { hunter_near: true } }), base({ tag: { hunter_near: true, hunter_close: true } }))).toEqual(["hunterClose"]);
     expect(voiceLinesFor(base({ tag: { hunter_near: true } }), base({ tag: { hunter_near: true } }))).toEqual([]);
   });
 
