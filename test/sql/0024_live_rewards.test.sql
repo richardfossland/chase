@@ -263,8 +263,12 @@ begin
   assert v_at between now() + interval '69 seconds' and now() + interval '111 seconds', 'first lightning post in 70–110 s: ' || v_at::text;
 
   -- Due: one appears (hint_all), 30 s, 25 points, 30–90 m from a live player, next one moved ~90 s on.
-  update chase.rounds set state = jsonb_set(state, '{flash_at}', to_jsonb(now() - interval '1 second')) where session_id = s and idx = 0;
-  v_adv := chase._advance(s);
+  -- Placement is random (25 tries, then the server retries in 10 s); the small test area can miss, so retry like the server.
+  for i in 1 .. 10 loop
+    update chase.rounds set state = jsonb_set(state, '{flash_at}', to_jsonb(now() - interval '1 second')) where session_id = s and idx = 0;
+    v_adv := chase._advance(s);
+    exit when (v_adv ->> 'golden')::boolean;
+  end loop;
   assert (v_adv ->> 'golden')::boolean, 'hint_all on a lightning post: ' || v_adv::text;
   select * into v_f from chase.posts where session_id = s and kind = 'flash';
   assert v_f.id is not null and v_f.value = 25 and v_f.claimed_by is null and v_f.expires_at = now() + interval '30 seconds', 'flash post: ' || coalesce(v_f::text, 'none');
