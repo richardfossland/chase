@@ -765,3 +765,19 @@ Tester: `test/live-urgent.test.ts` (terskler, eskalering, wire-format) og `test/
 **Kjent begrensning:** «live» betyr at det kommer tick, ikke at skjermen er på. Klienten sender siste fix i opptil 15 s, så en telefon med skjermen på men uten GPS (inne, tett skog) blir avslørt og mister rekka etter ca. 35 s. Det står i regelkortet. Utetesten avgjør om terskelen må opp.
 
 **Testet:** se PR-en (DB-tester, vitest, lokal sim med `--live-rewards`, prod-sim).
+
+## ADR-041 — Gjemsel: vedlikeholdet låser spillerradene før `player_live` (vranglås, 2026-11-26)
+**Funn:** A/B-målingen av 0024 (tick p95 med 40 og 300 boter) ga svært ujevne tall. Postgres viste vranglåser (40P01), alle i Gjemsel-runder. En egen kjøring med 300 boter og én Gjemsel-runde ga 70 vranglåser uten 0024 og 1 med. Feilen kommer altså fra 0023 (i prod siden 11-19) og er tidsavhengig. 0024 er ikke årsaken. Når én vranglås først skjer, hoper nye forsøk seg opp, og økta får 500/504 og tick på flere sekunder. Retry ved 40P01 (ADR fra 11-18) gjorde at alarmene stort sett kom fram.
+
+**Syklus:**
+- Tick A vinner sesjonslåsen (`pg_try_advisory_xact_lock`) og kjører vedlikeholdet, høyst 1 gang i sekundet. 0004 plinger byttene (`update player_live`), og 0023 nuller plingen i samme transaksjon.
+- Den andre oppdateringen av en rad som er endret i samme transaksjon, sjekker fremmednøkkelen på nytt (`SELECT 1 FROM players … FOR KEY SHARE`).
+- Tick B holder sin egen `players`-rad `FOR UPDATE` (tick linje 54) og venter i upserten av egen `player_live`-rad, som A allerede har endret. A venter på B, og B venter på A.
+
+**Beslutning (0025):** ny ytterste wrapper `_mode_upkeep_team` (den forrige heter `_mode_upkeep_dl`). I en Gjemsel-økt tar den `FOR KEY SHARE` på alle spillerradene i id-rekkefølge før noe annet, som ADR-025 (sesjon først, så spillerne i id-rekkefølge).
+- På det tidspunktet har vedlikeholdet ikke rørt noen `player_live`-rad. Ticks som holder sin rad, venter derfor ikke på oss og kommer i mål.
+- Ticks prøver bare sesjonslåsen (ikke-blokkerende), så de venter aldri på noe vedlikeholdet holder.
+- Bare Gjemsel, fordi det er der radene oppdateres to ganger. Andre moduser har uendret kostnad.
+- Flat `tick` og `host_snapshot` er uendret. `scripts/chain-check.sql` har nytt lagpar og nøkkelen `hide_lock`.
+
+**Testet:** `test/sql/0025_hide_upkeep_lock.test.sql` (Gjemsel låser alle spillerrader, Postjakt ingen, plingnullingen virker fortsatt) og sim med 300 boter i Gjemsel (se PR-en).
